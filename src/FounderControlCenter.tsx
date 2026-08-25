@@ -23,9 +23,11 @@ import {
   Film,
   Sparkles,
   ExternalLink,
-  UserPlus
+  UserPlus,
+  Volume2
 } from 'lucide-react';
 import { FounderDashboard } from './components/FounderDashboard';
+import { FounderAudioVoiceLibrary } from './components/FounderAudioVoiceLibrary';
 
 interface ProviderItem {
   id: string;
@@ -77,7 +79,7 @@ interface FCCConfig {
 export default function FounderControlCenter({ onExit }: { onExit?: () => void }) {
   const [config, setConfig] = useState<FCCConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'providers' | 'vault' | 'flags' | 'logs' | 'users'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'providers' | 'audio' | 'vault' | 'flags' | 'logs' | 'users'>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Sora / Provider Config Modal State
@@ -361,6 +363,12 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
             onClick={() => { setActiveTab('providers'); setMobileMenuOpen(false); }} 
           />
           <MobileNavItem 
+            icon={<Volume2 size={16} />} 
+            label="Audio Voice Library & TTS" 
+            active={activeTab === 'audio'} 
+            onClick={() => { setActiveTab('audio'); setMobileMenuOpen(false); }} 
+          />
+          <MobileNavItem 
             icon={<Key size={16} />} 
             label="API Vault & Keys" 
             active={activeTab === 'vault'} 
@@ -414,6 +422,13 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
             active={activeTab === 'providers'} 
             badge={!soraProvider?.configured ? "Setup Sora" : undefined}
             onClick={() => setActiveTab('providers')} 
+          />
+          <NavItem 
+            icon={<Volume2 size={16}/>} 
+            label="Audio Voice Library" 
+            active={activeTab === 'audio'} 
+            badge="Google TTS"
+            onClick={() => setActiveTab('audio')} 
           />
           <NavItem 
             icon={<Key size={16}/>} 
@@ -1061,6 +1076,11 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
             <div className="space-y-6">
               <FounderDashboard />
             </div>
+          )}
+
+          {/* TAB: AUDIO VOICE LIBRARY & TTS */}
+          {activeTab === 'audio' && (
+            <FounderAudioVoiceLibrary />
           )}
 
         </div>

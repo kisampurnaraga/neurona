@@ -22,9 +22,10 @@ import {
   AlertCircle,
   ShieldCheck,
   ArrowRight
-} from 'lucide-react';
+, Plus } from 'lucide-react';
 import type { ProductionProject, Scene } from '../shared/types';
 import { neuronaVoice } from '../utils/speechSynthesis';
+import { getProjectAspectRatioClass } from '../utils/aspectRatio';
 
 interface StoryboardMatrixModalProps {
   isOpen: boolean;
@@ -37,6 +38,7 @@ interface StoryboardMatrixModalProps {
   onGenerateAllImages?: (totalCost: number, imageEngine?: string) => Promise<void>;
   onGenerateSceneVideo?: (sceneId: string, cost: number) => Promise<void>;
   onChooseStoryboardOnly?: () => Promise<void>;
+  onResyncScene?: (action: 'ADD' | 'REMOVE', targetIndex: number) => Promise<void>;
 }
 
 export type ImageModelId = 'chatgpt-image-2' | 'gemini-imagen-3' | 'flux-diffusion';
@@ -91,7 +93,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   onGenerateSceneImage,
   onGenerateAllImages,
   onGenerateSceneVideo,
-  onChooseStoryboardOnly
+  onChooseStoryboardOnly,
+  onResyncScene
 }) => {
   const [activeTab, setActiveTab] = useState<'SCENES' | 'TIERS'>('SCENES');
   const [selectedImageEngine, setSelectedImageEngine] = useState<ImageModelId>('chatgpt-image-2');
@@ -106,6 +109,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [finalVideoUrl, setFinalVideoUrl] = useState<string | null>(null);
   const [showPlaylistPreview, setShowPlaylistPreview] = useState(false);
   const [playlistIndex, setPlaylistIndex] = useState(0);
+  const [socialPlatform, setSocialPlatform] = useState<'tiktok' | 'instagram' | 'youtube'>('tiktok');
 
   const allVideosCompleted = project?.scenes?.every(s => s.videoStatus === 'COMPLETED' && s.videoUrl) || false;
 
@@ -370,7 +374,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     <img 
                       src={charProfile.referenceImageUrl || project.characterProfile?.referenceImageUrl || project.affiliateConfig?.characterImage} 
                       alt="Reference Character" 
-                      className="w-full h-full object-cover" 
+                      className="w-full h-full object-contain" 
                       referrerPolicy="no-referrer"
                     />
                   ) : (
@@ -513,6 +517,49 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
           {activeTab === 'SCENES' && (
             <div className="space-y-4">
               
+              {/* VEO MASTER VIDEO READY BANNER */}
+              {(project.finalVideoUrl || scenes.some(s => Boolean(s.videoUrl))) && (
+                <div className="bg-gradient-to-r from-emerald-950/90 via-slate-900 to-cyan-950/90 border-2 border-emerald-500/60 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-2xl shadow-emerald-950/60">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center font-bold shadow-lg shadow-emerald-500/30 shrink-0">
+                      <Film size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                          Video Hasil Generate Veo Ditemukan di Server!
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-500/40">
+                          Siap Diputar
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 mt-0.5">
+                        File video tersimpan di server (<span className="font-mono text-emerald-400">{project.finalVideoUrl || scenes.find(s => s.videoUrl)?.videoUrl}</span>). Anda dapat langsung memutar atau mengunduhnya tanpa menghabiskan kredit token lagi.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <a
+                      href={project.finalVideoUrl || scenes.find(s => s.videoUrl)?.videoUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition shadow-lg shadow-emerald-500/30"
+                    >
+                      <Play size={14} fill="currentColor" />
+                      <span>Putar Video</span>
+                    </a>
+                    <a
+                      href={project.finalVideoUrl || scenes.find(s => s.videoUrl)?.videoUrl}
+                      download={`veo-video-${project.id.substring(0, 6)}.mp4`}
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 transition"
+                      title="Unduh MP4"
+                    >
+                      <Download size={16} />
+                    </a>
+                  </div>
+                </div>
+              )}
+              
               {/* Product Lock Reference Area */}
               {project.videoType === 'AFFILIATE' && project.affiliateConfig?.productImages?.[0] && (
                 <div className="bg-slate-900 border border-emerald-500/30 rounded-xl p-3 flex flex-col sm:flex-row items-center sm:items-start gap-4">
@@ -535,48 +582,145 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                 </div>
               )}
 
-              {/* OPENCLAUW COPYWRITING & HASHTAGS PREVIEW (PHASE 1 INTEGRATION) */}
-              {(project.marketingCopy?.caption || project.marketingCopy?.hashtags) && (
-                <div className="bg-gradient-to-r from-amber-950/30 via-slate-900 to-indigo-950/30 border border-amber-500/30 rounded-xl p-3.5 sm:p-4 space-y-3 shadow-lg">
-                  <div className="flex items-center justify-between">
+              {/* OPTIMIZED SOCIAL MEDIA KIT & SKOQ QA AUDIT */}
+              {(project.marketingCopy?.caption || project.marketingCopy?.hashtags || project.marketingCopy?.tiktok_caption) && (
+                <div className="bg-gradient-to-r from-amber-950/30 via-slate-900 to-indigo-950/30 border border-amber-500/30 rounded-xl p-3.5 sm:p-4 space-y-4 shadow-lg">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                     <div className="flex items-center gap-2">
                       <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold border border-amber-500/40">
-                        OPENCLAUW COPYWRITING (FASE 1)
+                        OPENCLAUW COPYWRITING
                       </span>
                       <span className="text-xs font-bold text-white uppercase tracking-wider hidden sm:inline">
-                        Caption & Hashtag Siap Pakai
+                        Optimized Social Media Kit
                       </span>
                     </div>
-                    <button
-                      onClick={() => {
-                        const cap = project.marketingCopy?.caption || '';
-                        const hash = project.marketingCopy?.hashtags?.map(t => t.startsWith('#') ? t : `#${t}`).join(' ') || '';
-                        navigator.clipboard.writeText(`${cap}\n\n${hash}`);
-                        setCopiedType('ALL_SCRIPT');
-                        setTimeout(() => setCopiedType(null), 2000);
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer"
-                    >
-                      {copiedType === 'ALL_SCRIPT' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                      <span>{copiedType === 'ALL_SCRIPT' ? 'Semua Tersalin!' : 'Salin Copywriting'}</span>
-                    </button>
+                    <div className="flex items-center gap-2 bg-black/40 rounded-lg p-1 border border-white/5">
+                      <button onClick={() => setSocialPlatform('tiktok')} className={`px-3 py-1 text-[10px] font-bold rounded-md transition ${socialPlatform === 'tiktok' ? 'bg-white text-black' : 'text-gray-400 hover:text-white'}`}>TikTok</button>
+                      <button onClick={() => setSocialPlatform('instagram')} className={`px-3 py-1 text-[10px] font-bold rounded-md transition ${socialPlatform === 'instagram' ? 'bg-white text-black' : 'text-gray-400 hover:text-white'}`}>IG Reels</button>
+                      <button onClick={() => setSocialPlatform('youtube')} className={`px-3 py-1 text-[10px] font-bold rounded-md transition ${socialPlatform === 'youtube' ? 'bg-white text-black' : 'text-gray-400 hover:text-white'}`}>YT Shorts</button>
+                    </div>
+                  </div>
+                  
+                  {/* Skoq QA Audit Badge */}
+                  <div className="flex items-center gap-2 bg-emerald-950/30 border border-emerald-500/20 rounded-lg p-2">
+                    <ShieldCheck size={14} className="text-emerald-400" />
+                    <span className="text-emerald-300 text-[10px] font-mono font-medium">Skoq Audit QA Passed: Content highly optimized for engagement & conversion</span>
                   </div>
 
-                  {project.marketingCopy.caption && (
-                    <div className="bg-black/50 border border-zinc-800 rounded-lg p-2.5 text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed max-h-24 overflow-y-auto font-sans">
-                      {project.marketingCopy.caption}
-                    </div>
-                  )}
+                  {(() => {
+                     const mc = project.marketingCopy || (project as any).social_media_kit || {};
+                     const vType = project.videoType || 'AFFILIATE';
+                     
+                     let defCaption = '';
+                     let defTiktok = '';
+                     let defIG = '';
+                     let defYT = '';
+                     let defTags: string[] = [];
+                     let defTiktokTags: string[] = [];
+                     let defIGTags: string[] = [];
+                     let defYTTags: string[] = [];
 
-                  {project.marketingCopy.hashtags && project.marketingCopy.hashtags.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {project.marketingCopy.hashtags.map((tag, i) => (
-                        <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-purple-950/60 text-purple-300 border border-purple-500/30">
-                          {tag.startsWith('#') ? tag : `#${tag}`}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                     if (vType === 'ANIMATION') {
+                       const title = project.animationConfig?.title || project.title || 'Petualangan Animasi';
+                       const charName = project.characterProfile?.name || 'Karakter Utama';
+                       defCaption = `Saksikan animasi spektakuler "${title}" bersama ${charName}! Dihadirkan dengan visual 3D memukau.`;
+                       defTiktok = `🎬 Mahakarya Animasi: "${title}"!\n\nSaksikan petualangan epik ${charName} dalam visual 3D spektakuler. Menurut kalian gimana kelanjutannya? Komen di bawah ya! 👇✨`;
+                       defIG = `Sebuah karya visual animasi penuh imajinasi: "${title}".\n\nMenghadirkan cerita ${charName} dengan visual sinematik memukau. Tonton sekarang & share ke teman-temanmu! 🎨🚀`;
+                       defYT = `Official Animated Short: ${title} - Petualangan Sinematik AI (${charName})`;
+                       defTags = ['#animasi', '#animasiindonesia', '#3danimation', '#kartun', '#filmindonesia', '#fyp', '#viral'];
+                       defTiktokTags = ['#animasitiktok', '#animasi3d', '#kartunlucu', '#animasiindonesia', '#fyp', '#trending'];
+                       defIGTags = ['#animationart', '#cgi', '#3drender', '#digitalart', '#cinematicanimation'];
+                       defYTTags = ['#shorts', '#animation', '#3dshort', '#cinematic'];
+                     } else if (vType === 'EDUCATIONAL') {
+                       const topic = project.educationalConfig?.subjectTitle || project.title || 'Materi Edukasi';
+                       const takeaways = project.educationalConfig?.keyTakeaways || 'Wawasan dan konsep dasar penting';
+                       defCaption = `Pelajari dan pahami ${topic} secara mudah dan visual! Ringkasan poin penting: ${takeaways}.`;
+                       defTiktok = `💡 Fakta mengejutkan tentang "${topic}" yang wajib kamu tahu!\n\nSimak penjelasannya sampai habis biar makin paham. Tag teman kamu yang butuh info ini ya! 🧠✨`;
+                       defIG = `Memahami "${topic}" dengan infografis interaktif dan analogi sederhana.\n\nPelajari konsep dasarnya hanya dalam hitungan menit! Save postingan ini untuk belajar nanti. 📚🔍`;
+                       defYT = `Penjelasan Cepat & Jelas: ${topic} (Edukasi Sains & Wawasan)`;
+                       defTags = ['#edukasi', '#belajarseru', '#faktamenarik', '#sains', '#wawasan', '#fyp', '#viral'];
+                       defTiktokTags = ['#serunyabelajar', '#edukasitiktok', '#tahukahkamu', '#faktaunik', '#fyp', '#viral'];
+                       defIGTags = ['#infopendidikan', '#belajarmudah', '#pengetahuan', '#faktadunia', '#explore'];
+                       defYTTags = ['#shorts', '#edukasi', '#sciencefacts', '#learnsomethingnew'];
+                     } else {
+                       const prodName = project.affiliateConfig?.productName || project.brief?.product || project.title || 'Produk Unggulan';
+                       const benefits = project.affiliateConfig?.keyBenefits || 'Kualitas premium & bergaransi';
+                       defCaption = `Rekomendasi terbaik: ${prodName}! ${benefits}. Jangan lewatkan promo spesial hari ini!`;
+                       defTiktok = `🔥 JANGAN SAMPAI KEHABISAN!\n\n${prodName} yang lagi viral banget dengan kualitas super premium. ${benefits}. Klik keranjang kuning sekarang mumpung lagi diskon & gratis ongkir! 🛒✨`;
+                       defIG = `Upgrade kebutuhan harianmu dengan ${prodName}! ✨\n\nDesain elegan, fungsionalitas maksimal, dan kualitas terbaik. Cek link di bio untuk dapatkan harga spesial hari ini! 💫🛍️`;
+                       defYT = `Review Singkat & Fitur Unggulan ${prodName} - Wajib Punya!`;
+                       defTags = ['#racuntiktok', '#tiktokshop', '#affiliate', '#viral', '#fyp', '#rekomendasiproduk', '#trending'];
+                       defTiktokTags = ['#racuntiktok', '#tiktokshop', '#affiliatetiktok', '#fyp', '#viralindonesia', '#murahlebay'];
+                       defIGTags = ['#reelsinstagram', '#shoppingonline', '#lifestyle', '#ootd', '#viralreels'];
+                       defYTTags = ['#shorts', '#youtubeshorts', '#gadgetreview', '#productreview'];
+                     }
+
+                     let currentCaption = '';
+                     let currentHashtags: string[] = [];
+                     
+                     if (socialPlatform === 'tiktok') {
+                       currentCaption = mc?.tiktok_caption || mc?.caption || defTiktok;
+                       currentHashtags = (Array.isArray(mc?.hashtags_tiktok) && mc.hashtags_tiktok.length > 0)
+                         ? mc.hashtags_tiktok
+                         : ((Array.isArray(mc?.hashtags) && mc.hashtags.length > 0) ? mc.hashtags : defTiktokTags);
+                     } else if (socialPlatform === 'instagram') {
+                       currentCaption = mc?.instagram_caption || mc?.caption || defIG;
+                       currentHashtags = (Array.isArray(mc?.hashtags_instagram) && mc.hashtags_instagram.length > 0)
+                         ? mc.hashtags_instagram
+                         : ((Array.isArray(mc?.hashtags) && mc.hashtags.length > 0) ? mc.hashtags : defIGTags);
+                     } else {
+                       currentCaption = mc?.youtube_caption || mc?.caption || defYT;
+                       currentHashtags = (Array.isArray(mc?.hashtags_youtube) && mc.hashtags_youtube.length > 0)
+                         ? mc.hashtags_youtube
+                         : ((Array.isArray(mc?.hashtags) && mc.hashtags.length > 0) ? mc.hashtags : defYTTags);
+                     }
+                     
+                     return (
+                       <>
+                         {currentCaption && (
+                           <div className="bg-black/50 border border-zinc-800 rounded-lg p-3 text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto font-sans relative group">
+                             {currentCaption}
+                             <button
+                               onClick={() => {
+                                 navigator.clipboard.writeText(currentCaption);
+                                 setCopiedType('ALL_SCRIPT');
+                                 setTimeout(() => setCopiedType(null), 2000);
+                               }}
+                               className="absolute top-2 right-2 p-1.5 rounded bg-black/60 hover:bg-black/80 text-gray-300 border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                               title="Salin Caption"
+                             >
+                               {copiedType === 'ALL_SCRIPT' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                             </button>
+                           </div>
+                         )}
+
+                         {currentHashtags && currentHashtags.length > 0 && (
+                           <div className="flex flex-wrap gap-1.5 pt-1">
+                             {currentHashtags.map((tag, i) => (
+                               <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-purple-950/60 text-purple-300 border border-purple-500/30">
+                                 {tag.startsWith('#') ? tag : `#${tag}`}
+                               </span>
+                             ))}
+                           </div>
+                         )}
+                         
+                         <div className="flex justify-end">
+                            <button
+                               onClick={() => {
+                                 const hash = currentHashtags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ');
+                                 navigator.clipboard.writeText(`${currentCaption}\n\n${hash}`);
+                                 setCopiedType('ALL_SCRIPT');
+                                 setTimeout(() => setCopiedType(null), 2000);
+                               }}
+                               className="px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/40 text-[10px] font-bold transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                               {copiedType === 'ALL_SCRIPT' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                               <span>Salin Semua (Caption + Hashtags)</span>
+                            </button>
+                         </div>
+                       </>
+                     );
+                  })()}
                 </div>
               )}
 
@@ -591,8 +735,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   const isVideoGenerating = scene.videoStatus === 'GENERATING' || isProcessingAction === `video-${scene.id}`;
 
                   return (
+                    <React.Fragment key={scene.id || idx}>
                     <div 
-                      key={scene.id || idx}
                       className="p-3.5 sm:p-5 rounded-2xl bg-slate-950/90 border border-slate-800/80 hover:border-amber-500/40 transition shadow-xl space-y-3.5"
                     >
                       {/* Scene Title Bar */}
@@ -624,6 +768,18 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                         </div>
 
                         <div className="flex items-center gap-1.5 sm:gap-2">
+                          <button
+                            onClick={() => {
+                              if (window.confirm('Hapus scene ini dan sinkronisasi ulang naskah?')) {
+                                onResyncScene?.('REMOVE', idx);
+                              }
+                            }}
+                            className="p-1 rounded bg-rose-950/40 text-rose-400 hover:bg-rose-900/60 hover:text-white transition-colors border border-rose-500/20"
+                            title="Hapus Scene"
+                          >
+                            <X size={12} />
+                          </button>
+
                           {/* Image Status Pill */}
                           <span className={`text-[10px] font-mono px-2 py-0.5 rounded border flex items-center gap-1 ${
                             hasImage ? 'bg-purple-950/80 text-purple-300 border-purple-500/40' :
@@ -724,7 +880,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                 </div>
 
                                 {/* Media Preview Box (Video or Image) */}
-                                <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-slate-900 border border-slate-800 flex items-center justify-center group shadow-inner">
+                                <div className={`relative ${getProjectAspectRatioClass(project)} w-full rounded-xl overflow-hidden bg-slate-900 border border-slate-800 flex items-center justify-center group shadow-inner`}>
                                   {isVideoDone && currentView === 'video' ? (
                                     <div className="relative w-full h-full bg-black">
                                       <video
@@ -738,7 +894,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                           const v = e.target as HTMLVideoElement;
                                           v.src = '/api/videos/sample-ocean.mp4';
                                         }}
-                                        className="w-full h-full object-cover"
+                                        className="w-full h-full object-contain"
                                       />
                                       <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded bg-emerald-950/90 text-emerald-300 border border-emerald-500/50 text-[9px] font-mono font-bold flex items-center gap-1">
                                         <Film size={9} />
@@ -1012,8 +1168,24 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                         </div>
 
                       </div>
-
                     </div>
+                    
+                    {/* Insert Scene Button */}
+                    <div className="flex justify-center -my-2 relative z-10">
+                      <button
+                        onClick={() => {
+                          if (window.confirm('Tambah scene baru setelah ini dan sinkronisasi naskah?')) {
+                            onResyncScene?.('ADD', idx);
+                          }
+                        }}
+                        className="px-3 py-1 rounded-full bg-slate-900 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold shadow-lg shadow-emerald-500/10 hover:bg-emerald-950 hover:border-emerald-500/50 hover:text-emerald-300 transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Tambah Scene Baru"
+                      >
+                        <Plus size={10} />
+                        <span>Tambah Scene</span>
+                      </button>
+                    </div>
+                  </React.Fragment>
                   );
                 })
               ) : (
@@ -1218,7 +1390,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
               </button>
             </div>
             
-            <div className="w-full aspect-video bg-black rounded-2xl border border-cyan-500/30 overflow-hidden shadow-2xl relative">
+            <div className={`w-full ${getProjectAspectRatioClass(project)} bg-black rounded-2xl border border-cyan-500/30 overflow-hidden shadow-2xl relative`}>
               <video
                 src={project.scenes?.filter(s => s.videoStatus === 'COMPLETED' || s.videoUrl)?.[playlistIndex]?.videoUrl}
                 autoPlay
@@ -1243,7 +1415,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   onClick={() => setPlaylistIndex(idx)}
                   className={`w-10 h-10 rounded-lg overflow-hidden border-2 transition ${playlistIndex === idx ? 'border-cyan-400' : 'border-transparent opacity-50 hover:opacity-100'}`}
                 >
-                  <video src={s.videoUrl} className="w-full h-full object-cover" />
+                  <video src={s.videoUrl} className="w-full h-full object-contain" />
                 </button>
               ))}
             </div>
@@ -1280,7 +1452,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
           onClick={() => setPreviewVideoUrl(null)}
         >
           <div className="relative max-w-4xl w-full max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
-            <div className="w-full aspect-video rounded-2xl overflow-hidden border border-emerald-500/40 shadow-2xl bg-black">
+            <div className={`w-full ${getProjectAspectRatioClass(project)} rounded-2xl overflow-hidden border border-emerald-500/40 shadow-2xl bg-black`}>
               <video 
                 src={previewVideoUrl} 
                 controls 

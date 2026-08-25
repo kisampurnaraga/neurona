@@ -1,0 +1,9 @@
+--- server/middleware/auth.ts
++++ server/middleware/auth.ts
+@@ -193,3 +193,3 @@
+-  const userInDb = activeUserStore.get(session.user_id) || session;
+-
+-  // Proteksi Aktivasi Akun: User yang belum diaktifkan oleh Founder akan dicegat
++  // Note: For fully async DB usage in middlewares, it's better to fetch DB here
++  // But for now we rely on the route checking or we'll fetch from Postgres below
++EOF

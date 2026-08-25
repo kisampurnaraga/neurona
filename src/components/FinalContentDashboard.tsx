@@ -87,6 +87,36 @@ export function FinalContentDashboard({ projectId: propProjectId, project: propP
     return '';
   })();
 
+  const extractCopy = (p: any) => {
+    const mc = p?.marketingCopy || p?.social_media_kit || {};
+    const vType = p?.videoType || 'AFFILIATE';
+    
+    let defaultCaption = '';
+    let defaultTags = ['#neuronaai', '#videomaker', '#viral', '#fyp'];
+    if (vType === 'ANIMATION') {
+      const title = p?.animationConfig?.title || p?.title || 'Petualangan Animasi';
+      defaultCaption = `Saksikan animasi spektakuler "${title}"! Dihadirkan dengan visual 3D memukau.`;
+      defaultTags = ['#animasi', '#animasiindonesia', '#3danimation', '#kartun', '#filmindonesia', '#fyp'];
+    } else if (vType === 'EDUCATIONAL') {
+      const topic = p?.educationalConfig?.subjectTitle || p?.title || 'Materi Edukasi';
+      defaultCaption = `Pelajari konsep "${topic}" secara cepat dan mudah dipahami bersama Neurona AI!`;
+      defaultTags = ['#edukasi', '#belajarseru', '#faktamenarik', '#sains', '#wawasan', '#fyp'];
+    } else {
+      const prodName = p?.affiliateConfig?.productName || p?.brief?.product || p?.title || 'Produk Unggulan';
+      defaultCaption = `Rekomendasi terbaik: ${prodName}! Kualitas premium & harga promo spesial.`;
+      defaultTags = ['#racuntiktok', '#tiktokshop', '#affiliate', '#viral', '#fyp', '#rekomendasiproduk'];
+    }
+
+    const caption = mc.caption || mc.tiktok_caption || mc.instagram_caption || defaultCaption;
+    const rawTags = (Array.isArray(mc.hashtags) && mc.hashtags.length > 0) 
+      ? mc.hashtags 
+      : (Array.isArray(mc.hashtags_tiktok) && mc.hashtags_tiktok.length > 0 ? mc.hashtags_tiktok : defaultTags);
+    const hashtags = rawTags.map((t: string) => t.startsWith('#') ? t : `#${t}`);
+    const voiceProfile = mc.voiceProfile || p?.ttsVoiceConfig?.voiceName || 'Citra Kirana (Neural AI)';
+
+    return { caption, hashtags, voiceProfile };
+  };
+
   // -------------------------------------------------------------------------
   // 2. REAL DATA FETCHING (useEffect to GET /api/v1/client/projects/:projectId)
   // -------------------------------------------------------------------------
@@ -95,15 +125,16 @@ export function FinalContentDashboard({ projectId: propProjectId, project: propP
     if (propProject && (propProject.finalVideoUrl || propProject.storyboard?.scenes?.some(s => s.videoUrl))) {
       const scenes = propProject.storyboard?.scenes || [];
       const aggregatedScript = scenes.map(s => s.voiceOver).filter(Boolean).join('\n');
+      const copy = extractCopy(propProject);
       
       setProjectData({
         id: propProject.id,
         title: propProject.title || propProject.affiliateConfig?.productName || 'Neuronna AI Video Project',
         videoUrl: propProject.finalVideoUrl || scenes.find(s => s.videoUrl)?.videoUrl || '',
         audioUrl: propProject.audioResponseUrl || '',
-        caption: propProject.marketingCopy?.caption || '',
-        hashtags: propProject.marketingCopy?.hashtags || [],
-        voiceProfile: propProject.marketingCopy?.voiceProfile || propProject.ttsVoiceConfig?.voiceName || 'Citra Kirana (Neural AI)',
+        caption: copy.caption,
+        hashtags: copy.hashtags,
+        voiceProfile: copy.voiceProfile,
         duration: '00:15',
         resolution: '1080 x 1920 (9:16 Portrait)',
         fileSize: '14.8 MB',
@@ -138,15 +169,16 @@ export function FinalContentDashboard({ projectId: propProjectId, project: propP
         const rawProj: ProductionProject = await fallbackRes.json();
         const scenes = rawProj.storyboard?.scenes || [];
         const aggregatedScript = scenes.map(s => s.voiceOver).filter(Boolean).join('\n');
+        const copy = extractCopy(rawProj);
 
         setProjectData({
           id: rawProj.id,
           title: rawProj.title || rawProj.affiliateConfig?.productName || 'Neuronna AI Video Project',
           videoUrl: rawProj.finalVideoUrl || scenes.find(s => s.videoUrl)?.videoUrl || '',
           audioUrl: rawProj.audioResponseUrl || '',
-          caption: rawProj.marketingCopy?.caption || '',
-          hashtags: rawProj.marketingCopy?.hashtags || [],
-          voiceProfile: rawProj.marketingCopy?.voiceProfile || rawProj.ttsVoiceConfig?.voiceName || 'Citra Kirana (Neural AI)',
+          caption: copy.caption,
+          hashtags: copy.hashtags,
+          voiceProfile: copy.voiceProfile,
           duration: '00:15',
           resolution: '1080 x 1920 (9:16 Portrait)',
           fileSize: '14.8 MB',
@@ -162,15 +194,16 @@ export function FinalContentDashboard({ projectId: propProjectId, project: propP
       const rawProj = json.project || data;
       const scenes = rawProj?.storyboard?.scenes || data.scenes || [];
       const aggregatedScript = scenes.map((s: any) => s.voiceOver).filter(Boolean).join('\n') || data.scriptExcerpt || '';
+      const copy = extractCopy(rawProj || data);
 
       setProjectData({
         id: data.id || targetProjectId,
         title: data.title || rawProj?.affiliateConfig?.productName || 'Neuronna AI Video Project',
         videoUrl: data.videoUrl || rawProj?.finalVideoUrl || scenes.find((s: any) => s.videoUrl)?.videoUrl || '',
         audioUrl: data.audioUrl || rawProj?.audioResponseUrl || '',
-        caption: data.caption || rawProj?.marketingCopy?.caption || '',
-        hashtags: data.hashtags || rawProj?.marketingCopy?.hashtags || [],
-        voiceProfile: data.voiceProfile || rawProj?.ttsVoiceConfig?.voiceName || 'Citra Kirana (Neural AI)',
+        caption: data.caption || copy.caption,
+        hashtags: (Array.isArray(data.hashtags) && data.hashtags.length > 0) ? data.hashtags : copy.hashtags,
+        voiceProfile: data.voiceProfile || copy.voiceProfile,
         duration: data.duration || '00:15',
         resolution: data.resolution || '1080 x 1920 (9:16 Portrait)',
         fileSize: data.fileSize || '14.8 MB',

@@ -92,24 +92,21 @@ export class QAAuditAgent {
 Tugasmu adalah mengaudit secara objektif dan ketat output sutradara AI sebelum dieksekusi ke pipeline video Google Veo / BytePlus dan Google Cloud TTS.
 
 KAIDAH AUDIT:
-1. Product Lock Consistency (Skor 0-100):
-   - Apakah entitas produk/karakter dideskripsikan secara spesifik tanpa ambigu?
-   - Tidak ada elemen halusinasi acak atau detail yang bertabrakan.
-2. Visual Prompt Adherence (Skor 0-100):
-   - Prompt video Veo harus memuat instruksi kamera sinematik (seperti: slow dolly, dynamic orbital pan, macro close-up).
-   - Pencahayaan dan estetika fotorealistik (studio lighting, volumetric glow, 4k 60fps photorealistic).
+1. Product & Character Lock Consistency (Skor 0-100):
+   - Apakah entitas produk/karakter dideskripsikan secara konsisten dan spesifik tanpa ambigu di seluruh adegan?
+   - Ciri fisik (rambut, wajah, busana, aksesori, atau logo/warna produk) terkunci dengan presisi.
+2. Visual Prompt Adherence & Lighting (Skor 0-100):
+   - Jika ANIMATION: Wajib memuat instruksi kamera dinamis (slow dolly, orbital pan, Dutch angle, macro eye close-up) dan kata kunci pencahayaan sinematik ("volumetric lighting", "hard rim lighting", "dramatic single-source key light", "bokeh background", "cinematic depth of field"). Dilarang memuat kata UGC/smartphone.
+   - Jika AFFILIATE: Wajib memuat estetika smartphone kasual ("Shot on iPhone 15 front camera, natural warm indoor lighting, authentic UGC creator perspective") dan interaksi fisik aktif di Scene 1-2.
    - DILARANG mencantumkan teks "subtitle", "text on screen", atau instruksi tipografi di dalam video prompt (karena menyebabkan glitch rendering video).
 3. Narrative Flow & TTS Duration (Skor 0-100):
    - Rasio kata naskah harus realistis sesuai durasi ${input.durationSeconds || 5} detik (sekitar 2.5 kata per detik untuk bahasa Indonesia).
-   - Memiliki hook menarik atau punchline yang jelas.
+   - Memiliki hook menarik atau punchline/CTA yang jelas.
 
-4. Affiliate Product & Character Interaction (Skor 0-100):
-   - Jika Video Type adalah AFFILIATE, prompt HARUS mendeskripsikan interaksi fisik antara karakter dan produk (misal: "Karakter memegang produk", "Karakter mengoleskan skincare ke pipi"). Produk TIDAK BOLEH hanya berada di latar belakang.
-
-Jika Rata-rata Skor < 80, perbaiki secara otomatis:
-- "correctedVideoPrompt": Prompt video sinematik Veo yang disempurnakan (dalam bahasa Inggris sinematik untuk hasil render Veo terbaik). WAJIB sertakan interaksi fisik produk & karakter jika AFFILIATE.
+Jika Rata-rata Skor < 85, perbaiki secara otomatis:
+- "correctedVideoPrompt": Prompt video sinematik Veo yang disempurnakan (dalam bahasa Inggris sinematik untuk hasil render Veo terbaik).
 - "correctedScript": Naskah narasi voiceover yang disesuaikan pas dengan durasi waktu.
-- "correctedVisualPrompt": Deskripsi visual keyframe gambar. WAJIB sertakan interaksi fisik produk & karakter jika AFFILIATE.
+- "correctedVisualPrompt": Deskripsi visual keyframe gambar dengan pencahayaan dan Character/Product Lock lengkap.
 
 Format Output WAJIB JSON murni tanpa markdown pembungkus.`;
 

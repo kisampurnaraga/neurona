@@ -202,7 +202,7 @@ export const AVAILABLE_VOICES: VoiceOption[] = [
   }
 ];
 
-export type VoiceStateListener = (state: { isSpeaking: boolean; isPlayingAI: boolean; error?: string }) => void;
+export type VoiceStateListener = (state: { isSpeaking: boolean; isPlayingAI: boolean; error?: string; speechCompleted?: boolean }) => void;
 
 class NeuronaVoiceEngine {
   private isMuted: boolean = false;
@@ -213,9 +213,23 @@ class NeuronaVoiceEngine {
   private currentVoice: VoiceOption = AVAILABLE_VOICES[0]; // default ChatGPT Nova
   private stateListeners: VoiceStateListener[] = [];
   private currentAudio: HTMLAudioElement | null = null;
+  private speechEndListeners: Array<() => void> = [];
 
   constructor() {
     // Robotic browser window.speechSynthesis is intentionally OFF
+  }
+
+  onSpeechEnd(cb: () => void) {
+    this.speechEndListeners.push(cb);
+    return () => {
+      this.speechEndListeners = this.speechEndListeners.filter(l => l !== cb);
+    };
+  }
+
+  private triggerSpeechEnd() {
+    this.speechEndListeners.forEach(cb => {
+      try { cb(); } catch (e) { console.error(e); }
+    });
   }
 
   setVoice(voiceId: string) {
@@ -329,9 +343,17 @@ class NeuronaVoiceEngine {
       this.isPlayingAI = true;
       this.notifyListeners();
 
+      
+      const customKey = localStorage.getItem('neurona_gemini_api_key');
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (customKey) {
+        headers['x-custom-api-key'] = customKey;
+      }
+      
       const res = await fetch('/api/tts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+
         body: JSON.stringify({ 
           text: cleanText, 
           provider: effectiveProvider,
@@ -364,7 +386,8 @@ class NeuronaVoiceEngine {
           this.currentAudio.onended = () => {
             this.isSpeaking = false;
             this.isPlayingAI = false;
-            this.notifyListeners();
+            this.notifyListeners(undefined, true);
+            this.triggerSpeechEnd();
             URL.revokeObjectURL(url);
             resolve({ success: true });
           };
@@ -373,6 +396,7 @@ class NeuronaVoiceEngine {
             this.isSpeaking = false;
             this.isPlayingAI = false;
             this.notifyListeners();
+            this.triggerSpeechEnd();
             URL.revokeObjectURL(url);
             resolve({ success: false, error: 'Playback error' });
           };
@@ -382,6 +406,7 @@ class NeuronaVoiceEngine {
             this.isSpeaking = false;
             this.isPlayingAI = false;
             this.notifyListeners();
+            this.triggerSpeechEnd();
             resolve({ success: false, error: 'Autoplay blocked' });
           });
         });
@@ -447,11 +472,12 @@ class NeuronaVoiceEngine {
     };
   }
 
-  private notifyListeners(error?: string) {
+  private notifyListeners(error?: string, speechCompleted: boolean = false) {
     this.stateListeners.forEach(l => l({
       isSpeaking: this.isSpeaking,
       isPlayingAI: this.isPlayingAI,
-      error
+      error,
+      speechCompleted
     }));
   }
 }

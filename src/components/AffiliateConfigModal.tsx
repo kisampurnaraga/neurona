@@ -13,7 +13,7 @@ import {
   Flame, 
   TrendingUp, 
   Zap 
-} from 'lucide-react';
+, Film } from 'lucide-react';
 import type { ProductAsset, AffiliateConfig } from '../shared/types';
 import { neuronaVoice } from '../utils/speechSynthesis';
 
@@ -105,11 +105,13 @@ export default function AffiliateConfigModal({
 }: AffiliateConfigModalProps) {
   const [productName, setProductName] = useState('Aeroflex HyperRun V2 Sneakers');
   const [category, setCategory] = useState('Sepatu & Fashion');
+  const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('9:16');
   const [platform, setPlatform] = useState<'TikTok Shop' | 'Shopee Video' | 'Instagram Reels' | 'YouTube Shorts'>('TikTok Shop');
   const [keyBenefits, setKeyBenefits] = useState('Super ringan 180gr, bantalan cloud cushion empuk gak bikin lecet, sol karet anti-slip');
   const [pricePromo, setPricePromo] = useState('Lagi Diskon Kilat 50% + Promo Gratis Ongkir');
   const [callToAction, setCallToAction] = useState('Klik logo keranjang kuning di kiri bawah sebelum kehabisan!');
   const [hookStyle, setHookStyle] = useState<'PAIN_POINT' | 'CURIOSITY' | 'UNBOXING' | 'BEFORE_AFTER' | 'AESTHETIC_REVEAL'>('PAIN_POINT');
+  const [sceneCount, setSceneCount] = useState<number>(4);
   const [characterImage, setCharacterImage] = useState(SAMPLE_PRESETS[0].creatorImage || '');
   const [productInfo, setProductInfo] = useState('');
   
@@ -184,6 +186,7 @@ export default function AffiliateConfigModal({
         productName: preset.productName,
         category: preset.category,
         platform: preset.platform,
+        aspectRatio: '9:16',
         keyBenefits: preset.keyBenefits,
         pricePromo: preset.pricePromo,
         callToAction: preset.callToAction,
@@ -191,7 +194,8 @@ export default function AffiliateConfigModal({
         characterImage: activeChar,
         productInfo: productInfo || preset.keyBenefits,
         productImages: presetAssets.map(a => a.url),
-        referenceVideoUrl: referenceVideoUrl || undefined
+        referenceVideoUrl: referenceVideoUrl || undefined,
+        sceneCount: sceneCount
       };
       const promptText = `Buatkan video affiliate ${preset.platform} untuk produk ${preset.productName}. Keunggulan: ${preset.keyBenefits}. Promo: ${preset.pricePromo}. Call To Action: ${preset.callToAction}. Hook style: ${preset.hookStyle}.`;
       onSubmit(config, presetAssets, promptText);
@@ -204,6 +208,7 @@ export default function AffiliateConfigModal({
       productName,
       category,
       platform,
+      aspectRatio,
       keyBenefits,
       pricePromo,
       callToAction,
@@ -211,7 +216,8 @@ export default function AffiliateConfigModal({
       characterImage: characterImage || undefined,
       productInfo: productInfo || keyBenefits,
       productImages: assets.filter(a => a.type === 'IMAGE').map(a => a.url),
-      referenceVideoUrl: referenceVideoUrl || assets.find(a => a.type === 'VIDEO')?.url
+      referenceVideoUrl: referenceVideoUrl || assets.find(a => a.type === 'VIDEO')?.url,
+      sceneCount: sceneCount
     };
 
     const promptText = `Buatkan video affiliate ${platform} untuk produk ${productName}. Keunggulan: ${keyBenefits}. Promo: ${pricePromo}. Call To Action: ${callToAction}. Hook style: ${hookStyle}.`;
@@ -408,6 +414,26 @@ export default function AffiliateConfigModal({
               />
             </div>
 
+                        <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-gray-400">Rasio Video (Resolusi)</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(['9:16', '1:1', '16:9'] as const).map((ratio) => (
+                  <button
+                    key={ratio}
+                    type="button"
+                    onClick={() => setAspectRatio(ratio)}
+                    className={`py-2 px-2.5 rounded-lg text-[10px] font-semibold border transition-all text-center ${
+                      aspectRatio === ratio
+                        ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-sm'
+                        : 'bg-[#121216] border-[#27272a] text-gray-400 hover:text-gray-200'
+                    }`}
+                  >
+                    {ratio === '9:16' ? 'Vertikal (9:16)' : ratio === '1:1' ? 'Persegi (1:1)' : 'Lanskap (16:9)'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="space-y-1">
               <label className="text-[10px] uppercase font-bold text-gray-400">Platform Target</label>
               <div className="grid grid-cols-2 gap-1.5">
@@ -457,6 +483,38 @@ export default function AffiliateConfigModal({
                   <div className="text-[9px] text-gray-500 leading-tight mt-0.5">{style.desc}</div>
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* JUMLAH ADEGAN (SCENE) */}
+          <div className="space-y-1.5 pt-2">
+            <label className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1.5">
+              <Film size={13} className="text-amber-400" />
+              <span>JUMLAH ADEGAN (SCENE)</span>
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                { count: 3, label: '3 Scene (15s - Cepat)' },
+                { count: 4, label: '4 Scene (25s - Standar) ⭐' },
+                { count: 6, label: '6 Scene (45s - Lengkap)' },
+                { count: 8, label: '8 Scene (60s - Max)' }
+              ].map((opt) => (
+                <button
+                  key={opt.count}
+                  type="button"
+                  onClick={() => setSceneCount(opt.count)}
+                  className={`p-2 rounded-lg border text-center transition-all ${
+                    sceneCount === opt.count 
+                      ? 'bg-indigo-600/30 border-indigo-500 text-white font-bold' 
+                      : 'bg-[#121216] border-[#27272a] text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  <span className="text-xs">{opt.label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="text-[10px] text-indigo-400/80 mt-1">
+              💡 Estimasi Biaya Render Video: {sceneCount} Scene x 8 Kredit = <strong>{sceneCount * 8} Kredit</strong>
             </div>
           </div>
 

@@ -514,6 +514,95 @@ Craft a high-converting affiliate video brief focusing on scroll-stopping hook, 
   /**
    * Generates Storyboard Scenes using Gemini or OpenAI ChatGPT 4.0
    */
+  static async resyncStoryboard(params: {
+    project: any;
+    action: 'ADD' | 'REMOVE';
+    targetIndex: number;
+    onLog?: (source: string, msg: string, level?: 'INFO' | 'WARN' | 'SUCCESS' | 'ERROR') => void;
+  }): Promise<any> {
+    const { project, action, targetIndex, onLog } = params;
+    const genAI = getGenAI();
+    if (!genAI) throw new Error("Gemini API Key missing");
+
+    const existingScenes = project.storyboard?.scenes || [];
+    const characterProfile = project.characterProfile;
+    
+    // Auto-Inject DNA Memory Lock
+    const characterLock = characterProfile?.consistencyAnchorPrompt || '';
+    const videoType = project.videoType;
+    let config = project.affiliateConfig || project.animationConfig || project.educationalConfig;
+
+    const resyncPrompt = `Kamu adalah 'Sinta', AI Scriptwriter & Visual Director Neuronna.
+User telah meminta untuk ${action === 'ADD' ? 'MENAMBAHKAN' : 'MENGHAPUS'} adegan pada storyboard yang sudah ada (di index ${targetIndex + 1}).
+Tugasmu: Rancang ulang naskah adegan agar menyambung dengan adegan sebelum dan sesudahnya dengan mulus (seamless transition).
+
+ATURAN WAJIB (QA AUDIT & DNA LOCK):
+1. CHARACTER & PRODUCT LOCK WAJIB DIPERTAHANKAN: "${characterLock}"
+2. Jika ADD: Sisipkan 1 adegan baru di posisi ${targetIndex + 1}. Sesuaikan narasi agar menjembatani adegan ${targetIndex} dan ${targetIndex + 2}.
+3. Jika REMOVE: Hapus adegan di posisi ${targetIndex + 1}. Sesuaikan narasi adegan ${targetIndex} dan ${targetIndex + 2} agar ceritanya tidak terputus.
+4. Output HARUS array of objects \`storyboard_scenes\` yang berisi SELURUH adegan baru hasil resync.
+5. Pertahankan \`promptTextToImage\` dan \`prompt_video_runway\` dengan DNA Lock di setiap adegan.
+
+Storyboard Saat Ini:
+${JSON.stringify(existingScenes, null, 2)}
+
+Kembalikan format JSON:
+{
+  "storyboard_scenes": [
+    { "duration": "...", "visualDirection": "...", "textOverlay": "...", "voiceOver": "...", "promptTextToImage": "...", "prompt_video_runway": "..." }
+  ]
+}`;
+
+    onLog?.('SINTA', `[Smart Resync] Menganalisis ulang alur cerita (${action} di urutan ${targetIndex + 1})...`, 'INFO');
+    
+    try {
+      const response = await genAI.models.generateContent({
+        model: getActiveGeminiModel(),
+        contents: resyncPrompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              storyboard_scenes: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    duration: { type: Type.STRING },
+                    visualDirection: { type: Type.STRING },
+                    textOverlay: { type: Type.STRING },
+                    voiceOver: { type: Type.STRING },
+                    promptTextToImage: { type: Type.STRING },
+                    prompt_video_runway: { type: Type.STRING },
+                    styleKeywords: { type: Type.ARRAY, items: { type: Type.STRING } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+      const parsed = JSON.parse(response.text || "{}");
+      let newScenes = parsed.storyboard_scenes || [];
+      if (newScenes.length > 0) {
+        newScenes = newScenes.map((s: any, idx: number) => ({
+          ...s,
+          scene_number: idx + 1,
+          id: existingScenes[idx]?.id || Math.random().toString(36).substring(2, 9),
+          status: 'PENDING',
+          promptImageToVideo: s.prompt_video_runway || s.promptImageToVideo
+        }));
+        onLog?.('QA AUDIT', `✅ Memori Karakter/Produk terkunci. ${newScenes.length} adegan berhasil di-resync.`, 'SUCCESS');
+        return newScenes;
+      }
+      throw new Error("Gagal parsing storyboard resync");
+    } catch (e: any) {
+      onLog?.('SINTA', `Gagal resync naskah: ${e.message}`, 'ERROR');
+      throw e;
+    }
+  }
+
   static async generateStoryboard(params: {
     brief: string;
     videoType: string;
@@ -538,16 +627,36 @@ Craft a high-converting affiliate video brief focusing on scroll-stopping hook, 
     let contextBlock = '';
     if (videoType === 'ANIMATION') {
       const anim = config || {};
+      const charVisual = anim.characterVisualAnalysis || '';
       contextBlock = `
-[KONFIGURASI STUDIO ANIMASI & VISUAL UNIVERSE]
+[ROLE: MASTER ANIMATION STUDIO DIRECTOR & CINEMATIC STORYBOARD ARCHITECT]
+- Video Type: ANIMATION (High-End 3D/2D Animation like MAPPA, Pixar, Ghibli, Unreal Engine 5).
 - Judul / Ide Animasi: "${anim.title || brief}"
 - Karakter Utama & Ciri Fisik: "${anim.characterDescription || 'Karakter utama ekspresif dan heroik'}"
+${charVisual ? `- Ciri Fisik Ekstrak dari Foto Karakter (Vision Lock): "${charVisual}"` : ''}
 - Latar Tempat / World-Building: "${anim.worldSetting || 'Dunia sinematik kaya warna dan pencahayaan dinamis'}"
 - Gaya Visual & Render Engine: "${anim.artStyle || '3D_PIXAR'}"
 - Genre Cerita: "${anim.targetGenre || 'ADVENTURE'}"
 - Bahasa Naskah & Voiceover: "${anim.language || 'id'}"
 - Tone Suara Karakter/Narator: "${anim.voiceTone || 'CHEERFUL'}"
-- Aspect Ratio: "${anim.aspectRatio || '16:9'}"
+- Target Resolution / Aspect Ratio: "${anim.aspectRatio || '16:9'}"
+
+[ANIMATION STUDIO CINEMATIC RULES - MANDATORY]:
+1. RESOLUTION & COMPOSITION FOCUS:
+   - For 16:9: Emphasize wide cinematic landscapes, horizontal camera panning, wide-angle establishing shots, and epic scale.
+   - For 9:16: Emphasize vertical depth, low-to-high tilting, and dramatic close-ups.
+   - Absolutely NO smartphone/UGC/selfie keywords. Maintain epic cinematic narrative scale.
+2. CINEMATIC LIGHTING & VISUAL AESTHETIC:
+   - Every \`promptTextToImage\` and \`prompt_video_runway\` MUST strictly include advanced lighting keywords: "volumetric lighting", "hard rim lighting", "dramatic single-source key light", "bokeh background", and "cinematic depth of field".
+3. STRICT CHARACTER LOCK:
+   - Extract exact physical traits (hair color/style, clothing/outfit/jersey, facial features, accessories) and write them consistently into EVERY SINGLE prompt across all scenes.
+4. DYNAMIC SCENE BREAKDOWN (4 SCENES):
+   - Scene 1 (Establishing/Hero Shot): Epic wide shot or dramatic low-angle hero framing.
+   - Scene 2 (Action/Conflict): Dynamic movement, Dutch angle, or over-the-shoulder perspective.
+   - Scene 3 (Emotional Core): Extreme close-up on face highlighting eye reflections and emotional intensity.
+   - Scene 4 (Climax/Resolution): Sweeping camera motion, orbital arc, or dramatic peak action.
+5. VEO CAMERA MOTION:
+   - Include specific dynamic camera movement in every scene (e.g. "slow cinematic low-angle pan", "dynamic orbital arc", "fast push-in tracking shot").
 `;
     } else if (videoType === 'EDUCATIONAL') {
       const edu = config || {};
@@ -563,7 +672,7 @@ Craft a high-converting affiliate video brief focusing on scroll-stopping hook, 
 - Gaya Narator: "${edu.narratorTone || 'FRIENDLY_EXPLAINER'}"
 - Bahasa Narasi: "${edu.language || 'id'}"
 - Aspect Ratio: "${edu.aspectRatio || '16:9'}"
-- Jumlah Bab / Adegan: ${edu.chapterCount || 3}
+- Jumlah Bab / Adegan: ${edu.chapterCount || 4}
 `;
     } else {
       const aff = config || {};
@@ -572,34 +681,29 @@ Craft a high-converting affiliate video brief focusing on scroll-stopping hook, 
       const characterVisualAnalysis = aff.characterVisualAnalysis || '';
       const keyBenefits = aff.keyBenefits || '';
       const pricePromo = aff.pricePromo || '';
-      if (productName || productVisualAnalysis || characterVisualAnalysis || keyBenefits) {
-        contextBlock = `
-[DATA ASET PRODUK & KREATOR AFFILIATE]
+      contextBlock = `
+[ROLE: VIRAL AFFILIATE UGC DIRECTOR (TikTok Shop, Shopee Video, Instagram Reels)]
+- Video Type: AFFILIATE UGC (9:16 Vertical Portrait).
 - Nama Produk: ${productName || 'Produk Unggulan'}
 - Detail Visual & Warna Fisik Produk (Vision Analysis): ${productVisualAnalysis || 'Bahan berkualitas tinggi, warna dan siluet sesuai aset referensi'}
-- Detail Fisik & Wajah Kreator (Vision Analysis): ${characterVisualAnalysis || 'Tidak ada referensi karakter khusus'}
+- Detail Fisik & Wajah Kreator (Vision Analysis): ${characterVisualAnalysis || 'Kreator kasual ramah'}
 - Manfaat & Fitur Utama: ${keyBenefits || 'Desain premium, fungsional dan estetis'}
-- Promo/Penawaran: ${pricePromo || 'Promo Spesial'}
+- Promo/Penawaran: ${pricePromo || 'Promo Diskon Terbatas & Gratis Ongkir'}
+- Hook Formula: ${aff.hookStyle || 'PAIN_POINT / PROBLEM_SOLVER'}
 - Platform: ${aff.platform || 'TikTok Shop'}
 
-[UNIVERSAL MULTI-NICHE ENVIRONMENT & SCENE MATRIX]
-WAJIB merancang Environment Background & Character Action sesuai Niche Produk:
-1. TECH & GADGETS: Futuristic desk, urban cafe, clean high-contrast neon. Action: Unboxing, testing audio, confident presentation.
-2. FINANCE, CRYPTO & SAAS: Executive workspace, digital charts background. Action: Explaining growth metrics, swiping cards.
-3. HEALTH & SUPPLEMENTS: Private luxury gym, minimalist healthy kitchen, morning sunlight. Action: Preparing drinks, vibrant healthy lifestyle.
-4. BEAUTY & SKINCARE: Aesthetic vanity desk with warm ring-light, soft green plants. Action: Gentle application on skin, close-up product showcase.
-5. FASHION & LUXURY: Major global fashion capital streets, high-end minimalist photo studio. Action: Walking with confidence, adjusting outfit.
-6. TRAVEL & LIFESTYLE: Modern airport lounge, scenic mountain viewpoint. Action: Packing bags, checking digital maps.
-7. PET CARE: Warm cozy suburban living room, bright green sunny backyard. Action: Playing interactively with pets.
-8. HOME & DIY: Modern architectural home interior, sleek designer kitchen. Action: Demonstrating tool efficiency.
-9. GAMING & ESPORTS: RGB-lit immersive gaming room. Action: Intense gaming focus shifting to excited review.
-Tentukan Niche yang paling sesuai dengan Produk dan gunakan panduan di atas untuk merancang \`promptTextToImage\` dan \`prompt_video_runway\`.
+[AFFILIATE STUDIO UGC RULES - MANDATORY]:
+1. AESTHETIC: Raw smartphone handheld aesthetic, "Shot on iPhone 15 front camera, natural warm indoor lighting, authentic UGC creator perspective".
+2. SCROLL-STOPPING HOOK: Scene 1 MUST deliver a powerful psychological hook (Problem Solver, Pain Point, FOMO).
+3. PHYSICAL PRODUCT LOCK: Scene 1 and Scene 2 MUST show the creator physically holding, unboxing, or actively applying/using the product.
+4. CALL-TO-ACTION: Scene 4 MUST end with strong urgency to click yellow basket / bio link.
 `;
-      }
     }
 
+    const targetSceneCount = config?.sceneCount || 4;
+
     const storyboardPrompt = `Kamu adalah 'Sinta' (Elite AI Visual Director & Storyboard Architect) & 'Openclauw' (AI Scriptwriter) untuk platform video AI Neuronna (Google Flow Protocol).
-Tugasmu adalah membuat struktur JSON Storyboard 4 adegan terstruktur, tersinkronisasi, dan 100% RELEVAN DENGAN TEMA, JUDUL, DAN KARAKTER YANG DITENTUKAN.
+Tugasmu adalah membuat struktur JSON Storyboard tepat ${targetSceneCount} adegan terstruktur, tersinkronisasi, dan 100% RELEVAN DENGAN TEMA, JUDUL, DAN KARAKTER YANG DITENTUKAN.
 
 Video Brief: "${brief}"
 Video Type: ${videoType}
@@ -610,19 +714,20 @@ ATURAN WAJIB & LOGIKA KONSISTENSI VISUAL (MANDATORY RULES):
 
 1. RELEVANSI TOTAL DENGAN TEMA & JUDUL:
 - Jika tema adalah ANIMASI Sepak Bola / Captain Tsubasa / Olahraga: Adegan WAJIB berada di stadion sepak bola, lapangan rumput hijau, sorak suporter, aksi dribbling bola, tendangan melengkung, seragam jersey bernomor, BUKAN tentang petualangan tebing magis fantasi generik.
-- Alur 4 adegan harus membentuk narasi utuh: 
+- Alur ${targetSceneCount} adegan harus membentuk narasi utuh: 
   * Adegan 1: Pengenalan karakter & situasi awal di setting dunia (${videoType === 'ANIMATION' ? config?.worldSetting || 'Setting utama' : 'Hook visual'})
-  * Adegan 2: Aksi/konflik/pengembangan fokus sesuai judul
-  * Adegan 3: Momen klimaks aksi berkecepatan tinggi / demonstrasi inti
-  * Adegan 4: Penutup epik, kemenangan / kesimpulan & CTA judul
+  * Adegan Tengah: Aksi/konflik/pengembangan fokus sesuai judul
+  * Adegan Akhir: Penutup epik, kemenangan / kesimpulan & CTA judul
+- WAJIB buat tepat ${targetSceneCount} adegan di dalam array \`storyboard_scenes\`.
 
 2. KARAKTER KONSISTEN (CHARACTER PROFILE):
 - Buat objek \`characterProfile\` yang secara akurat mengekstrak nama, busana/jersey (outfit), gaya rambut (hairStyle), dan fitur wajah (facialFeatures) sesuai deskripsi karakter "${videoType === 'ANIMATION' ? config?.characterDescription || 'Karakter utama' : 'Kreator model'}".
 - Masukkan \`consistencyAnchorPrompt\` yang mengunci karakter tersebut di semua adegan.
 
-3. DUAL VISUAL LOCK DI PROMPT PER ADEGAN:
-- Di dalam field \`promptTextToImage\` dan \`prompt_video_runway\` (I2V), kunci karakter dan setting:
-  "Character identity locked: [Detail Fisik, Wajah, Rambut & Pakaian Karakter]. Setting locked: [Latar Tempat / World Setting]. Visual Scene: [Aksi Adegan, Sudut Kamera, Pencahayaan & Gaya ${videoType === 'ANIMATION' ? config?.artStyle || '3D Pixar' : 'Sinematik'}]."
+3. DUAL VISUAL LOCK & ACTION-DRIVEN ANCHORS DI PROMPT PER ADEGAN:
+- Di dalam field \`promptTextToImage\` dan \`prompt_video_runway\` (I2V), gunakan struktur Action-Driven Anchor di 20 token pertama:
+  "Photorealistic 35mm commercial photo of hands holding [Detail Produk] at chest level, presented by [Detail Model], medium close-up product shot, 50mm lens f/2.8, authentic skin texture, clean dark studio backdrop, cool blue accent edge lighting, sharp focus, 8k resolution"
+- JANGAN gunakan kata-kata negatif seperti "preserve exact", "do not alter", "no distortion" di dalam positive prompt string.
 
 4. VOICE OVER & TEKS SUBTITLE:
 - Sesuaikan bahasa narasi dengan bahasa pilihan (${videoType === 'ANIMATION' ? config?.language || 'id' : 'id'}).
@@ -651,7 +756,13 @@ Kembalikan JSON dengan struktur baku:
     "consistencyAnchorPrompt": "[Consistent Character: ...]"
   },
   "social_media_kit": {
-    "caption": "Kalimat caption lengkap dengan emojinya...",
+    "tiktok_caption": "TikTok Hook: Kalimat super FOMO & engaging untuk TikTok...",
+    "instagram_caption": "IG Reels Hook: Caption estetik & storytelling untuk Instagram...",
+    "youtube_caption": "YT Shorts Hook: Title Clickbait & description ringkas...",
+    "hashtags_tiktok": ["#fyp", "#tiktokviral", "#trend"],
+    "hashtags_instagram": ["#reels", "#aesthetic", "#explorepage"],
+    "hashtags_youtube": ["#shorts", "#youtubeshorts", "#viral"],
+    "caption": "Kalimat caption fallback umum...",
     "hashtags": ["#niche1", "#niche2", "#niche3", "#fyp", "#viral"]
   },
   "storyboard_scenes": [
@@ -681,7 +792,7 @@ FORMAT OUTPUT MUTLAK: JSON`;
               messages: [
                 { 
                   role: "system", 
-                  content: `You are SINTA, NEURONA Master Storyboard & Product/Character Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' (caption, hashtags, voiceProfile) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[] }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with 'Product identity locked: [Color/Pattern] [Product Type] ([Material/Details]). Preserve exact product design, shape, and color.' AND MUST strictly inject Character physical traits if provided. Never generate plain action text without product/character anchor and strict style keywords.` 
+                  content: `You are SINTA, NEURONA Master Storyboard & Product/Character Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' (caption, hashtags, voiceProfile) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[] }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with an Action-Driven Anchor linking subject and product in the first 20 tokens: 'Photorealistic 35mm commercial photo of hands holding [Product name and physical details] at chest level, presented by [Model description], medium close-up product shot, 50mm lens f/2.8, authentic skin texture with pores, clean dark backdrop, cool blue accent edge lighting, sharp focus, 8k resolution'. DO NOT include negative phrases like 'preserve exact', 'do not alter', or 'no distortion' in the positive prompt.` 
                 },
                 { role: "user", content: storyboardPrompt }
               ],
@@ -712,7 +823,13 @@ FORMAT OUTPUT MUTLAK: JSON`;
             }));
             const marketingCopy = {
               caption: parsed.social_media_kit?.caption || parsed.marketingCopy?.caption || '',
-              hashtags: parsed.social_media_kit?.hashtags || parsed.marketingCopy?.hashtags || []
+              hashtags: parsed.social_media_kit?.hashtags || parsed.marketingCopy?.hashtags || [],
+              tiktok_caption: parsed.social_media_kit?.tiktok_caption || parsed.marketingCopy?.tiktok_caption,
+              instagram_caption: parsed.social_media_kit?.instagram_caption || parsed.marketingCopy?.instagram_caption,
+              youtube_caption: parsed.social_media_kit?.youtube_caption || parsed.marketingCopy?.youtube_caption,
+              hashtags_tiktok: parsed.social_media_kit?.hashtags_tiktok || parsed.marketingCopy?.hashtags_tiktok || [],
+              hashtags_instagram: parsed.social_media_kit?.hashtags_instagram || parsed.marketingCopy?.hashtags_instagram || [],
+              hashtags_youtube: parsed.social_media_kit?.hashtags_youtube || parsed.marketingCopy?.hashtags_youtube || []
             };
             const social_media_kit = parsed.social_media_kit || marketingCopy;
             const project_meta = parsed.project_meta || {
@@ -776,6 +893,12 @@ FORMAT OUTPUT MUTLAK: JSON`;
                   marketingCopy: {
                     type: Type.OBJECT,
                     properties: {
+                      tiktok_caption: { type: Type.STRING },
+                      instagram_caption: { type: Type.STRING },
+                      youtube_caption: { type: Type.STRING },
+                      hashtags_tiktok: { type: Type.ARRAY, items: { type: Type.STRING } },
+                      hashtags_instagram: { type: Type.ARRAY, items: { type: Type.STRING } },
+                      hashtags_youtube: { type: Type.ARRAY, items: { type: Type.STRING } },
                       caption: { type: Type.STRING },
                       hashtags: {
                         type: Type.ARRAY,
@@ -867,7 +990,13 @@ FORMAT OUTPUT MUTLAK: JSON`;
           }));
           const marketingCopy = {
             caption: parsed.social_media_kit?.caption || parsed.marketingCopy?.caption || '',
-            hashtags: parsed.social_media_kit?.hashtags || parsed.marketingCopy?.hashtags || []
+            hashtags: parsed.social_media_kit?.hashtags || parsed.marketingCopy?.hashtags || [],
+            tiktok_caption: parsed.social_media_kit?.tiktok_caption || parsed.marketingCopy?.tiktok_caption,
+            instagram_caption: parsed.social_media_kit?.instagram_caption || parsed.marketingCopy?.instagram_caption,
+            youtube_caption: parsed.social_media_kit?.youtube_caption || parsed.marketingCopy?.youtube_caption,
+            hashtags_tiktok: parsed.social_media_kit?.hashtags_tiktok || parsed.marketingCopy?.hashtags_tiktok || [],
+            hashtags_instagram: parsed.social_media_kit?.hashtags_instagram || parsed.marketingCopy?.hashtags_instagram || [],
+            hashtags_youtube: parsed.social_media_kit?.hashtags_youtube || parsed.marketingCopy?.hashtags_youtube || []
           };
           const social_media_kit = parsed.social_media_kit || marketingCopy;
           const project_meta = parsed.project_meta || {
@@ -911,7 +1040,7 @@ FORMAT OUTPUT MUTLAK: JSON`;
                   messages: [
                     { 
                       role: "system", 
-                      content: `You are SINTA, NEURONA Master Storyboard & Product Consistency Director. You output JSON with 'characterProfile' and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[] }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with 'Product identity locked: [Color/Pattern] [Product Type] ([Material/Details]). Preserve exact product design, shape, and color. Visual Scene: ...'. Never generate plain action text without product anchor.` 
+                      content: `You are SINTA, NEURONA Master Storyboard & Product Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' ({ caption, hashtags, tiktok_caption, instagram_caption, youtube_caption, hashtags_tiktok, hashtags_instagram, hashtags_youtube, voiceProfile }) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[] }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with an Action-Driven Anchor linking subject and product in the first 20 tokens: 'Photorealistic 35mm commercial photo of hands holding [Product name and physical details] at chest level, presented by [Model description], medium close-up product shot, 50mm lens f/2.8, authentic skin texture with pores, clean dark backdrop, cool blue accent edge lighting, sharp focus, 8k resolution'. DO NOT include negative phrases like 'preserve exact', 'do not alter', or 'no distortion' in the positive prompt.` 
                     },
                     { role: "user", content: storyboardPrompt }
                   ],
@@ -926,10 +1055,23 @@ FORMAT OUTPUT MUTLAK: JSON`;
               const parsed = JSON.parse(rawText);
               const scenes = parsed.scenes || parsed.storyboard || [];
               if (Array.isArray(scenes) && scenes.length > 0) {
+                const marketingCopy = {
+                  caption: parsed.social_media_kit?.caption || parsed.marketingCopy?.caption || '',
+                  hashtags: parsed.social_media_kit?.hashtags || parsed.marketingCopy?.hashtags || [],
+                  tiktok_caption: parsed.social_media_kit?.tiktok_caption || parsed.marketingCopy?.tiktok_caption,
+                  instagram_caption: parsed.social_media_kit?.instagram_caption || parsed.marketingCopy?.instagram_caption,
+                  youtube_caption: parsed.social_media_kit?.youtube_caption || parsed.marketingCopy?.youtube_caption,
+                  hashtags_tiktok: parsed.social_media_kit?.hashtags_tiktok || parsed.marketingCopy?.hashtags_tiktok || [],
+                  hashtags_instagram: parsed.social_media_kit?.hashtags_instagram || parsed.marketingCopy?.hashtags_instagram || [],
+                  hashtags_youtube: parsed.social_media_kit?.hashtags_youtube || parsed.marketingCopy?.hashtags_youtube || []
+                };
+
                 return {
                   data: {
                     scenes,
-                    characterProfile: parsed.characterProfile
+                    characterProfile: parsed.characterProfile,
+                    marketingCopy,
+                    social_media_kit: marketingCopy
                   },
                   rawText,
                   modelUsed: `OpenAI ChatGPT 4.0 (${openAIModel}) [Fallback]`,

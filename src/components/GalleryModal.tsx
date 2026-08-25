@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Play, Trash2, Film, Download } from 'lucide-react';
 import { ProductionProject } from '../shared/types';
+import { getProjectAspectRatioClass } from '../utils/aspectRatio';
 
 interface GalleryModalProps {
   onClose: () => void;
@@ -82,7 +83,7 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({ onClose, onSelectPro
                     className={`group relative bg-slate-950 border ${isFailed ? 'border-rose-900/50' : 'border-slate-800 hover:border-cyan-500/50'} rounded-xl overflow-hidden transition-all duration-300 ${!isFailed ? 'cursor-pointer hover:shadow-[0_0_20px_rgba(34,211,238,0.15)] hover:-translate-y-1' : 'opacity-75'}`}
                   >
                     {/* Thumbnail Area */}
-                    <div className="aspect-video bg-black relative flex items-center justify-center overflow-hidden">
+                    <div className={`bg-black relative flex items-center justify-center overflow-hidden ${getProjectAspectRatioClass(proj)}`}>
                       {cover ? (
                          cover.includes('.mp4') ? (
                             <video src={cover} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition duration-500" />

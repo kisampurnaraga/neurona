@@ -74,6 +74,7 @@ export interface ProductAsset {
 }
 
 export interface AffiliateConfig {
+  aspectRatio?: '16:9' | '9:16' | '1:1';
   productName: string;
   category?: string;
   platform: 'TikTok Shop' | 'Shopee Video' | 'Instagram Reels' | 'YouTube Shorts';
@@ -87,6 +88,16 @@ export interface AffiliateConfig {
   referenceVideoUrl?: string;
   productVisualAnalysis?: string;
   characterVisualAnalysis?: string;
+  sceneCount?: number;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: 'founder' | 'user' | 'vip';
+  phone?: string;
+  credits?: number;
 }
 
 export interface AnimationConfig {
@@ -98,6 +109,10 @@ export interface AnimationConfig {
   worldSetting?: string;
   voiceTone: 'CHEERFUL' | 'EPIC_HEROIC' | 'DEEP_DRAMATIC' | 'CUTE_ANIME' | 'CALM_NARRATOR';
   aspectRatio: '16:9' | '9:16' | '1:1';
+  sceneCount?: number;
+  imageEngine?: string;
+  characterVisualAnalysis?: string;
+  characterReferenceUrl?: string;
 }
 
 export interface EducationalConfig {
@@ -112,6 +127,7 @@ export interface EducationalConfig {
   aspectRatio: '16:9' | '9:16' | '1:1';
   characterDescription?: string;
   worldSetting?: string;
+  sceneCount?: number;
 }
 
 export interface AgentTelemetry {
@@ -164,6 +180,12 @@ export interface ProductionProject {
   marketingCopy?: {
     caption?: string;
     hashtags?: string[];
+    tiktok_caption?: string;
+    instagram_caption?: string;
+    youtube_caption?: string;
+    hashtags_tiktok?: string[];
+    hashtags_instagram?: string[];
+    hashtags_youtube?: string[];
     voiceProfile?: string;
   };
   userChoice?: 'STORYBOARD_ONLY' | 'GENERATE_IMAGES' | 'FULL_PRODUCTION';

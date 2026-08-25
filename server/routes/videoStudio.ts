@@ -128,8 +128,8 @@ router.post(
         // Deduct credits
         if (user.role !== 'founder') {
           user.credits = Math.max(0, currentCredits - REQUIRED_CREDITS_PER_RENDER);
-          const dbUser = userDatabase.getUser(user.user_id) || userDatabase.getUserByEmail(user.email);
-          if (dbUser) dbUser.credits = user.credits;
+          await userDatabase.adjustCredits(user.user_id, -REQUIRED_CREDITS_PER_RENDER, true);
+          // Handled by adjustCredits
         }
 
         return res.json({

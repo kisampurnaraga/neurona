@@ -132,7 +132,7 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
   return (
     <div 
       ref={containerRef}
-      className={`relative aspect-video w-full rounded-2xl bg-black border border-white/15 overflow-hidden group flex flex-col justify-between shadow-2xl ${className}`}
+      className={`relative ${className || 'aspect-video'} w-full rounded-2xl bg-black border border-white/15 overflow-hidden group flex flex-col justify-between shadow-2xl `}
     >
       {/* Top Status & Agent Telemetry Overlay Bar */}
       <div className="absolute top-0 inset-x-0 z-20 p-2.5 bg-gradient-to-b from-black/90 via-black/60 to-transparent flex items-center justify-between text-[10px] font-mono">

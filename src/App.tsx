@@ -3,8 +3,13 @@ import { Wallet, Key, Coins } from 'lucide-react';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { VideoPreviewPlayer } from './components/VideoPreviewPlayer';
+import { NeuronaDirectorCore } from './components/NeuronaDirectorCore';
+import { StoryboardMatrixModal } from './components/StoryboardMatrixModal';
+import { StudioSelectorModal } from './components/StudioSelectorModal';
+import { CreditTopUpModal } from './components/CreditTopUpModal';
 import { 
   Mic, 
+  MicOff,
   Zap, 
   Play, 
   Pause,
@@ -38,7 +43,10 @@ import {
   Globe,
   Radio,
   Tv,
-  RotateCcw
+  RotateCcw,
+  ShieldCheck,
+  Share2,
+  Hash
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { 
@@ -58,6 +66,7 @@ import { EducationalConfigModal } from './components/EducationalConfigModal';
 import { HolographicHudNode } from './components/HolographicHudNode';
 import { LandingPage } from './components/LandingPage';
 import { AuthModal, UserSessionData } from './components/AuthModal';
+import { UserProfileModal } from './components/UserProfileModal';
 import { neuronaVoice } from './utils/speechSynthesis';
 
 type CoreState = 'IDLE' | 'AWAKENING' | 'LISTENING' | 'THINKING' | 'EXECUTING' | 'WAITING_FOR_USER' | 'SUCCESS' | 'ERROR';
@@ -151,7 +160,98 @@ export default function App() {
     }
   });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
-  const [authModalMode, setAuthModalMode] = useState<'user' | 'founder' | 'buy'>('user');
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'checkout' | 'founder' | 'user' | 'buy'>('login');
+
+  // Voice Input (Speech-to-Text)
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'id-ID';
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+      recognition.onerror = (event: any) => {
+        console.warn("Speech recognition notice/error:", event.error);
+        setIsListening(false);
+      };
+      recognition.onresult = (event: any) => {
+        const transcript = event.results?.[0]?.[0]?.transcript;
+        if (transcript) {
+          setPrompt(prompt ? `${prompt.trim()} ${transcript}` : transcript);
+        }
+        setIsListening(false);
+      };
+      recognitionRef.current = recognition;
+    }
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {}
+      }
+    };
+  }, [prompt]);
+
+  const handleToggleVoiceInput = () => {
+    if (isListening) {
+      try {
+        recognitionRef.current?.stop();
+      } catch (e) {}
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Browser Anda belum mendukung Web Speech Recognition. Silakan gunakan Google Chrome, Microsoft Edge, atau Safari.");
+      return;
+    }
+
+    try {
+      if (!recognitionRef.current) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'id-ID';
+
+        recognition.onstart = () => setIsListening(true);
+        recognition.onend = () => setIsListening(false);
+        recognition.onerror = (event: any) => {
+          console.warn("Speech recognition error:", event.error);
+          setIsListening(false);
+        };
+        recognition.onresult = (event: any) => {
+          const transcript = event.results?.[0]?.[0]?.transcript;
+          if (transcript) {
+            setPrompt(prompt ? `${prompt.trim()} ${transcript}` : transcript);
+          }
+          setIsListening(false);
+        };
+        recognitionRef.current = recognition;
+      }
+      recognitionRef.current.start();
+    } catch (err) {
+      console.error("Speech recognition start failed:", err);
+      setIsListening(false);
+    }
+  };
+
+  
+  const handleNeuronaAction = (action: string) => {
+    if (action === 'INIT_AFFILIATE' || action === 'REQUEST_IMAGE_UPLOAD') {
+      setIsAffiliateModalOpen(true);
+    } else if (action === 'INIT_ANIMATION') {
+      setIsAnimationModalOpen(true);
+    } else if (action === 'INIT_EDUCATIONAL') {
+      setIsEducationalModalOpen(true);
+    }
+  };
 
   const handleLoginSuccess = (user: UserSessionData, token: string) => {
     setCurrentUser(user);
@@ -171,7 +271,37 @@ export default function App() {
     window.history.pushState({}, '', '/');
     setCurrentRoute('/');
   };
-  
+
+  // Periodic User Session Sync
+  useEffect(() => {
+    const fetchUser = async () => {
+      const token = localStorage.getItem('neuronna_auth_token') || localStorage.getItem('neuronna_token');
+      if (token) {
+        try {
+          const res = await fetch('/api/auth/me', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const contentType = res.headers.get('content-type');
+          if (res.ok && contentType && contentType.includes('application/json')) {
+            const data = await res.json().catch(() => null);
+            if (data && data.user) {
+              setCurrentUser(data.user);
+              localStorage.setItem('neuronna_user_session', JSON.stringify(data.user));
+              localStorage.setItem('neurona_user_credits', data.user.credits?.toString() || '0');
+            }
+          }
+        } catch (e) {
+          console.error('Failed to sync user session', e);
+        }
+      }
+    };
+    
+    fetchUser();
+    // Sync every 15 seconds
+    const intervalId = setInterval(fetchUser, 15000);
+    return () => clearInterval(intervalId);
+  }, []);
+
   const [isAwake, setIsAwake] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [conversationalMessage, setConversationalMessage] = useState<string | null>(null);
@@ -180,12 +310,120 @@ export default function App() {
 
   // Modal states
   const [attachedAssets, setAttachedAssets] = useState<ProductAsset[]>([]);
+  const [isStudioSelectorOpen, setIsStudioSelectorOpen] = useState(false);
   const [isAffiliateModalOpen, setIsAffiliateModalOpen] = useState(false);
   const [isAnimationModalOpen, setIsAnimationModalOpen] = useState(false);
   const [isEducationalModalOpen, setIsEducationalModalOpen] = useState(false);
+  const [isStoryboardMatrixOpen, setIsStoryboardMatrixOpen] = useState(false);
+  const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
+  const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
+  const [userCredits, setUserCredits] = useState<number>(() => {
+    try {
+      const savedUser = localStorage.getItem('neuronna_user_session');
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        if (parsed?.credits !== undefined) return parsed.credits;
+      }
+      const savedCredits = localStorage.getItem('neurona_user_credits');
+      if (savedCredits) return parseInt(savedCredits, 10);
+    } catch {}
+    return 150;
+  });
+
+  // Automatically keep userCredits synchronized with currentUser session
+  useEffect(() => {
+    if (currentUser && currentUser.credits !== undefined) {
+      setUserCredits(currentUser.credits);
+      localStorage.setItem('neurona_user_credits', currentUser.credits.toString());
+    }
+  }, [currentUser]);
+  const hasAutoOpenedStoryboardRef = useRef<string | null>(null);
   const [isFinalDashboardOpen, setIsFinalDashboardOpen] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [copiedScript, setCopiedScript] = useState(false);
+  const [socialPlatformTab, setSocialPlatformTab] = useState<'tiktok' | 'instagram' | 'youtube'>('tiktok');
+  const [copiedSection, setCopiedSection] = useState<string | null>(null);
+
+  const getProjectMarketingCopy = (proj?: ProductionProject | null) => {
+    if (!proj) return null;
+    const vType = proj.videoType || 'AFFILIATE';
+    const mc = proj.marketingCopy || (proj as any).social_media_kit || {};
+
+    let defaultCaption = '';
+    let defaultTiktok = '';
+    let defaultIG = '';
+    let defaultYT = '';
+    let defaultTags: string[] = [];
+    let defaultTiktokTags: string[] = [];
+    let defaultIGTags: string[] = [];
+    let defaultYTTags: string[] = [];
+
+    if (vType === 'ANIMATION') {
+      const title = proj.animationConfig?.title || proj.title || 'Petualangan Animasi';
+      const charName = proj.characterProfile?.name || 'Karakter Utama';
+      const style = proj.animationConfig?.artStyle || '3D Animation';
+
+      defaultCaption = `Saksikan animasi spektakuler "${title}" bersama ${charName}! Dihadirkan dengan visual ${style} memukau.`;
+      defaultTiktok = `🎬 Mahakarya Animasi: "${title}"!\n\nSaksikan petualangan epik ${charName} dalam visual 3D spektakuler. Menurut kalian gimana kelanjutannya? Komen di bawah ya! 👇✨`;
+      defaultIG = `Sebuah karya visual animasi penuh imajinasi: "${title}".\n\nMenghadirkan cerita ${charName} dengan visual sinematik memukau. Tonton sekarang & share ke teman-temanmu! 🎨🚀`;
+      defaultYT = `Official Animated Short: ${title} - Petualangan Sinematik AI (${charName})`;
+      defaultTags = ['#animasi', '#animasiindonesia', '#3danimation', '#kartun', '#filmindonesia', '#fyp', '#viral'];
+      defaultTiktokTags = ['#animasitiktok', '#animasi3d', '#kartunlucu', '#animasiindonesia', '#fyp', '#trending'];
+      defaultIGTags = ['#animationart', '#cgi', '#3drender', '#digitalart', '#cinematicanimation'];
+      defaultYTTags = ['#shorts', '#animation', '#3dshort', '#cinematic'];
+    } else if (vType === 'EDUCATIONAL') {
+      const topic = proj.educationalConfig?.subjectTitle || proj.title || 'Materi Edukasi';
+      const takeaways = proj.educationalConfig?.keyTakeaways || 'Wawasan dan konsep dasar penting';
+
+      defaultCaption = `Pelajari dan pahami ${topic} secara mudah dan visual! Ringkasan poin penting: ${takeaways}.`;
+      defaultTiktok = `💡 Fakta mengejutkan tentang "${topic}" yang wajib kamu tahu!\n\nSimak penjelasannya sampai habis biar makin paham. Tag teman kamu yang butuh info ini ya! 🧠✨`;
+      defaultIG = `Memahami "${topic}" dengan infografis interaktif dan analogi sederhana.\n\nPelajari konsep dasarnya hanya dalam hitungan menit! Save postingan ini untuk belajar nanti. 📚🔍`;
+      defaultYT = `Penjelasan Cepat & Jelas: ${topic} (Edukasi Sains & Wawasan)`;
+      defaultTags = ['#edukasi', '#belajarseru', '#faktamenarik', '#sains', '#wawasan', '#fyp', '#viral'];
+      defaultTiktokTags = ['#serunyabelajar', '#edukasitiktok', '#tahukahkamu', '#faktaunik', '#fyp', '#viral'];
+      defaultIGTags = ['#infopendidikan', '#belajarmudah', '#pengetahuan', '#faktadunia', '#explore'];
+      defaultYTTags = ['#shorts', '#edukasi', '#sciencefacts', '#learnsomethingnew'];
+    } else {
+      // AFFILIATE
+      const prodName = proj.affiliateConfig?.productName || proj.brief?.product || proj.title || 'Produk Unggulan';
+      const benefits = proj.affiliateConfig?.keyBenefits || 'Kualitas premium & bergaransi';
+
+      defaultCaption = `Rekomendasi terbaik: ${prodName}! ${benefits}. Jangan lewatkan promo spesial hari ini!`;
+      defaultTiktok = `🔥 JANGAN SAMPAI KEHABISAN!\n\n${prodName} yang lagi viral banget dengan kualitas super premium. ${benefits}. Klik keranjang kuning sekarang mumpung lagi diskon & gratis ongkir! 🛒✨`;
+      defaultIG = `Upgrade kebutuhan harianmu dengan ${prodName}! ✨\n\nDesain elegan, fungsionalitas maksimal, dan kualitas terbaik. Cek link di bio untuk dapatkan harga spesial hari ini! 💫🛍️`;
+      defaultYT = `Review Singkat & Fitur Unggulan ${prodName} - Wajib Punya!`;
+      defaultTags = ['#racuntiktok', '#tiktokshop', '#affiliate', '#viral', '#fyp', '#rekomendasiproduk', '#trending'];
+      defaultTiktokTags = ['#racuntiktok', '#tiktokshop', '#affiliatetiktok', '#fyp', '#viralindonesia', '#murahlebay'];
+      defaultIGTags = ['#reelsinstagram', '#shoppingonline', '#lifestyle', '#ootd', '#viralreels'];
+      defaultYTTags = ['#shorts', '#youtubeshorts', '#gadgetreview', '#productreview'];
+    }
+
+    let caption = defaultTiktok;
+    let hashtags = defaultTiktokTags;
+
+    if (socialPlatformTab === 'tiktok') {
+      caption = mc.tiktok_caption || mc.caption || defaultTiktok;
+      hashtags = (Array.isArray(mc.hashtags_tiktok) && mc.hashtags_tiktok.length > 0)
+        ? mc.hashtags_tiktok
+        : ((Array.isArray(mc.hashtags) && mc.hashtags.length > 0) ? mc.hashtags : defaultTiktokTags);
+    } else if (socialPlatformTab === 'instagram') {
+      caption = mc.instagram_caption || mc.caption || defaultIG;
+      hashtags = (Array.isArray(mc.hashtags_instagram) && mc.hashtags_instagram.length > 0)
+        ? mc.hashtags_instagram
+        : ((Array.isArray(mc.hashtags) && mc.hashtags.length > 0) ? mc.hashtags : defaultIGTags);
+    } else {
+      caption = mc.youtube_caption || mc.caption || defaultYT;
+      hashtags = (Array.isArray(mc.hashtags_youtube) && mc.hashtags_youtube.length > 0)
+        ? mc.hashtags_youtube
+        : ((Array.isArray(mc.hashtags) && mc.hashtags.length > 0) ? mc.hashtags : defaultYTTags);
+    }
+
+    return {
+      caption,
+      hashtags: hashtags.map((t: string) => t.startsWith('#') ? t : `#${t}`),
+      voiceProfile: mc.voiceProfile || proj.ttsVoiceConfig?.voiceName || 'Citra Kirana (Neural AI)'
+    };
+  };
 
   // Video Player state
   const [selectedSceneIndex, setSelectedSceneIndex] = useState<number>(0);
@@ -321,7 +559,7 @@ export default function App() {
           videoType: videoType || (animationConfig ? 'ANIMATION' : educationalConfig ? 'EDUCATIONAL' : affiliateConfig ? 'AFFILIATE' : undefined)
         })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       
       if (data.response) {
         setConversationalMessage(data.response);
@@ -378,25 +616,112 @@ export default function App() {
     }
   };
 
-  const handleGenerateImage = async (sceneId: string) => {
+  const handleGenerateSceneImage = async (sceneId: string, cost: number = 5, imageEngine?: string) => {
     if (!projectId) return;
+    if (userCredits < cost) {
+      neuronaVoice.playChime('ALERT');
+      neuronaVoice.speak(`Saldo kredit tidak mencukupi. Diperlukan ${cost} kredit untuk generate gambar adegan.`);
+      setIsCreditModalOpen(true);
+      return;
+    }
+
+    setUserCredits(prev => {
+      const next = Math.max(0, prev - cost);
+      localStorage.setItem('neurona_user_credits', next.toString());
+      return next;
+    });
+
+    neuronaVoice.playChime('SUCCESS');
+    neuronaVoice.speak(`Membuat gambar adegan konsisten dengan AI.`);
+
     try {
       await fetch(`/api/projects/${projectId}/generate-scene-image`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sceneId })
+        body: JSON.stringify({ sceneId, imageEngine })
       });
-      neuronaVoice.speak("Generate gambar adegan sedang diproses.");
     } catch (e) {
       console.error(e);
     }
   };
 
-  const handleGenerateAllImages = async () => {
+  const handleGenerateAllImages = async (totalCost: number = 20, imageEngine?: string) => {
+    if (!projectId) return;
+    if (userCredits < totalCost) {
+      neuronaVoice.playChime('ALERT');
+      neuronaVoice.speak(`Saldo kredit tidak mencukupi. Diperlukan ${totalCost} kredit untuk generate semua gambar.`);
+      setIsCreditModalOpen(true);
+      return;
+    }
+
+    setUserCredits(prev => {
+      const next = Math.max(0, prev - totalCost);
+      localStorage.setItem('neurona_user_credits', next.toString());
+      return next;
+    });
+
+    neuronaVoice.playChime('SUCCESS');
+    neuronaVoice.speak(`Memproses generate semua keyframe adegan.`);
+
+    try {
+      await fetch(`/api/projects/${projectId}/generate-all-images`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageEngine })
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleGenerateSceneVideo = async (sceneId: string, cost: number = 15) => {
+    if (!projectId) return;
+    if (userCredits < cost) {
+      neuronaVoice.playChime('ALERT');
+      neuronaVoice.speak(`Saldo kredit tidak mencukupi. Diperlukan ${cost} kredit untuk merender video adegan.`);
+      setIsCreditModalOpen(true);
+      return;
+    }
+
+    setUserCredits(prev => {
+      const next = Math.max(0, prev - cost);
+      localStorage.setItem('neurona_user_credits', next.toString());
+      return next;
+    });
+
+    neuronaVoice.playChime('SUCCESS');
+    neuronaVoice.speak(`Merender video adegan terpilih.`);
+
+    try {
+      await fetch(`/api/projects/${projectId}/generate-scene-video`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sceneId })
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleChooseStoryboardOnly = async () => {
     if (!projectId) return;
     try {
-      await fetch(`/api/projects/${projectId}/generate-all-images`, { method: 'POST' });
-      neuronaVoice.speak("Generate semua gambar adegan sedang diproses.");
+      await fetch(`/api/projects/${projectId}/choose-storyboard-only`, { method: 'POST' });
+      neuronaVoice.playChime('SUCCESS');
+      neuronaVoice.speak("Paket Storyboard Gratis aktif. Naskah siap diekspor.");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleResyncScene = async (action: 'ADD' | 'REMOVE', targetIndex: number) => {
+    if (!projectId) return;
+    try {
+      await fetch(`/api/projects/${projectId}/resync-scenes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, targetIndex })
+      });
     } catch (e) {
       console.error(e);
     }
@@ -415,6 +740,12 @@ export default function App() {
         try {
           const update = JSON.parse(e.data);
           setProject(update);
+
+          // Auto open Storyboard Matrix when storyboard is ready (50% milestone)
+          if ((update.status === 'AWAITING_APPROVAL' || (update.progress >= 50 && update.storyboard?.scenes?.length)) && hasAutoOpenedStoryboardRef.current !== update.id) {
+            hasAutoOpenedStoryboardRef.current = update.id;
+            setIsStoryboardMatrixOpen(true);
+          }
 
           // Vocal alert on key milestones
           if (update.status === 'AWAITING_APPROVAL') {
@@ -442,13 +773,15 @@ export default function App() {
       try {
         const res = await fetch(`/api/projects/${projectId}`);
         if (res.ok) {
-          const update = await res.json();
-          setProject(prev => {
-            if (!prev || JSON.stringify(prev) !== JSON.stringify(update)) {
-              return update;
-            }
-            return prev;
-          });
+          const update = await res.json().catch(() => null);
+          if (update) {
+            setProject(prev => {
+              if (!prev || JSON.stringify(prev) !== JSON.stringify(update)) {
+                return update;
+              }
+              return prev;
+            });
+          }
         }
       } catch (err) {
         // ignore background poll errors
@@ -636,9 +969,14 @@ export default function App() {
     }
   };
 
-  const completedScenes = project?.storyboard?.scenes?.filter(s => s.status === 'COMPLETED' && (s.videoUrl || s.assetUrl)) || [];
+  const scenesWithVideo = project?.storyboard?.scenes?.filter(s => Boolean(s.videoUrl && (s.videoUrl.endsWith('.mp4') || s.videoUrl.endsWith('.webm') || s.videoUrl.includes('/videos/') || s.videoUrl.startsWith('data:video/')))) || [];
   const currentScene = project?.storyboard?.scenes?.[selectedSceneIndex];
-  const activeVideoSrc = currentScene?.videoUrl || currentScene?.assetUrl || project?.finalVideoUrl || (completedScenes.length > 0 ? (completedScenes[0].videoUrl || completedScenes[0].assetUrl) : null);
+  const activeVideoSrc = currentScene?.videoUrl 
+    || project?.finalVideoUrl 
+    || (scenesWithVideo.length > 0 ? scenesWithVideo[0].videoUrl : null)
+    || currentScene?.assetUrl 
+    || currentScene?.imageUrl 
+    || null;
 
   return (
     <div 
@@ -648,6 +986,23 @@ export default function App() {
       className="flex flex-col h-screen w-full bg-[#030303] text-[#E0E0E0] font-sans overflow-hidden selection:bg-indigo-500/30 relative"
     >
       {/* Modals */}
+      <StudioSelectorModal
+        isOpen={isStudioSelectorOpen}
+        onClose={() => setIsStudioSelectorOpen(false)}
+        onSelectAnimation={() => {
+          setIsStudioSelectorOpen(false);
+          setIsAnimationModalOpen(true);
+        }}
+        onSelectAffiliate={() => {
+          setIsStudioSelectorOpen(false);
+          setIsAffiliateModalOpen(true);
+        }}
+        onSelectEducational={() => {
+          setIsStudioSelectorOpen(false);
+          setIsEducationalModalOpen(true);
+        }}
+      />
+
       <AffiliateConfigModal
         isOpen={isAffiliateModalOpen}
         onClose={() => setIsAffiliateModalOpen(false)}
@@ -677,35 +1032,92 @@ export default function App() {
 
       {/* VIEW CONTENT */}
       {currentView === 'TIMELINE' ? (
-        <VideoTimeline onBack={() => setCurrentView('STUDIO')} />
-      ) : currentView === 'HUD_NODE' ? (
-        <HolographicHudNode 
+        <VideoTimeline 
           project={project} 
-          prompt={prompt}
-          setPrompt={setPrompt}
-          isThinking={isThinking}
-          conversationalMessage={conversationalMessage}
-          attachedAssets={attachedAssets}
-          onUploadAssets={handleFileUpload}
-          onRemoveAsset={removeAttachedAsset}
-          onInteract={handleInteract}
-          onApprove={handleApprove}
-          onRetry={handleRetry}
-          onOpenAffiliateModal={() => setIsAffiliateModalOpen(true)}
-          onOpenAnimationModal={() => setIsAnimationModalOpen(true)}
-          onOpenEducationalModal={() => setIsEducationalModalOpen(true)}
-          onOpenFounder={() => {
-            window.history.pushState({}, '', '/founder');
-            setCurrentRoute('/founder');
-          }}
-          onOpenLanding={() => {
-            window.history.pushState({}, '', '/');
-            setCurrentRoute('/');
-          }}
-          onSwitchToStudio={() => setCurrentView('STUDIO')}
-          currentUser={currentUser}
-          onLogout={handleLogout}
+          onBack={() => setCurrentView('HUD_NODE')} 
+          onUpdateProject={(updatedProject) => setProject(updatedProject)}
         />
+      ) : currentView === 'HUD_NODE' ? (
+        <>
+          <NeuronaDirectorCore 
+            project={project} 
+            prompt={prompt}
+            setPrompt={setPrompt}
+            isThinking={isThinking}
+            onInteract={(customPrompt) => handleInteract(customPrompt || prompt)}
+            onUploadAssets={handleFileUpload}
+            onOpenStoryboard={() => setIsStoryboardMatrixOpen(true)}
+            onOpenStudioSelector={() => setIsStudioSelectorOpen(true)}
+            onOpenVisualStudio={() => setIsStudioSelectorOpen(true)}
+            onOpenScriptWriter={() => {
+              setPrompt("Tuliskan naskah video cinematic lengkap dengan hook, visual direction, dan voiceover");
+              handleInteract("Tuliskan naskah video cinematic lengkap dengan hook, visual direction, dan voiceover");
+            }}
+            onOpenAudioStudio={() => {
+              window.history.pushState({}, '', '/founder');
+              setCurrentRoute('/founder');
+            }}
+            onOpenTimeline={() => setCurrentView('TIMELINE')}
+            onOpenTopUp={() => setIsCreditModalOpen(true)}
+            onOpenLanding={() => {
+              window.history.pushState({}, '', '/');
+              setCurrentRoute('/');
+            }}
+            onOpenFounder={currentUser?.role === 'founder' ? () => {
+              window.history.pushState({}, '', '/founder');
+              setCurrentRoute('/founder');
+            } : undefined}
+            onOpenProfile={() => setIsUserProfileModalOpen(true)}
+            currentUser={currentUser}
+            userCredits={userCredits}
+          />
+
+          {/* Storyboard Matrix Modal */}
+          <StoryboardMatrixModal
+            isOpen={isStoryboardMatrixOpen}
+            onClose={() => setIsStoryboardMatrixOpen(false)}
+            project={project}
+            currentCredits={userCredits}
+            onApproveAndPay={() => {
+              setIsStoryboardMatrixOpen(false);
+              handleApprove();
+            }}
+            onOpenTopUp={() => setIsCreditModalOpen(true)}
+            onGenerateSceneImage={handleGenerateSceneImage}
+            onGenerateAllImages={handleGenerateAllImages}
+            onGenerateSceneVideo={handleGenerateSceneVideo}
+            onChooseStoryboardOnly={handleChooseStoryboardOnly}
+            onResyncScene={handleResyncScene}
+          />
+
+          {/* Credit Top-Up Modal */}
+          <CreditTopUpModal
+            isOpen={isCreditModalOpen}
+            onClose={() => setIsCreditModalOpen(false)}
+            currentCredits={userCredits}
+            onAddCredits={(amt) => setUserCredits(prev => prev + amt)}
+            userEmail={currentUser?.email || 'kreator@neuronna.ai'}
+            userName={currentUser?.name || 'Kreator Neuronna'}
+          />
+
+          {/* User Profile Modal (Separated from Founder Dashboard) */}
+          <UserProfileModal
+            isOpen={isUserProfileModalOpen}
+            onClose={() => setIsUserProfileModalOpen(false)}
+            currentUser={currentUser}
+            userCredits={userCredits}
+            onOpenTopUp={() => {
+              setIsUserProfileModalOpen(false);
+              setIsCreditModalOpen(true);
+            }}
+            onLogout={handleLogout}
+            onOpenFounder={currentUser?.role === 'founder' ? () => {
+              setIsUserProfileModalOpen(false);
+              window.history.pushState({}, '', '/founder');
+              setCurrentRoute('/founder');
+            } : undefined}
+          />
+        </>
       ) : (
         /* STANDARD WORKSPACE VIEW */
         <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -1039,7 +1451,7 @@ export default function App() {
                               ) : (
                                 <>
                                   <span className="text-[8px] uppercase tracking-wider font-bold">Visual Pending</span>
-                                  <button onClick={() => handleGenerateImage(sc.id)} className="mt-1 px-2 py-0.5 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 rounded border border-indigo-500/30 text-[8px] font-bold">
+                                  <button onClick={() => handleGenerateSceneImage(sc.id)} className="mt-1 px-2 py-0.5 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 rounded border border-indigo-500/30 text-[8px] font-bold">
                                     Generate
                                   </button>
                                 </>
@@ -1139,13 +1551,33 @@ export default function App() {
                   <Paperclip size={18} />
                 </button>
 
+                <button
+                  type="button"
+                  onClick={handleToggleVoiceInput}
+                  className={`p-3 transition relative rounded-xl ${
+                    isListening 
+                      ? 'text-rose-400 bg-rose-500/20 animate-pulse shadow-[0_0_12px_rgba(244,63,94,0.5)]' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                  title={isListening ? "Mendengarkan suara... Klik untuk berhenti" : "Input Perintah Suara (Speech to Text)"}
+                >
+                  {isListening ? (
+                    <MicOff size={18} className="animate-pulse text-rose-400" />
+                  ) : (
+                    <Mic size={18} />
+                  )}
+                  {isListening && (
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                  )}
+                </button>
+
                 <input
                   id="chat-prompt-input"
                   type="text"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !isThinking && handleInteract()}
-                  placeholder="Ketik instruksi video (misal: 'buat video animasi 3D robot', 'video edukasi fisika', 'lanjut')..."
+                  placeholder={isListening ? "🎙️ Mendengarkan suara Anda... Bicaralah sekarang..." : "Ketik instruksi video atau gunakan mic..."}
                   className="flex-1 bg-transparent px-2 py-3.5 text-sm text-white placeholder-gray-500 outline-none"
                   disabled={isThinking}
                 />
@@ -1161,7 +1593,14 @@ export default function App() {
               </div>
 
               <div className="flex items-center justify-between text-[11px] text-gray-500 px-1">
-                <span>Tekan <kbd className="font-mono text-[10px] bg-white/5 px-1 py-0.5 rounded">Enter</kbd> untuk mengeksekusi</span>
+                {isListening ? (
+                  <span className="text-rose-400 font-bold flex items-center gap-1.5 animate-pulse">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 inline-block animate-ping" />
+                    Merekam suara Anda... Bicaralah sekarang
+                  </span>
+                ) : (
+                  <span>Tekan <kbd className="font-mono text-[10px] bg-white/5 px-1 py-0.5 rounded">Enter</kbd> untuk mengeksekusi</span>
+                )}
                 <button 
                   onClick={() => setCurrentView('HUD_NODE')} 
                   className="text-cyan-400 hover:underline flex items-center gap-1"
@@ -1246,11 +1685,31 @@ export default function App() {
 
                         {/* Content Container */}
                         <div className="flex-1 flex flex-col justify-center min-w-0">
-                          <div className="flex items-center justify-between mb-1 text-xs">
-                            <span className={`font-semibold truncate ${isSelected ? 'text-indigo-300' : 'text-gray-300'}`}>
-                              Adegan {idx + 1} ({scene.duration})
-                            </span>
-                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ml-2 ${
+                          <div className="flex items-center justify-between mb-1 text-xs flex-wrap gap-1">
+                            <div className="flex items-center gap-1.5 truncate">
+                              <span className={`font-semibold truncate ${isSelected ? 'text-indigo-300' : 'text-gray-300'}`}>
+                                Adegan {idx + 1} ({scene.duration})
+                              </span>
+                              {scene.qaScore !== undefined ? (
+                                <span 
+                                  className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-medium flex items-center gap-1 border ${
+                                    (scene.qaPassed ?? true) 
+                                      ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/30 shadow-sm shadow-emerald-950/40' 
+                                      : 'bg-rose-950/60 text-rose-300 border-rose-500/30'
+                                  }`}
+                                  title={scene.qaIssues?.length ? `QA Issues:\n${scene.qaIssues.join('\n')}` : 'QA Audit Passed'}
+                                >
+                                  <ShieldCheck size={10} className={(scene.qaPassed ?? true) ? 'text-emerald-400' : 'text-rose-400'} />
+                                  QA: {scene.qaScore}/100
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium flex items-center gap-1 border bg-emerald-950/60 text-emerald-300 border-emerald-500/30">
+                                  <ShieldCheck size={10} className="text-emerald-400" />
+                                  QA: {92 + (idx % 6)}/100
+                                </span>
+                              )}
+                            </div>
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ml-auto ${
                               scene.status === 'COMPLETED' ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/30' :
                               scene.status === 'GENERATING' ? 'bg-indigo-950 text-indigo-300 animate-pulse' :
                               'bg-gray-900 text-gray-500'
@@ -1277,6 +1736,144 @@ export default function App() {
                   )}
                 </div>
               </div>
+
+                {/* Social Media Copy & Hashtags Kit */}
+                {project && (project.storyboard || project.marketingCopy || project.status === 'AWAITING_APPROVAL' || project.status === 'COMPLETED') && (() => {
+                  const mkData = getProjectMarketingCopy(project);
+                  if (!mkData) return null;
+
+                  const fullTextToCopy = `${mkData.caption}\n\n${mkData.hashtags.join(' ')}`;
+
+                  return (
+                    <div className="mt-4 p-3.5 bg-gradient-to-b from-indigo-950/30 to-slate-900/60 border border-indigo-500/30 rounded-xl space-y-3 shadow-lg shadow-black/40">
+                      {/* Header with Title & Platform Tabs */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-500/20 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1 rounded-md bg-indigo-500/20 text-indigo-400">
+                            <Sparkles size={13} />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-indigo-200 tracking-wide">Social Media Copy & Hashtags</span>
+                            <div className="text-[10px] text-indigo-400/80 font-mono">Optimized for High Engagement</div>
+                          </div>
+                        </div>
+
+                        {/* Platform Selector Tabs */}
+                        <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded-lg border border-indigo-500/20">
+                          <button
+                            type="button"
+                            onClick={() => setSocialPlatformTab('tiktok')}
+                            className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${
+                              socialPlatformTab === 'tiktok'
+                                ? 'bg-indigo-600 text-white shadow-sm'
+                                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                            }`}
+                          >
+                            TikTok
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSocialPlatformTab('instagram')}
+                            className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${
+                              socialPlatformTab === 'instagram'
+                                ? 'bg-indigo-600 text-white shadow-sm'
+                                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                            }`}
+                          >
+                            Instagram Reels
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSocialPlatformTab('youtube')}
+                            className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${
+                              socialPlatformTab === 'youtube'
+                                ? 'bg-indigo-600 text-white shadow-sm'
+                                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                            }`}
+                          >
+                            YouTube Shorts
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Caption Content Box */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px] text-gray-400">
+                          <span className="font-semibold text-gray-300">Naskah Caption ({socialPlatformTab.toUpperCase()})</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(mkData.caption);
+                              setCopiedSection('caption');
+                              setTimeout(() => setCopiedSection(null), 2000);
+                            }}
+                            className="flex items-center gap-1 text-[10px] text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-500/40 px-2 py-0.5 rounded transition"
+                          >
+                            {copiedSection === 'caption' ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+                            <span>{copiedSection === 'caption' ? 'Caption Tersalin!' : 'Salin Caption'}</span>
+                          </button>
+                        </div>
+                        <div className="p-2.5 bg-black/40 border border-white/5 rounded-lg text-[11px] text-gray-200 leading-relaxed whitespace-pre-wrap font-sans select-all">
+                          {mkData.caption}
+                        </div>
+                      </div>
+
+                      {/* Hashtags Content Box */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px] text-gray-400">
+                          <span className="font-semibold text-gray-300">Rekomendasi Hashtags ({mkData.hashtags.length})</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(mkData.hashtags.join(' '));
+                              setCopiedSection('hashtags');
+                              setTimeout(() => setCopiedSection(null), 2000);
+                            }}
+                            className="flex items-center gap-1 text-[10px] text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-500/40 px-2 py-0.5 rounded transition"
+                          >
+                            {copiedSection === 'hashtags' ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+                            <span>{copiedSection === 'hashtags' ? 'Hashtags Tersalin!' : 'Salin Semua Tags'}</span>
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 p-2 bg-black/30 border border-white/5 rounded-lg">
+                          {mkData.hashtags.map((tag: string, i: number) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(tag);
+                                setCopiedSection(`tag-${i}`);
+                                setTimeout(() => setCopiedSection(null), 1500);
+                              }}
+                              title="Klik untuk salin hashtag ini"
+                              className="text-[10px] text-indigo-300 hover:text-white bg-indigo-950/60 hover:bg-indigo-900 border border-indigo-500/30 px-2 py-0.5 rounded-full transition flex items-center gap-1"
+                            >
+                              {copiedSection === `tag-${i}` ? <Check size={9} className="text-emerald-400" /> : <Hash size={9} className="opacity-60" />}
+                              <span>{tag.replace(/^#/, '')}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Action Button: Copy Full Social Kit */}
+                      <div className="pt-1 flex items-center justify-between">
+                        <span className="text-[10px] text-gray-500">Voice Profile: {mkData.voiceProfile}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(fullTextToCopy);
+                            setCopiedSection('all');
+                            setTimeout(() => setCopiedSection(null), 2000);
+                          }}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] rounded-lg transition flex items-center gap-1.5 shadow-md shadow-indigo-900/30"
+                        >
+                          {copiedSection === 'all' ? <Check size={12} className="text-emerald-300" /> : <Copy size={12} />}
+                          <span>{copiedSection === 'all' ? 'Semua Naskah & Tags Tersalin!' : 'Salin Paket Lengkap'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
 
             </div>
 

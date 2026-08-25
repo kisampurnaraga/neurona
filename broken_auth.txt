@@ -1,0 +1,124 @@
+• Paket: Early Bird Lifetime Pass (150 Kredit)
+
+Berikut saya lampirkan foto/screenshot bukti transfer.
+Mohon bantuannya untuk mengaktifkan akun saya di dashboard Founder. Terima kasih! 🚀`;
+
+    return `https://wa.me/${cleanWaNumber}?text=${encodeURIComponent(message)}`;
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 12 }}
+        className="relative w-full max-w-lg bg-[#0A0B12] border border-white/15 rounded-2xl shadow-2xl shadow-cyan-950/30 overflow-hidden text-white font-sans my-8"
+      >
+        {/* Top Accent Gradient Bar */}
+        <div className="h-1.5 w-full bg-gradient-to-r from-amber-500 via-cyan-400 to-indigo-500" />
+
+        {/* Close Button */}
+        
+              </div>
+
+              {/* Already active login button */}
+              <div className="flex items-center justify-between pt-2 border-t border-white/5 mt-2">
+                
+                      {/* WhatsApp Admin Alternative */}
+                      <a
+                        href={`https://wa.me/${cleanWaNumber}?text=${encodeURIComponent(
+                          `Halo Admin Neuronna, saya lupa password akun saya.\nEmail: ${loginEmail || '(Isi email Anda)'}\nMohon bantuan reset password / PIN baru. Terima kasih!`
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 py-2 px-3 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-white font-mono text-[11px] flex items-center justify-center gap-1.5 transition text-center"
+                      >
+                        <MessageSquare size={13} />
+                        <span>Reset via WhatsApp</span>
+                      </a>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Login Button */}
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 via-cyan-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white font-bold font-mono text-xs uppercase tracking-wider shadow-lg shadow-cyan-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isLoading ? (
+                  <span className="flex items-center gap-2">
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Memverifikasi Akun...</span>
+                  </span>
+                ) : (
+                  <>
+                    <span>Masuk ke Studio</span>
+                    <ArrowRight size={14} />
+                  </>
+                )}
+              </button>
+
+              {/* Callout to Register */}
+              <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 text-center mt-3">
+                <p className="text-[11px] text-gray-400 mb-1">
+                  Belum memiliki akun atau ingin melakukan aktivasi?
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { setMode('register'); setErrorMsg(null); }}
+                  className="text-xs font-mono font-bold text-amber-400 hover:text-amber-300 transition"
+                >
+                  Daftar & Aktivasi Rp 150.000 Sekarang &rarr;
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB 4: FOUNDER SECURITY GATE                                              */}
+          {/* ========================================================================= */}
+          {mode === 'founder' && (
+            <form onSubmit={handleFounderLogin} className="space-y-4">
+              <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-200">
+                <div className="flex items-center gap-2 font-bold mb-1">
+                  <ShieldCheck size={14} className="text-indigo-400" />
+                  <span>Founder Master Access Gate</span>
+                </div>
+                <p className="text-[11px] text-indigo-300/80 leading-relaxed">
+                  Portal ini untuk Founder memverifikasi bukti transfer pembeli, mengaktifkan akun, dan mengatur konfigurasi server.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono text-gray-300 uppercase tracking-wider mb-1.5">
+                  Founder Master Key
+                </label>
+                <div className="relative">
+                  <Lock size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="password"
+                    value={founderKey}
+                    onChange={(e) => setFounderKey(e.target.value)}
+                    placeholder="Masukkan Kunci Otorisasi Founder"
+                    required
+                    className="w-full bg-[#12141F] border border-white/10 rounded-xl py-2.5 pl-10 pr-3.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold font-mono text-xs uppercase tracking-wider shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isLoading ? 'Memverifikasi Kunci...' : 'Buka Founder Portal'}
+              </button>
+            </form>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+};

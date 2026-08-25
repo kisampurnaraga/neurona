@@ -151,6 +151,14 @@ export class VeoAdapter implements VideoGenerationProvider {
     } catch (veoErr: any) {
       const errMsg = veoErr?.message || String(veoErr);
       console.error(`[Google Veo 3.1] API Error:`, errMsg);
+      if (
+        errMsg.includes('RESOURCE_EXHAUSTED') ||
+        errMsg.includes('prepayment credits') ||
+        errMsg.includes('depleted') ||
+        errMsg.includes('429')
+      ) {
+        throw new Error(`[Google Veo 3.1] Kredit / Kuota API Google Gemini Anda telah habis (429 RESOURCE_EXHAUSTED). Silakan lakukan top-up prepayment billing di Google AI Studio (https://ai.studio/projects) atau periksa GEMINI_API_KEY di menu Settings.`);
+      }
       throw new Error(`Google Veo Generation Failed: ${errMsg}`);
     }
   }

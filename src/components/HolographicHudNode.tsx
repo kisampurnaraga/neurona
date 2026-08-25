@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { VideoPreviewPlayer } from './VideoPreviewPlayer';
+import { getProjectAspectRatioClass } from '../utils/aspectRatio';
 import { 
   Activity, 
   ShieldAlert, ShieldCheck, 
@@ -26,6 +27,8 @@ import {
   ShoppingBag,
   Sliders,
   Paperclip,
+  Mic,
+  MicOff,
   Image as ImageIcon,
   Video as VideoIcon,
   Copy,
@@ -127,6 +130,12 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const [isStoryboardMatrixOpen, setIsStoryboardMatrixOpen] = useState(false);
 
+  useEffect(() => {
+    if (currentUser && currentUser.credits !== undefined) {
+      setUserCredits(currentUser.credits);
+    }
+  }, [currentUser]);
+
   // Video Generation & TTS Voice Model Selection State
   const [selectedVideoModel, setSelectedVideoModel] = useState<string>(() => {
     return localStorage.getItem('neurona_video_model') || 'runway';
@@ -135,6 +144,86 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
     return localStorage.getItem('neurona_voice_id') || 'tryaudio-female-citra';
   });
   const [isModelModalOpen, setIsModelModalOpen] = useState(false);
+
+  // Speech Recognition (Voice Input)
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'id-ID';
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+      recognition.onerror = (event: any) => {
+        console.warn("Speech recognition notice/error:", event.error);
+        setIsListening(false);
+      };
+      recognition.onresult = (event: any) => {
+        const transcript = event.results?.[0]?.[0]?.transcript;
+        if (transcript) {
+          setPrompt(prompt ? `${prompt.trim()} ${transcript}` : transcript);
+        }
+        setIsListening(false);
+      };
+      recognitionRef.current = recognition;
+    }
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {}
+      }
+    };
+  }, [prompt, setPrompt]);
+
+  const handleToggleVoiceInput = () => {
+    if (isListening) {
+      try {
+        recognitionRef.current?.stop();
+      } catch (e) {}
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Browser Anda belum mendukung Speech Recognition. Silakan gunakan Google Chrome, Microsoft Edge, atau browser berbasis Chromium.");
+      return;
+    }
+
+    try {
+      if (!recognitionRef.current) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'id-ID';
+
+        recognition.onstart = () => setIsListening(true);
+        recognition.onend = () => setIsListening(false);
+        recognition.onerror = (event: any) => {
+          console.warn("Speech recognition error:", event.error);
+          setIsListening(false);
+        };
+        recognition.onresult = (event: any) => {
+          const transcript = event.results?.[0]?.[0]?.transcript;
+          if (transcript) {
+            setPrompt(prompt ? `${prompt.trim()} ${transcript}` : transcript);
+          }
+          setIsListening(false);
+        };
+        recognitionRef.current = recognition;
+      }
+      recognitionRef.current.start();
+    } catch (err) {
+      console.error("Speech recognition start failed:", err);
+      setIsListening(false);
+    }
+  };
 
   const handleSelectVideoModel = (model: string) => {
     setSelectedVideoModel(model);
@@ -276,6 +365,21 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
     }
   };
 
+  const handleResyncScene = async (action: 'ADD' | 'REMOVE', targetIndex: number) => {
+    if (!project) return;
+    neuronaVoice.speak(`Sinkronisasi naskah otomatis diaktifkan untuk ${action === 'ADD' ? 'penambahan' : 'penghapusan'} adegan.`);
+    try {
+      await fetch(`/api/projects/${project.id}/resync-scenes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, targetIndex })
+      });
+    } catch (e) {
+      console.error(e);
+      neuronaVoice.speak(`Gagal menyinkronkan naskah.`);
+    }
+  };
+
   // Calculate project overall progress percentage (0 - 100%)
   const progressPercentage = project?.overallProgress ?? (
     project?.status === 'COMPLETED' ? 100 :
@@ -321,6 +425,13 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
   }, []);
 
   // Auto scroll terminal logs
+  // Auto-open Storyboard Matrix when status becomes AWAITING_APPROVAL
+  useEffect(() => {
+    if (project?.status === 'AWAITING_APPROVAL' && project?.storyboard) {
+      setIsStoryboardMatrixOpen(true);
+    }
+  }, [project?.status, project?.storyboard]);
+
   useEffect(() => {
     terminalBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [project?.logs]);
@@ -660,9 +771,14 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
     { id: '4', timestamp: '02:24:08', source: 'INTERRUPT', message: 'Sistem: Semua sub-node workspace & 8 Agen AI Indonesia terhubung.', level: 'INTERRUPT' }
   ];
 
-  const completedScenes = project?.storyboard?.scenes?.filter(s => s.status === 'COMPLETED' && (s.videoUrl || s.assetUrl)) || [];
+  const scenesWithVideo = project?.storyboard?.scenes?.filter(s => Boolean(s.videoUrl && (s.videoUrl.endsWith('.mp4') || s.videoUrl.endsWith('.webm') || s.videoUrl.includes('/videos/') || s.videoUrl.startsWith('data:video/')))) || [];
   const currentScene = project?.storyboard?.scenes?.[selectedSceneIndex];
-  const activeVideoSrc = currentScene?.videoUrl || currentScene?.assetUrl || project?.finalVideoUrl || (completedScenes.length > 0 ? (completedScenes[0].videoUrl || completedScenes[0].assetUrl) : null);
+  const activeVideoSrc = currentScene?.videoUrl 
+    || project?.finalVideoUrl 
+    || (scenesWithVideo.length > 0 ? scenesWithVideo[0].videoUrl : null)
+    || currentScene?.assetUrl 
+    || currentScene?.imageUrl 
+    || null;
 
   const getNeuronaStatusText = () => {
     if (conversationalMessage) return conversationalMessage;
@@ -957,37 +1073,42 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
       )}
 
       {/* PRIORITY INTERRUPT / APPROVAL ALERT BANNER */}
-      {project?.status === 'AWAITING_APPROVAL' && onApprove && (
-        <div className="relative z-20 px-6 py-2.5 bg-gradient-to-r from-amber-950 via-rose-950 to-amber-950 border-b border-amber-500/40 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-200">
-          <div className="flex items-center space-x-2">
-            <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-[10px] uppercase animate-pulse">
-              ▲ REVIEW GATEWAY [50%]
-            </span>
-            <span className="font-mono text-amber-300 font-semibold">
-              Storyboard siap (50%)! Pilihan: Gunakan Storyboard gratis atau eksekusi render video AI ({project.storyboard?.creditsRequired || 20} Kredit).
-            </span>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsStoryboardMatrixOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-500/40 text-amber-300 font-mono text-xs flex items-center gap-1 transition cursor-pointer"
-            >
-              <Layers size={13} />
-              <span>Buka Storyboard Matrix</span>
-            </button>
+      {project?.status === 'AWAITING_APPROVAL' && onApprove && (() => {
+        const sbCreditsRequired = project.storyboard?.creditsRequired || (project.storyboard?.scenes?.length ? project.storyboard.scenes.length * 8 : 32);
+        const displayCredits = currentUser?.credits !== undefined ? currentUser.credits : userCredits;
 
-            <button
-              id="hud-matrix-approve-btn"
-              onClick={() => handleApproveWithCredits(project.storyboard?.creditsRequired || 20)}
-              className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-400 via-rose-500 to-purple-600 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/30 flex items-center gap-1.5 transition cursor-pointer"
-            >
-              <Play size={13} fill="currentColor" />
-              <span>Mulai Render Video ({project.storyboard?.creditsRequired || 20} Kredit)</span>
-            </button>
+        return (
+          <div className="relative z-20 px-6 py-2.5 bg-gradient-to-r from-amber-950 via-rose-950 to-amber-950 border-b border-amber-500/40 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-200">
+            <div className="flex items-center space-x-2">
+              <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-[10px] uppercase animate-pulse">
+                ▲ REVIEW GATEWAY [50%]
+              </span>
+              <span className="font-mono text-amber-300 font-semibold">
+                Storyboard siap (50%)! Biaya render: <strong className="text-white">{sbCreditsRequired} Kredit</strong> (Saldo Anda: <strong className="text-emerald-400">{displayCredits} Kredit</strong>).
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsStoryboardMatrixOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-500/40 text-amber-300 font-mono text-xs flex items-center gap-1 transition cursor-pointer"
+              >
+                <Layers size={13} />
+                <span>Buka Storyboard Matrix</span>
+              </button>
+
+              <button
+                id="hud-matrix-approve-btn"
+                onClick={() => handleApproveWithCredits(sbCreditsRequired)}
+                className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-400 via-rose-500 to-purple-600 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/30 flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <Play size={13} fill="currentColor" />
+                <span>Mulai Render Video ({sbCreditsRequired} Kredit)</span>
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* MAIN NEURAL NODE MATRIX STAGE */}
       <main className="relative z-10 flex-1 flex flex-col p-4 sm:p-6 overflow-y-auto">
@@ -1141,7 +1262,9 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
                           {isSbActive && <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />}
                         </h3>
                         <span className="text-[10px] text-amber-400 font-mono">
-                          {project?.storyboard?.scenes?.length ? `${project.storyboard.scenes.length} Adegan Dirancang` : 'Fitur Node: Multi-Shot'}
+                          {project?.storyboard?.scenes?.length 
+                            ? `${project.storyboard.scenes.length} Adegan | Saldo: ${currentUser?.credits !== undefined ? currentUser.credits : userCredits} Cr` 
+                            : `Saldo Akun: ${currentUser?.credits !== undefined ? currentUser.credits : userCredits} Cr`}
                         </span>
                       </div>
                     </div>
@@ -1272,22 +1395,6 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
               {/* Quick Preset Action Chips */}
               <div className="flex flex-wrap gap-1.5 pt-1 items-center">
                 <button
-                  id="hud-chip-founder-settings"
-                  onClick={onOpenFounder}
-                  className="px-3 py-1 rounded-full bg-purple-950/90 hover:bg-purple-900 border border-purple-500/60 text-[10px] font-mono font-bold text-purple-200 hover:text-white transition flex items-center gap-1 shadow-sm cursor-pointer"
-                  title="Buka Founder Control Center"
-                >
-                  👑 Founder Settings
-                </button>
-                <button
-                  id="hud-chip-model-selector"
-                  onClick={() => setIsModelModalOpen(true)}
-                  className="px-3 py-1 rounded-full bg-rose-950/90 hover:bg-rose-900 border border-rose-500/60 text-[10px] font-mono font-bold text-rose-200 hover:text-white transition flex items-center gap-1 shadow-sm cursor-pointer"
-                  title="Atur Model Video (BytePlus / Veo / Runway)"
-                >
-                  ⚙️ Model Video: <span className="text-white underline">{selectedVideoModel.toUpperCase()}</span>
-                </button>
-                <button
                   onClick={() => onInteract("Buatkan video animasi 3D Pixar tentang petualangan robot di dunia cyberpunk")}
                   className="px-2.5 py-1 rounded-full bg-white/5 hover:bg-cyan-950/60 border border-white/10 hover:border-cyan-500/40 text-[10px] text-slate-300 hover:text-cyan-300 transition"
                 >
@@ -1350,13 +1457,33 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
                   <Paperclip size={18} />
                 </button>
 
+                <button
+                  type="button"
+                  onClick={handleToggleVoiceInput}
+                  className={`p-3 transition relative rounded-xl ${
+                    isListening 
+                      ? 'text-rose-400 bg-rose-500/20 animate-pulse shadow-[0_0_12px_rgba(244,63,94,0.5)]' 
+                      : 'text-slate-400 hover:text-cyan-300'
+                  }`}
+                  title={isListening ? "Mendengarkan suara... Klik untuk berhenti" : "Input Perintah Suara (Speech to Text)"}
+                >
+                  {isListening ? (
+                    <MicOff size={18} className="animate-pulse text-rose-400" />
+                  ) : (
+                    <Mic size={18} />
+                  )}
+                  {isListening && (
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                  )}
+                </button>
+
                 <input
                   id="hud-matrix-prompt-input"
                   type="text"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !isThinking && onInteract()}
-                  placeholder="Ketik instruksi produksi video untuk NEURONA Core..."
+                  placeholder={isListening ? "🎙️ Mendengarkan suara Anda... Bicaralah sekarang..." : "Ketik instruksi produksi video atau gunakan mic..."}
                   className="flex-1 bg-transparent px-2 py-3.5 text-xs sm:text-sm text-white placeholder-slate-500 outline-none"
                   disabled={isThinking}
                 />
@@ -1376,7 +1503,14 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
               </div>
 
               <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono px-2">
-                <span>Tekan <kbd className="bg-slate-800 px-1 py-0.5 rounded text-slate-400">Enter</kbd> untuk mengeksekusi</span>
+                {isListening ? (
+                  <span className="text-rose-400 font-bold flex items-center gap-1.5 animate-pulse">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 inline-block animate-ping" />
+                    Merekam suara Anda... Bicaralah sekarang (misal: "buat video edukasi fisika")
+                  </span>
+                ) : (
+                  <span>Tekan <kbd className="bg-slate-800 px-1 py-0.5 rounded text-slate-400">Enter</kbd> untuk mengeksekusi</span>
+                )}
                 <span className="text-cyan-400">LATENCY: 12ms • QUANTUM SYNC</span>
               </div>
             </div>
@@ -1489,7 +1623,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
                   </div>
 
                   {/* Mini Video Display */}
-                  <VideoPreviewPlayer
+                  <VideoPreviewPlayer className={getProjectAspectRatioClass(project)}
                     src={activeVideoSrc}
                     posterImage={currentScene?.imageUrl || currentScene?.assetUrl}
                     title={currentScene?.title || `Adegan ${(selectedSceneIndex || 0) + 1}`}
@@ -1705,6 +1839,8 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
         onClose={() => setIsCreditModalOpen(false)}
         currentCredits={userCredits}
         onAddCredits={handleAddCredits}
+        userEmail={currentUser?.email || 'kreator@neuronna.ai'}
+        userName={currentUser?.name || 'Kreator Neuronna'}
       />
 
       {/* Advanced Storyboard Matrix Modal */}
@@ -1722,6 +1858,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
         onGenerateAllImages={handleGenerateAllImages}
         onGenerateSceneVideo={handleGenerateSceneVideo}
         onChooseStoryboardOnly={handleChooseStoryboardOnly}
+        onResyncScene={handleResyncScene}
       />
 
       {/* Dynamic Video Model & Voiceover TTS Selector Modal */}

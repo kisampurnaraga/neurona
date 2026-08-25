@@ -73,7 +73,9 @@ function isQuotaError(errorMsg: string, statusCode?: number): boolean {
     msg.includes('rate limit') ||
     msg.includes('insufficient_quota') ||
     msg.includes('billing') ||
-    msg.includes('credit')
+    msg.includes('credit') ||
+    msg.includes('depleted') ||
+    msg.includes('prepayment')
   );
 }
 

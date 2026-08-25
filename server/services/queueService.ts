@@ -214,10 +214,11 @@ export class QueueService {
 
       // Deduct User Credits
       const credits = payload.creditsToDeduct ?? 15;
-      const user = userDatabase.getUser(userId) || userDatabase.getUserByEmail(userId);
+      await userDatabase.adjustCredits(userId, -credits, true);
+      const user = await userDatabase.getUser(userId);
       if (user && user.credits !== undefined) {
         const previous = user.credits;
-        user.credits = Math.max(0, user.credits - credits);
+        // Handled by adjustCredits
         console.log(`[Worker] Deducted ${credits} credits from user ${user.email} (Previous: ${previous} -> Current: ${user.credits})`);
       }
 

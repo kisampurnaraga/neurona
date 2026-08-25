@@ -79,6 +79,7 @@ export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
   const [language, setLanguage] = useState('id');
   const [keyTakeaways, setKeyTakeaways] = useState('Memahami perbedaan bit vs qubit, konsep superposisi dengan analogi koin berputar, dan potensi masa depan AI');
   const [chapterCount, setChapterCount] = useState(3);
+  const [sceneCount, setSceneCount] = useState(4);
   const [narratorTone, setNarratorTone] = useState<EducationalConfig['narratorTone']>('FRIENDLY_EXPLAINER');
   const [aspectRatio, setAspectRatio] = useState<EducationalConfig['aspectRatio']>('16:9');
 
@@ -97,7 +98,8 @@ export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
       narratorTone,
       aspectRatio,
       characterDescription,
-      worldSetting
+      worldSetting,
+      sceneCount
     };
 
     const prompt = `Buatkan video pembelajaran edukatif ${visualStyle.replace(/_/g, ' ')} tentang "${subjectTitle}" untuk audiens ${targetAudience} kategori ${category}. Karakter presenter/maskot: ${characterDescription}. Latar visual: ${worldSetting}. Poin inti: ${keyTakeaways}. Bahasa: ${language}.`;
@@ -202,6 +204,38 @@ export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
                   )}
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* JUMLAH ADEGAN (SCENE) */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-emerald-400 mb-2 flex items-center gap-1.5">
+              <Video className="w-3.5 h-3.5" />
+              JUMLAH ADEGAN (SCENE)
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { count: 4, label: '4 Scene (Singkat)' },
+                { count: 6, label: '6 Scene (Standar) ⭐' },
+                { count: 8, label: '8 Scene (Lengkap)' },
+                { count: 10, label: '10 Scene (Maksimal)' }
+              ].map((opt) => (
+                <button
+                  key={opt.count}
+                  type="button"
+                  onClick={() => setSceneCount(opt.count)}
+                  className={`p-2.5 rounded-xl border text-center transition-all ${
+                    sceneCount === opt.count 
+                      ? 'bg-emerald-600/30 border-emerald-500 text-white font-bold ring-1 ring-emerald-400' 
+                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="text-xs">{opt.label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="text-[10px] text-emerald-400/80 mt-1.5 ml-1">
+              💡 Estimasi Biaya Render Video: {sceneCount} Scene x 8 Kredit = <strong>{sceneCount * 8} Kredit</strong>
             </div>
           </div>
 

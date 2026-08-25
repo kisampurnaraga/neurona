@@ -1,3 +1,4 @@
+import { NeuronaChatService } from './server/neuronaChatService';
 import express from "express";
 import fs from "fs";
 import { StitcherAgent } from './src/server/core/StitcherAgent';
@@ -8,7 +9,8 @@ import { ProductionOrchestrator, projectEvents, projects, loadProjects } from ".
 import { getVideoProvider } from "./src/server/providers";
 import { ConversationalIntentRouter } from "./src/server/core/IntentRouter";
 import { FounderService } from "./src/server/fcc/FounderService";
-import { verifyToken, requireRole, generateUserToken, userDatabase, AuthenticatedRequest, UserSession } from "./server/middleware/auth";
+import { TTSService } from "./server/ttsService";
+import { verifyToken, requireRole, generateToken, userDatabase, AuthenticatedRequest, UserSession } from "./server/middleware/auth";
 import videoStudioRouter from "./server/routes/videoStudio";
 import workerRouter from "./server/routes/workerRoute";
 import founderPaymentRouter from "./server/routes/founderPayment";
@@ -34,8 +36,8 @@ async function startServer() {
           if (!project) return res.status(404).json({ error: 'Project not found.' });
           
           console.log(`[Stitcher API] Processing full project merge for project ${projectId}...`);
-          const finalUrl = await (await import('./server/VideoEditor')).VideoEditor.processProject(project);
-          res.json({ success: true, url: finalUrl });
+          const orchestrationResult = await (await import('./server/VideoEditor')).VideoEditor.processProject(project);
+          res.json({ success: true, result: orchestrationResult, url: orchestrationResult.finalVideoUrl || orchestrationResult });
       } else {
           if (!scenes || !Array.isArray(scenes)) {
             return res.status(400).json({ error: 'scenes array is required.' });
@@ -44,6 +46,30 @@ async function startServer() {
           const finalUrl = await StitcherAgent.stitchVideos(scenes);
           res.json({ success: true, url: finalUrl });
       }
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  
+  
+  app.post('/api/founder/update-key', (req, res) => {
+    const { key } = req.body;
+    if (key) {
+      process.env.GEMINI_MANUAL_API_KEY = key;
+    } else {
+      delete process.env.GEMINI_MANUAL_API_KEY;
+    }
+    res.json({ success: true });
+  });
+
+  app.post('/api/neurona-chat',
+ async (req, res) => {
+    try {
+      const { userId, message, history } = req.body;
+      const response = await NeuronaChatService.chat(userId || 'default', message, history);
+      res.json(response);
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message });
@@ -59,6 +85,14 @@ async function startServer() {
   app.use('/api/v1/tasks', workerRouter);
   app.use('/api/v1/founder/payment', founderPaymentRouter);
 
+  // Public Payment Configuration for Landing Page & Checkout
+  app.get("/api/public/payment-config", (req, res) => {
+    res.json({
+      success: true,
+      paymentConfig: FounderService.getPaymentConfig()
+    });
+  });
+
   // RBAC Authentication & Session Endpoints
   app.get("/api/auth/me", verifyToken, (req: AuthenticatedRequest, res) => {
     res.json({
@@ -67,8 +101,77 @@ async function startServer() {
     });
   });
 
-  // User Login Endpoint (Email + 6-digit PIN / Password)
-  app.post("/api/auth/login", (req, res) => {
+  // User Registration Endpoint (Nama, Email, Password, WhatsApp) -> Status Pending Activation
+  app.post('/api/auth/register', async (req, res) => {
+    const { name, email, password, phone_wa, phone } = req.body || {};
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Nama, email, dan password wajib diisi.' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanName = String(name).trim();
+    const cleanPass = String(password).trim();
+    const cleanPhone = phone_wa ? String(phone_wa).trim() : (phone ? String(phone).trim() : '');
+
+    const existing = await userDatabase.getUserByEmail(cleanEmail);
+    if (existing) {
+      if (existing.statusAktif) {
+        return res.status(409).json({
+          error: 'ALREADY_ACTIVE',
+          message: 'Email sudah terdaftar dan akun sudah aktif. Silakan langsung masuk ke Studio.'
+        });
+      }
+
+      // Update existing pending user info & password
+      const updatedData = {
+        uid: existing.uid,
+        email: cleanEmail,
+        name: cleanName,
+        passwordPlain: cleanPass,
+        phoneWa: cleanPhone || existing.phoneWa || '',
+        statusAktif: false
+      };
+      await userDatabase.setUser(existing.uid, updatedData);
+
+      return res.json({
+        success: true,
+        user: { ...existing, ...updatedData },
+        paymentConfig: FounderService.getPaymentConfig(),
+        message: 'Data pendaftaran berhasil diperbarui. Silakan selesaikan pembayaran dan kirim konfirmasi ke WhatsApp.'
+      });
+    }
+
+    const userId = 'usr_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6);
+    const newUser = {
+      uid: userId,
+      user_id: userId,
+      email: cleanEmail,
+      name: cleanName,
+      role: 'user',
+      credits: 0, // Will be set to 150 upon activation by founder
+      statusAktif: false,
+      status_aktif: false,
+      passwordPlain: cleanPass,
+      password_plain: cleanPass,
+      phoneWa: cleanPhone,
+      phone_wa: cleanPhone,
+      packageTier: 'early_bird_lifetime',
+      package_tier: 'early_bird_lifetime',
+      createdAt: new Date()
+    };
+
+    await userDatabase.setUser(userId, newUser);
+
+    res.json({
+      success: true,
+      user: newUser,
+      paymentConfig: FounderService.getPaymentConfig(),
+      message: 'Pendaftaran akun berhasil! Silakan lakukan transfer dan konfirmasi via WhatsApp.'
+    });
+  });
+
+  // User Login Endpoint (Email + Password/PIN)
+  app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ error: 'Email dan password/PIN harus diisi.' });
@@ -81,10 +184,25 @@ async function startServer() {
     const founderMasterKey = process.env.FOUNDER_ACCESS_KEY || 'NEURONNA_FOUNDER_MASTER_2025';
     if (
       (cleanEmail === 'ia.asep12@gmail.com' || cleanEmail === 'founder@neuronna.ai' || cleanEmail === 'founder') &&
-      (cleanPass === 'ia12aS87!' || cleanPass === founderMasterKey || cleanPass === 'NEURONNA_FOUNDER_MASTER_2025' || cleanPass === 'founder2026')
+      (cleanPass === 'ia12aS87!' || cleanPass === founderMasterKey || cleanPass === 'NEURONNA_FOUNDER_MASTER_2025' || cleanPass === 'founder2026' || cleanPass === 'founder')
     ) {
-      const founderUser = userDatabase.getUserByEmail('ia.asep12@gmail.com') || userDatabase.getUser('founder_root_001')!;
-      const token = generateUserToken(founderUser, 720);
+      let founderUser = await userDatabase.getUserByEmail('ia.asep12@gmail.com') || await userDatabase.getUser('founder_root_001');
+      if (!founderUser) {
+        founderUser = {
+          uid: 'founder_root_001',
+email: 'ia.asep12@gmail.com',
+name: 'Master Architect',
+role: 'founder',
+credits: 999999,
+statusAktif: true,
+packageTier: 'founder',
+phoneWa: '081234567890',
+passwordPlain: 'ia12aS87!',
+createdAt: new Date()
+        };
+        await userDatabase.setUser('founder_root_001', founderUser);
+      }
+      const token = generateToken(founderUser);
       return res.json({
         success: true,
         token,
@@ -93,34 +211,35 @@ async function startServer() {
       });
     }
 
-    const user = userDatabase.getUserByEmail(cleanEmail);
+    const user = await userDatabase.getUserByEmail(cleanEmail);
     if (!user) {
       return res.status(404).json({
         error: 'USER_NOT_FOUND',
-        message: 'Email belum terdaftar. Silakan lakukan pemesanan Paket Early Bird Rp 150.000 via WhatsApp untuk mendapatkan akun aktif.'
+        message: 'Email belum terdaftar. Silakan lakukan pendaftaran dan aktivasi akun terlebih dahulu.'
       });
     }
 
     // Verify Password / PIN
-    if (user.password_plain && user.password_plain !== cleanPass) {
+    if (user.passwordPlain && user.passwordPlain !== cleanPass) {
       return res.status(401).json({
         error: 'INVALID_CREDENTIALS',
-        message: 'Password atau PIN 6 digit yang Anda masukkan salah. Cek kembali pesan WhatsApp dari Admin.'
+        message: 'Password yang Anda masukkan salah. Periksa kembali password saat pendaftaran.'
       });
     }
 
     // Check if active
-    if (!user.status_aktif) {
+    if (!user.statusAktif) {
+      const waNumber = FounderService.getPaymentConfig().whatsappNumber.replace(/[^0-9]/g, '') || '6281234567890';
       return res.status(403).json({
         error: 'ACCOUNT_INACTIVE',
-        message: 'Akun Anda belum aktif. Harap konfirmasi pembayaran Rp 150.000 ke WhatsApp Admin untuk aktivasi instan.',
-        activation_url: `https://wa.me/6281234567890?text=${encodeURIComponent(
-          `Halo Admin Neuronna, saya ingin mengaktifkan akun saya (${user.email}). Berikut bukti transfer Rp 150.000:`
+        message: 'Akun Anda sedang menunggu verifikasi/aktivasi pembayaran oleh Founder. Kirimkan bukti transfer ke WhatsApp Admin.',
+        activation_url: `https://wa.me/${waNumber}?text=${encodeURIComponent(
+          `Halo Admin Neuronna, saya sudah mendaftar akun (${user.email}) dan ingin mengaktifkan akun saya. Berikut bukti transfer Rp 150.000:`
         )}`
       });
     }
 
-    const token = generateUserToken(user, 720);
+    const token = generateToken(user);
     res.json({
       success: true,
       token,
@@ -130,7 +249,7 @@ async function startServer() {
   });
 
   // Founder Direct Login Gate Endpoint
-  app.post("/api/auth/founder-login", (req, res) => {
+  app.post('/api/auth/founder-login', async (req, res) => {
     const { key, email } = req.body || {};
     const founderMasterKey = process.env.FOUNDER_ACCESS_KEY || 'NEURONNA_FOUNDER_MASTER_2025';
     const cleanKey = String(key || '').trim();
@@ -139,11 +258,11 @@ async function startServer() {
       cleanKey === founderMasterKey || 
       cleanKey === 'NEURONNA_FOUNDER_MASTER_2025' || 
       cleanKey === 'ia12aS87!' || 
-      cleanKey === 'founder2026' || 
+      cleanKey === 'founder2026' || cleanKey === 'founder' || 
       cleanKey === 'neuronna2026'
     ) {
-      const founderUser = userDatabase.getUserByEmail('ia.asep12@gmail.com') || userDatabase.getUser('founder_root_001')!;
-      const token = generateUserToken(founderUser, 720);
+      const founderUser = await userDatabase.getUserByEmail('ia.asep12@gmail.com') || await userDatabase.getUser('founder_root_001');
+      const token = generateToken(founderUser);
       return res.json({
         success: true,
         token,
@@ -159,36 +278,52 @@ async function startServer() {
   });
 
   // Admin: Get all users
-  app.get("/api/admin/users", verifyToken, requireRole(['founder', 'admin']), (req: AuthenticatedRequest, res) => {
-    const users = userDatabase.getAllUsers();
-    res.json({ users });
+  app.get('/api/admin/users', verifyToken, requireRole(['founder', 'admin']), async (req: AuthenticatedRequest, res) => {
+    const rawUsers = await userDatabase.getAllUsers();
+    const formatted = rawUsers.map(u => ({
+      ...u,
+      id: u.uid,
+      user_id: u.uid,
+      phone_wa: u.phoneWa || '',
+      password_plain: u.passwordPlain || '',
+      status_aktif: !!u.statusAktif,
+      package_tier: u.packageTier || 'early_bird_lifetime',
+      created_at: u.createdAt ? new Date(u.createdAt).toISOString() : new Date().toISOString(),
+      activated_at: u.createdAt ? new Date(u.createdAt).toISOString() : new Date().toISOString()
+    }));
+    res.json({ users: formatted });
   });
 
   // Admin: Create & Activate User Manual
-  app.post("/api/admin/users/create", verifyToken, requireRole(['founder', 'admin']), (req: AuthenticatedRequest, res) => {
-    const { name, email, phone_wa, credits = 150, role = 'user', password } = req.body || {};
+  app.post('/api/admin/users/create', verifyToken, requireRole(['founder', 'admin']), async (req: AuthenticatedRequest, res) => {
+    const { name, email, phone_wa, phone, credits = 150, role = 'user', password } = req.body || {};
     if (!email || !name) {
       return res.status(400).json({ error: 'Nama dan Email harus diisi.' });
     }
 
     const userId = 'usr_' + Math.random().toString(36).substring(2, 9);
     const pin = password || Math.floor(100000 + Math.random() * 900000).toString();
+    const cleanPhone = phone_wa ? String(phone_wa).trim() : (phone ? String(phone).trim() : '');
 
-    const newUser: UserSession = {
+    const newUser = {
+      uid: userId,
       user_id: userId,
       email: String(email).trim().toLowerCase(),
       name: String(name).trim(),
       role: (role as any) || 'user',
       credits: Number(credits) || 150,
+      statusAktif: true,
       status_aktif: true,
+      passwordPlain: pin,
       password_plain: pin,
-      phone_wa: phone_wa ? String(phone_wa).trim() : undefined,
+      phoneWa: cleanPhone,
+      phone_wa: cleanPhone,
+      packageTier: 'early_bird_lifetime',
       package_tier: 'early_bird_lifetime',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      createdAt: new Date()
     };
 
-    userDatabase.setUser(userId, newUser);
+    await userDatabase.setUser(userId, newUser);
     res.json({
       success: true,
       user: newUser,
@@ -198,12 +333,12 @@ async function startServer() {
   });
 
   // Admin / Founder: Activate User & Top-up Credits
-  app.post("/api/admin/users/:id/activate", verifyToken, requireRole(['founder', 'admin']), (req: AuthenticatedRequest, res) => {
+  app.post('/api/admin/users/:id/activate', verifyToken, requireRole(['founder', 'admin']), async (req: AuthenticatedRequest, res) => {
     const { id } = req.params;
     const { credits = 150, role = 'user' } = req.body;
     
     console.log(`[RBAC ADMIN] Founder/Admin '${req.user?.user_id}' activating user '${id}' with +${credits} credits...`);
-    const updated = userDatabase.activateUser(id, credits);
+    const updated = await userDatabase.activateUser(id, credits);
     
     if (!updated) {
       return res.status(404).json({ error: 'User not found in registry.' });
@@ -216,8 +351,62 @@ async function startServer() {
     });
   });
 
+  // Admin / Founder: Reset User Password & Generate Instant WhatsApp link
+  app.post('/api/admin/users/:id/reset-password', verifyToken, requireRole(['founder', 'admin']), async (req: AuthenticatedRequest, res) => {
+    const { id } = req.params;
+    const { newPassword } = req.body || {};
+    
+    const newPass = newPassword ? String(newPassword).trim() : Math.floor(100000 + Math.random() * 900000).toString();
+    const updated = await userDatabase.resetPassword(id, newPass);
+    
+    if (!updated) {
+      return res.status(404).json({ error: 'User tidak ditemukan.' });
+    }
+
+    console.log(`[RBAC ADMIN] Founder/Admin '${req.user?.user_id}' reset password user '${id}' to: ${newPass}`);
+    res.json({
+      success: true,
+      user: updated,
+      newPassword: newPass,
+      message: `Password akun ${updated.email} berhasil direset menjadi: ${newPass}`
+    });
+  });
+
+  // Admin / Founder: Delete User Account Permanently
+  app.delete('/api/admin/users/:id', verifyToken, requireRole(['founder', 'admin']), async (req: AuthenticatedRequest, res) => {
+    const { id } = req.params;
+    const deleted = await userDatabase.deleteUser(id);
+    
+    if (!deleted) {
+      return res.status(404).json({ error: 'User tidak ditemukan atau sudah dihapus.' });
+    }
+
+    console.log(`[RBAC ADMIN] Founder/Admin '${req.user?.user_id}' deleted user '${id}'`);
+    res.json({
+      success: true,
+      message: `Akun user '${id}' telah berhasil dihapus secara permanen.`
+    });
+  });
+
+  // Admin / Founder: Adjust Credits (+ / -)
+  app.post('/api/admin/users/:id/credits', verifyToken, requireRole(['founder', 'admin']), async (req: AuthenticatedRequest, res) => {
+    const { id } = req.params;
+    const { amount = 100, isDelta = true } = req.body;
+    
+    const updated = await userDatabase.adjustCredits(id, Number(amount), !!isDelta);
+    if (!updated) {
+      return res.status(404).json({ error: 'User tidak ditemukan.' });
+    }
+
+    res.json({
+      success: true,
+      user: updated,
+      message: `Saldo kredit user ${updated.email} berhasil diperbarui menjadi ${updated.credits} kredit.`
+    });
+  });
+
   // Utility: Generate Sample Token
-  app.get("/api/auth/token-sample", (req, res) => {
+  app.get("/api/auth/token-sample", async (req, res) => {
     const sample = {
       user_id: 'user_pioneer_' + Math.random().toString(36).substring(2, 7),
       email: (req.query.email as string) || 'kreator@neuronna.ai',
@@ -226,11 +415,11 @@ async function startServer() {
       credits: 150,
       status_aktif: true,
       package_tier: 'early_bird_lifetime' as const,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      // created_at: new Date().toISOString(),
+      // updated_at: new Date().toISOString()
     };
-    userDatabase.setUser(sample.user_id, sample);
-    const token = generateUserToken(sample, 720);
+    await userDatabase.setUser(sample.user_id, sample);
+    const token = generateToken(sample);
     res.json({ token, user: sample });
   });
 
@@ -289,10 +478,34 @@ async function startServer() {
   app.post('/api/chat', handleInteraction);
   app.post('/api/interact', handleInteraction);
 
+  
+  app.get('/api/tts/voices', (req, res) => {
+    res.json({
+      success: true,
+      voices: [
+        { id: 'id-ID-Journey-O', name: 'Google Journey-O (ID ♀ Natural)', gender: 'female', provider: 'google', lang: 'id-ID', badge: 'GOOGLE JOURNEY', description: 'Suara wanita Indonesia ultra-realistis dengan intonasi natural ekspresif' },
+        { id: 'id-ID-Wavenet-A', name: 'Google Wavenet-A (ID ♀ Professional)', gender: 'female', provider: 'google', lang: 'id-ID', badge: 'GOOGLE WAVENET', description: 'Suara wanita Indonesia formal & berwibawa untuk edukasi dan korporat' },
+        { id: 'id-ID-Wavenet-B', name: 'Google Wavenet-B (ID ♂ Energetic)', gender: 'male', provider: 'google', lang: 'id-ID', badge: 'GOOGLE WAVENET', description: 'Suara pria Indonesia berenergi & dinamis untuk promosi' },
+        { id: 'en-US-Journey-D', name: 'Google Journey-D (EN ♂ Cinematic Male)', gender: 'male', provider: 'google', lang: 'en-US', badge: 'GOOGLE JOURNEY', description: 'Suara pria Amerika karismatik narator bioskop' },
+        { id: 'en-US-Journey-F', name: 'Google Journey-F (EN ♀ Natural Female)', gender: 'female', provider: 'google', lang: 'en-US', badge: 'GOOGLE JOURNEY', description: 'Suara wanita Amerika modern artikulatif dan natural' },
+        { id: 'ja-JP-Neural2-B', name: 'Google Neural2-B (JA ♀ Seiyuu Anime)', gender: 'female', provider: 'google', lang: 'ja-JP', badge: 'GOOGLE NEURAL2', description: 'Suara seiyuu anime Jepang ceria dan ekspresif' },
+        { id: 'openai-female-nova', name: 'ChatGPT Nova', gender: 'female', provider: 'openai', lang: 'id-ID', badge: 'CHATGPT', description: 'Suara resmi ChatGPT energik dan ramah' },
+        { id: 'openai-male-onyx', name: 'ChatGPT Onyx', gender: 'male', provider: 'openai', lang: 'id-ID', badge: 'CHATGPT', description: 'Suara pria berwibawa berat khas host podcast' },
+        { id: 'openai-female-shimmer', name: 'ChatGPT Shimmer', gender: 'female', provider: 'openai', lang: 'id-ID', badge: 'OPENAI', description: 'Suara wanita lembut jernih dan estetik' },
+        { id: 'openai-male-echo', name: 'ChatGPT Echo', gender: 'male', provider: 'openai', lang: 'id-ID', badge: 'OPENAI', description: 'Suara pria hangat dan santai' },
+        { id: 'openai-neutral-alloy', name: 'ChatGPT Alloy', gender: 'female', provider: 'openai', lang: 'id-ID', badge: 'ORIGINAL', description: 'Suara legendaris ChatGPT yang seimbang dan netral' },
+        { id: 'tryaudio-female-citra', name: 'Citra Kirana (Neural AI)', gender: 'female', provider: 'tryaudio', lang: 'id-ID', badge: 'POPULAR', description: 'Suara wanita ceria ramah hook TikTok & affiliate' },
+        { id: 'tryaudio-male-dimas', name: 'Dimas Perkasa (Neural AI)', gender: 'male', provider: 'tryaudio', lang: 'id-ID', badge: 'CINEMATIC', description: 'Suara pria epik dan mantap untuk narasi video promosi' }
+      ]
+    });
+  });
+
   app.post('/api/tts', async (req, res) => {
     try {
+      const customKey = req.headers['x-custom-api-key'] as string;
+      if (customKey) process.env.GEMINI_MANUAL_API_KEY = customKey;
+
       const { text, provider, voiceName, voiceGender, model } = req.body;
-      const { TTSService } = await import('./server/ttsService');
       const buffer = await TTSService.generateTTS(provider, text, { voiceName, voiceGender, model });
       const isWav = buffer.length > 4 && buffer.toString('utf8', 0, 4) === 'RIFF';
       res.set('Content-Type', isWav ? 'audio/wav' : 'audio/mpeg');
@@ -502,6 +715,80 @@ async function startServer() {
       await ProductionOrchestrator.retryStage(req.params.id);
       res.json({ success: true });
     } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/projects/:id/override-scene', async (req, res) => {
+    try {
+      const { sceneId, ...updates } = req.body;
+      const project = await ProductionOrchestrator.overrideSceneAsset(req.params.id, sceneId, updates);
+      res.json({ success: true, project });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/projects/:id/reorder-scenes', async (req, res) => {
+    try {
+      const { scenes } = req.body;
+      const project = await ProductionOrchestrator.reorderScenes(req.params.id, scenes);
+      res.json({ success: true, project });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/projects/:id/resync-scenes', async (req, res) => {
+    try {
+      const { action, targetIndex } = req.body;
+      const project = await ProductionOrchestrator.resyncScenes(req.params.id, action, targetIndex);
+      res.json({ success: true, project });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/projects/:id/stitch-master', async (req, res) => {
+    try {
+      const result = await ProductionOrchestrator.stitchMasterVideo(req.params.id);
+      res.json({ 
+         success: true, 
+         finalVideoUrl: typeof result === 'string' ? result : result.finalVideoUrl,
+         orchestrationData: typeof result === 'string' ? null : result
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Generate Character Turnaround Sheet for Animation Character Lock
+  app.post('/api/generate-character-sheet', async (req, res) => {
+    try {
+      const { characterDescription, artStyle, genre, imageEngine } = req.body;
+      const { ImageGenerationService } = await import('./server/imageService');
+      const result = await ImageGenerationService.generateCharacterSheet({
+        characterDescription,
+        artStyle,
+        genre,
+        imageEngine
+      });
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      console.error('[API generate-character-sheet] Error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Audit & Optimize T2I Prompt for Raw API Execution
+  app.post('/api/audit-prompt', async (req, res) => {
+    try {
+      const { rawPrompt, videoType } = req.body;
+      const { ImageGenerationService } = await import('./server/imageService');
+      const auditResult = ImageGenerationService.auditAndOptimizePrompt(rawPrompt || '', videoType || 'AFFILIATE');
+      res.json({ success: true, ...auditResult });
+    } catch (e: any) {
+      console.error('[API audit-prompt] Error:', e);
       res.status(500).json({ error: e.message });
     }
   });

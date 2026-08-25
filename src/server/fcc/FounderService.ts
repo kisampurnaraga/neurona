@@ -39,11 +39,16 @@ export type VideoEngineOption = 'byteplus' | 'veo' | 'runway' | 'sora';
 export class FounderService {
   private static paymentConfig: {
     whatsappNumber: string;
+    telegramBotUsername: string;
+    telegramBotToken?: string;
     bankAccounts: Array<{ id: string; bank: string; accountNumber: string; accountName: string }>;
   } = {
-    whatsappNumber: '+6281234567890',
+    whatsappNumber: '6281234567890',
+    telegramBotUsername: 'NeuronnaAIBot',
+    telegramBotToken: '',
     bankAccounts: [
-      { id: '1', bank: 'BCA', accountNumber: '1234567890', accountName: 'Neuronna Global' }
+      { id: '1', bank: 'BANK BCA', accountNumber: '8720-9988-12', accountName: 'NEURONA DIGITAL MEDIA' },
+      { id: '2', bank: 'BANK MANDIRI', accountNumber: '137-00-998811-2', accountName: 'NEURONA DIGITAL MEDIA' }
     ]
   };
 
@@ -51,8 +56,15 @@ export class FounderService {
     return this.paymentConfig;
   }
 
-  static updatePaymentConfig(data: { whatsappNumber?: string; bankAccounts?: Array<{ id: string; bank: string; accountNumber: string; accountName: string }> }) {
+  static updatePaymentConfig(data: { 
+    whatsappNumber?: string; 
+    telegramBotUsername?: string;
+    telegramBotToken?: string;
+    bankAccounts?: Array<{ id: string; bank: string; accountNumber: string; accountName: string }> 
+  }) {
     if (data.whatsappNumber !== undefined) this.paymentConfig.whatsappNumber = data.whatsappNumber;
+    if (data.telegramBotUsername !== undefined) this.paymentConfig.telegramBotUsername = data.telegramBotUsername;
+    if (data.telegramBotToken !== undefined) this.paymentConfig.telegramBotToken = data.telegramBotToken;
     if (data.bankAccounts !== undefined) this.paymentConfig.bankAccounts = data.bankAccounts;
   }
 

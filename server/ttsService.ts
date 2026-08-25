@@ -97,7 +97,7 @@ export class TTSService {
           geminiVoice = 'Kore';
         }
 
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        const ai = new GoogleGenAI({ apiKey: geminiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
 
         const promptText = isMale
           ? `Bicaralah dengan intonasi pria yang ramah, jelas, natural, dan berwibawa dalam Bahasa Indonesia: "${text}"`
