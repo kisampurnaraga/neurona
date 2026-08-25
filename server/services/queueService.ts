@@ -1,0 +1,240 @@
+import { CloudTasksClient, protos } from '@google-cloud/tasks';
+import { GoogleVeoService } from './googleVeoService';
+import { TTSService } from './ttsService';
+import { VideoMuxerService } from './videoMuxerService';
+import { userDatabase } from '../middleware/auth';
+
+export interface RenderTaskPayload {
+  taskId: string;
+  userId: string;
+  promptText: string;
+  voiceoverScript?: string;
+  voiceType?: string;
+  referenceImageUrl?: string;
+  aspectRatio?: '9:16' | '16:9';
+  durationSeconds?: number;
+  creditsToDeduct?: number;
+  callbackUrl?: string;
+  createdAt?: string;
+}
+
+export interface TaskStatusRecord {
+  taskId: string;
+  userId: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  videoUrl?: string;
+  audioUrl?: string;
+  error?: string;
+  promptText: string;
+  aspectRatio?: string;
+  voiceType?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+// In-Memory Task Registry with persistence capabilities
+export const taskRegistry = new Map<string, TaskStatusRecord>();
+
+export class QueueService {
+  private static tasksClient: CloudTasksClient | null = null;
+  private static project: string = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID || '';
+  private static location: string = process.env.GOOGLE_CLOUD_LOCATION || process.env.GCP_REGION || 'asia-southeast1';
+  private static queue: string = process.env.CLOUD_TASKS_QUEUE || 'neuronna-video-render-queue';
+
+  private static getClient(): CloudTasksClient | null {
+    if (!this.tasksClient) {
+      try {
+        if (process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GOOGLE_CLOUD_PROJECT) {
+          this.tasksClient = new CloudTasksClient();
+        }
+      } catch (err: any) {
+        console.warn('[QueueService] Notice initializing Cloud Tasks client:', err?.message || err);
+        return null;
+      }
+    }
+    return this.tasksClient;
+  }
+
+  /**
+   * Enqueues an asynchronous video rendering task via Google Cloud Tasks
+   * or background async worker to protect against HTTP timeouts on Cloud Run.
+   */
+  public static async createRenderTask(payload: RenderTaskPayload): Promise<{ taskId: string; status: string; message: string }> {
+    const taskId = payload.taskId || `task_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    payload.taskId = taskId;
+    payload.createdAt = new Date().toISOString();
+
+    // Register task state
+    taskRegistry.set(taskId, {
+      taskId,
+      userId: payload.userId,
+      status: 'queued',
+      progress: 5,
+      promptText: payload.promptText,
+      aspectRatio: payload.aspectRatio || '9:16',
+      voiceType: payload.voiceType || 'id-ID-Journey-O',
+      createdAt: payload.createdAt,
+      updatedAt: payload.createdAt
+    });
+
+    const client = this.getClient();
+    const canUseCloudTasks = Boolean(client && this.project && process.env.CLOUD_TASKS_QUEUE);
+
+    if (canUseCloudTasks && client) {
+      try {
+        console.log(`[QueueService] Dispatching task ${taskId} to Cloud Tasks queue '${this.queue}'...`);
+        const parent = client.queuePath(this.project, this.location, this.queue);
+        
+        const hostUrl = process.env.APP_URL || process.env.SERVICE_URL || 'http://localhost:3000';
+        const workerUrl = `${hostUrl}/api/v1/tasks/process-render`;
+
+        const task: protos.google.cloud.tasks.v2.ITask = {
+          httpRequest: {
+            httpMethod: 'POST',
+            url: workerUrl,
+            headers: {
+              'Content-Type': 'application/json',
+              'x-worker-auth': process.env.WORKER_SECRET || 'neuronna-internal-worker-secret-2025'
+            },
+            body: Buffer.from(JSON.stringify(payload)).toString('base64'),
+          },
+        };
+
+        const [createdTask] = await client.createTask({ parent, task });
+        console.log(`[QueueService] Cloud Task created successfully: ${createdTask.name}`);
+
+        return {
+          taskId,
+          status: 'queued',
+          message: 'Task render berhasil dimasukkan ke antrean Google Cloud Tasks.'
+        };
+      } catch (ctErr: any) {
+        console.warn(`[QueueService] Cloud Tasks notice (${ctErr?.message}). Processing task via background async worker loop...`);
+      }
+    }
+
+    // Background Async Execution (Non-blocking fallback for dev & Cloud Run instances)
+    console.log(`[QueueService] Executing task ${taskId} in background async pipeline...`);
+    setImmediate(async () => {
+      try {
+        await QueueService.executeRenderJob(payload);
+      } catch (execErr: any) {
+        console.error(`[QueueService] Background execution error for task ${taskId}:`, execErr);
+      }
+    });
+
+    return {
+      taskId,
+      status: 'queued',
+      message: 'Task render berhasil dijadwalkan di background worker.'
+    };
+  }
+
+  /**
+   * Primary Heavy Rendering Engine:
+   * 1. Google Veo Video Generation
+   * 2. Google Cloud TTS Narration Generation
+   * 3. FFmpeg Audio Muxing & Background Ducking
+   * 4. Google Cloud Storage Upload
+   * 5. Credit Deduction & Status Update
+   */
+  public static async executeRenderJob(payload: RenderTaskPayload): Promise<TaskStatusRecord> {
+    const { taskId, userId, promptText, voiceoverScript, voiceType, referenceImageUrl, aspectRatio } = payload;
+    console.log(`[QueueService:Worker] Processing Render Job ${taskId} for User ${userId}...`);
+
+    const record = taskRegistry.get(taskId) || {
+      taskId,
+      userId,
+      status: 'processing',
+      progress: 10,
+      promptText,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    record.status = 'processing';
+    record.progress = 15;
+    record.updatedAt = new Date().toISOString();
+    taskRegistry.set(taskId, record);
+
+    try {
+      // Step 1: Render Video with Google Veo API
+      console.log(`[Worker] Step 1/3: Calling Google Veo for prompt: "${promptText.substring(0, 50)}..."`);
+      record.progress = 30;
+      taskRegistry.set(taskId, record);
+
+      const veoResult = await GoogleVeoService.generateVeoVideo(
+        promptText,
+        referenceImageUrl,
+        {
+          aspectRatio: aspectRatio || '9:16',
+          uploadToStorage: false // will upload final muxed video
+        }
+      );
+
+      record.progress = 65;
+      taskRegistry.set(taskId, record);
+
+      let finalVideoUrl = veoResult.videoUrl;
+
+      // Step 2: Generate TTS Narration (if voiceover script is present)
+      const scriptToSpeak = (voiceoverScript || '').trim() || (promptText.length > 20 ? promptText : '');
+      
+      if (scriptToSpeak && scriptToSpeak.length > 5) {
+        console.log(`[Worker] Step 2/3: Synthesizing voiceover with voice '${voiceType || 'id-ID-Journey-O'}'...`);
+        const ttsResult = await TTSService.generateVoice(scriptToSpeak, voiceType || 'id-ID-Journey-O');
+        
+        record.progress = 80;
+        taskRegistry.set(taskId, record);
+
+        // Step 3: Audio Muxing with FFmpeg (Ducking Veo audio and overlaying Voiceover)
+        if (veoResult.localFilePath && ttsResult.tempFilePath) {
+          console.log(`[Worker] Step 3/3: Muxing Video & Audio via FFmpeg...`);
+          const muxResult = await VideoMuxerService.muxVideoAndAudio(
+            veoResult.localFilePath,
+            ttsResult.tempFilePath,
+            {
+              backgroundAudioDucking: 0.35,
+              uploadToStorage: true
+            }
+          );
+          finalVideoUrl = muxResult.finalVideoUrl;
+        }
+      }
+
+      // Finalize Task State
+      record.status = 'completed';
+      record.progress = 100;
+      record.videoUrl = finalVideoUrl;
+      record.completedAt = new Date().toISOString();
+      record.updatedAt = record.completedAt;
+      taskRegistry.set(taskId, record);
+
+      // Deduct User Credits
+      const credits = payload.creditsToDeduct ?? 15;
+      const user = userDatabase.getUser(userId) || userDatabase.getUserByEmail(userId);
+      if (user && user.credits !== undefined) {
+        const previous = user.credits;
+        user.credits = Math.max(0, user.credits - credits);
+        console.log(`[Worker] Deducted ${credits} credits from user ${user.email} (Previous: ${previous} -> Current: ${user.credits})`);
+      }
+
+      console.log(`[Worker] Render Job ${taskId} COMPLETED successfully: ${finalVideoUrl}`);
+      return record;
+
+    } catch (err: any) {
+      console.error(`[Worker] Render Job ${taskId} FAILED:`, err);
+      record.status = 'failed';
+      record.error = err?.message || 'Terjadi kesalahan saat memproses render video.';
+      record.updatedAt = new Date().toISOString();
+      taskRegistry.set(taskId, record);
+      return record;
+    }
+  }
+
+  public static getTaskStatus(taskId: string): TaskStatusRecord | null {
+    return taskRegistry.get(taskId) || null;
+  }
+}

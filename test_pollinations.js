@@ -1,0 +1,5 @@
+const prompt = `Product identity locked: Aeroflex HyperRun V2 Sneakers (Nike running shoe, vibrant crimson red and dark maroon gradient mesh upper, bold white swoosh logo on side panel, sleek white foam midsole with transparent pink rubber outsole, constructed with breathable knitted fabric.). Preserve exact product design, silhouette, upper & sole colors, side logos, checkmarks, and materials. Character: [Consistent Creator: Female, approximately 25 years old, with light brown skin and Asian features, displaying a neutral expression. Hair is dark brown, medium-length, straight, with some strands framing the face. Wears a black sweatshirt with a round neck, illuminated by soft blue lighting.].  Visual Scene: Close-up hands holding Aeroflex HyperRun V2 Sneakers, clean minimalist commercial studio lighting, high conversion TikTok aesthetic, 8k crisp focus.`;
+
+// What we want to do
+const sanitizedPrompt = encodeURIComponent(prompt.substring(0, 1500));
+console.log(`https://image.pollinations.ai/prompt/${sanitizedPrompt}?width=1024&height=1024&nologo=true&model=flux`);

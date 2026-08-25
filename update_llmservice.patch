@@ -1,0 +1,72 @@
+--- server/llmService.ts
++++ server/llmService.ts
+@@ -2,6 +2,7 @@
+ import OpenAI from "openai";
+ 
++import { RunwayStyleLibrary } from "./StyleLibrary";
++
+ export interface LLMGenerationResult<T = any> {
+   data: T;
+   rawText: string;
+@@ -58,6 +59,62 @@
+ 
+ export class LLMService {
+ 
++  static async analyzeIntent(prompt: string): Promise<LLMGenerationResult<any>> {
++    const systemInstruction = `Kamu adalah Openclauw, Core Router Logic untuk platform video AI Neuronna.
++Sistem ini menggunakan Arsitektur Dua Fase (Two-Step Pipeline): 
++Fase 1: Pembuatan/Revisi Storyboard (Gratis).
++Fase 2: Rendering Video Aktual ke Engine API (Berbayar memotong kredit).
++
++Tugasmu adalah menganalisis niat (intent) dari chat pengguna dan mengklasifikasikannya ke dalam salah satu dari tiga 'action' di bawah ini, lalu meng-outputkan JSON murni.
++
++ATURAN KLASIFIKASI ACTION:
++1. "generate_storyboard": Jika pengguna meminta ide baru, membuat naskah, konsep, atau script dari awal. (Fase 1)
++2. "edit_storyboard": Jika pengguna meminta perubahan pada storyboard yang sudah ada di layar (misal: "ganti teks adegan 1", "bikin durasinya jadi 3 detik"). (Fase 1)
++3. "execute_render": Jika pengguna secara eksplisit mengonfirmasi bahwa mereka puas dengan storyboard dan meminta untuk merendernya menjadi video final (misal: "Oke, render sekarang", "Bagus, eksekusi videonya", "Jadikan video"). (Fase 2)
++
++ATURAN VIDEO_TYPE & STYLE:
++- "affiliate": Jika niatnya berjualan/promosi produk komersial.
++- "content": Jika niatnya edukasi, hiburan, atau animasi. Wajib sertakan "style_id" (misal: cinematic_film, pixar_3d, dll).
++
++FORMAT OUTPUT (HANYA JSON):
++{
++  "action": "generate_storyboard" | "edit_storyboard" | "execute_render",
++  "video_type": "affiliate" | "content",
++  "style_id": "id_style_terpilih" | null,
++  "parameters": {},
++  "router_message": "Pesan singkat untuk UI"
++}`;
++    
++    const genAI = getGenAI();
++    if (genAI) {
++      try {
++        const response = await withTimeout(
++          genAI.models.generateContent({
++            model: "gemini-2.5-flash",
++            contents: prompt,
++            systemInstruction: systemInstruction,
++            config: {
++              responseMimeType: "application/json",
++              temperature: 0.2
++            }
++          }),
++          10000,
++          'Openclauw Intent Analysis'
++        );
++        const rawText = response.text || "{}";
++        return {
++          data: JSON.parse(rawText),
++          rawText,
++          modelUsed: "gemini-2.5-flash",
++          provider: "gemini"
++        };
++      } catch (err) {
++        console.warn("Openclauw Gemini Error:", err);
++      }
++    }
++    return { data: { action: "generate_storyboard", video_type: "content", style_id: "cinematic_film" }, rawText: "", modelUsed: "fallback", provider: "procedural" };
++  }
++
+   /**
+    * Generates Creative Brief using Gemini, falling back to OpenAI ChatGPT 4.0 (or vice-versa).
