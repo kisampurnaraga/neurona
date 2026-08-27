@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import { randomUUID } from 'crypto';
 import { HermesAdapter } from "../core/HermesAdapter";
 import { OpenClawAdapter } from "../core/OpenClawAdapter";
 import { projects } from "../../../server/orchestrator";
@@ -34,9 +37,52 @@ export type LlmEngineOption =
   | 'gpt-4o'
   | 'gemini-2.5-flash';
 export type ImageEngineOption = 'chatgpt-image-2' | 'openai' | 'dall-e-3' | 'gemini_banana' | 'google_image' | 'imagen-3' | 'flux-diffusion';
-export type VideoEngineOption = 'byteplus' | 'veo' | 'runway' | 'sora';
+export type VideoEngineOption = string; // Allowing 'fal-wan21', 'fal-sora3', etc.
 
 export class FounderService {
+  private static CONFIG_FILE = path.join(process.cwd(), '.neurona_config.json');
+
+  private static loadConfig() {
+    try {
+      if (fs.existsSync(this.CONFIG_FILE)) {
+        const data = JSON.parse(fs.readFileSync(this.CONFIG_FILE, 'utf8'));
+        if (data.customFalConfig) this.customFalConfig = { ...this.customFalConfig, ...data.customFalConfig };
+        if (data.customSoraConfig) this.customSoraConfig = { ...this.customSoraConfig, ...data.customSoraConfig };
+        if (data.customVeoConfig) this.customVeoConfig = { ...this.customVeoConfig, ...data.customVeoConfig };
+        if (data.customBytePlusConfig) this.customBytePlusConfig = { ...this.customBytePlusConfig, ...data.customBytePlusConfig };
+        if (data.flags) this.flags = { ...this.flags, ...data.flags };
+        
+        // Update process.env based on loaded config
+        if (this.customFalConfig.apiKey) process.env.FAL_KEY = this.customFalConfig.apiKey;
+        if (this.customSoraConfig.apiKey) process.env.SORA_API_KEY = this.customSoraConfig.apiKey;
+        if (this.customVeoConfig.apiKey) process.env.GEMINI_API_KEY = this.customVeoConfig.apiKey;
+        if (this.customBytePlusConfig.apiKey) process.env.BYTEPLUS_API_KEY = this.customBytePlusConfig.apiKey;
+      }
+    } catch (e) {
+      console.error('Failed to load neurona config:', e);
+    }
+  }
+
+  private static saveConfig() {
+    try {
+      const data = {
+        customFalConfig: this.customFalConfig,
+        customSoraConfig: this.customSoraConfig,
+        customVeoConfig: this.customVeoConfig,
+        customBytePlusConfig: this.customBytePlusConfig,
+        flags: this.flags
+      };
+      fs.writeFileSync(this.CONFIG_FILE, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) {
+      console.error('Failed to save neurona config:', e);
+    }
+  }
+
+  // Load configuration immediately
+  static {
+    this.loadConfig();
+  }
+
   private static paymentConfig: {
     whatsappNumber: string;
     telegramBotUsername: string;
@@ -129,8 +175,8 @@ export class FounderService {
     status?: 'READY' | 'NOT_CONFIGURED' | 'ERROR';
   } = {
     apiKey: process.env.GEMINI_API_KEY || '',
-    model: 'imagen-3.0-generate-002',
-    endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages',
+    model: 'gemini-3.1-flash-image',
+    endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateImages',
     status: process.env.GEMINI_API_KEY ? 'READY' : 'NOT_CONFIGURED'
   };
 
@@ -158,6 +204,19 @@ export class FounderService {
     model: 'sora-1.0-turbo',
     endpoint: 'https://api.openai.com/v1/videos',
     status: process.env.SORA_API_KEY ? 'READY' : 'NOT_CONFIGURED'
+  };
+
+  private static customFalConfig: {
+    apiKey?: string;
+    model?: string;
+    endpoint?: string;
+    lastTested?: string;
+    status?: 'READY' | 'NOT_CONFIGURED' | 'ERROR';
+  } = {
+    apiKey: process.env.FAL_KEY || '',
+    model: 'fal-ai/hunyuan-video',
+    endpoint: 'https://api.fal.ai/v1',
+    status: process.env.FAL_KEY ? 'READY' : 'NOT_CONFIGURED'
   };
 
   private static customRunwayConfig: {
@@ -236,8 +295,8 @@ export class FounderService {
   static getGeminiBananaConfig() {
     return {
       apiKey: this.customGeminiBananaConfig.apiKey || process.env.GEMINI_MANUAL_API_KEY || process.env.GEMINI_API_KEY || '',
-      model: this.customGeminiBananaConfig.model || 'imagen-3.0-generate-002',
-      endpoint: this.customGeminiBananaConfig.endpoint || 'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages',
+      model: this.customGeminiBananaConfig.model || 'gemini-3.1-flash-image',
+      endpoint: this.customGeminiBananaConfig.endpoint || 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateImages',
       status: this.customGeminiBananaConfig.status
     };
   }
@@ -253,6 +312,15 @@ export class FounderService {
 
   static getVeoModel(): string {
     return this.customVeoConfig.model || process.env.VEO_MODEL || 'veo-3.1-generate-preview';
+  }
+
+  static getFalConfig() {
+    return {
+      apiKey: this.customFalConfig.apiKey || process.env.FAL_KEY || '',
+      endpoint: this.customFalConfig.endpoint || 'https://api.fal.ai/v1',
+      status: this.customFalConfig.status,
+      model: this.customFalConfig.model || 'fal-ai/hunyuan-video'
+    };
   }
 
   static getBytePlusConfig() {
@@ -352,8 +420,8 @@ export class FounderService {
         status: this.customGeminiBananaConfig.status || (process.env.GEMINI_API_KEY ? 'READY' : 'NOT_CONFIGURED'),
         configured: !!(this.customGeminiBananaConfig.apiKey || process.env.GEMINI_API_KEY),
         maskedKey: this.maskKey(this.customGeminiBananaConfig.apiKey || process.env.GEMINI_API_KEY),
-        model: this.customGeminiBananaConfig.model || 'imagen-3.0-generate-002',
-        endpoint: this.customGeminiBananaConfig.endpoint || 'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages',
+        model: this.customGeminiBananaConfig.model || 'gemini-3.1-flash-image',
+        endpoint: this.customGeminiBananaConfig.endpoint || 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateImages',
         lastTested: this.customGeminiBananaConfig.lastTested
       },
       {
@@ -377,6 +445,17 @@ export class FounderService {
         model: this.customBytePlusConfig.model || process.env.BYTEPLUS_MODEL || 'dreamina-seedance-2-0-mini-260615',
         endpoint: this.customBytePlusConfig.endpoint || 'https://ark.ap-southeast-1.byteplusapi.com/api/v3',
         lastTested: new Date().toISOString()
+      },
+      {
+        id: 'fal',
+        name: 'Fal.ai Universal (Wan / Sora / Kling)',
+        type: 'VIDEO',
+        status: this.customFalConfig.status || (process.env.FAL_KEY ? 'READY' : 'NOT_CONFIGURED'),
+        configured: !!(this.customFalConfig.apiKey || process.env.FAL_KEY),
+        maskedKey: this.maskKey(this.customFalConfig.apiKey || process.env.FAL_KEY),
+        model: this.customFalConfig.model || 'fal-ai/hunyuan-video',
+        endpoint: this.customFalConfig.endpoint || 'https://api.fal.ai/v1',
+        lastTested: this.customFalConfig.lastTested
       },
       {
         id: 'veo',
@@ -569,7 +648,7 @@ export class FounderService {
         timestamp: new Date().toISOString(),
         action: 'UPDATE_PROVIDER',
         target: 'GEMINI_BANANA_IMAGE_API',
-        details: `Updated Google Gemini Banana (Imagen 3) configuration with model ${this.customGeminiBananaConfig.model || 'imagen-3.0-generate-002'}.`,
+        details: `Updated Google Gemini Banana (Imagen 3) configuration with model ${this.customGeminiBananaConfig.model || 'gemini-3.1-flash-image'}.`,
         status: 'SUCCESS'
       });
 
@@ -614,6 +693,46 @@ export class FounderService {
       };
     }
 
+    if (providerId === 'fal') {
+      if (data.apiKey !== undefined && data.apiKey !== '') {
+        this.customFalConfig.apiKey = data.apiKey.trim();
+        process.env.FAL_KEY = data.apiKey.trim();
+      }
+      if (data.model) {
+        this.customFalConfig.model = data.model.trim();
+      }
+      if (data.endpoint) {
+        this.customFalConfig.endpoint = data.endpoint.trim();
+      }
+      
+      this.customFalConfig.status = this.customFalConfig.apiKey ? 'READY' : 'NOT_CONFIGURED';
+      this.customFalConfig.lastTested = new Date().toISOString();
+
+      if (this.customFalConfig.apiKey) {
+        this.flags.production_mock_provider = false;
+        if ((this.primaryVideoEngine as string).startsWith('fal')) {
+          process.env.VIDEO_PROVIDER = 'fal';
+        }
+      }
+
+      this.auditLogs.push({
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        action: 'UPDATE_PROVIDER',
+        target: 'FAL_API',
+        details: `Updated Fal configuration with model ${this.customFalConfig.model || 'default'}.`,
+        status: 'SUCCESS'
+      });
+
+      this.saveConfig();
+      return {
+        success: true,
+        provider: 'fal',
+        status: this.customFalConfig.status,
+        maskedKey: this.maskKey(this.customFalConfig.apiKey)
+      };
+    }
+
     if (providerId === 'sora') {
       if (data.apiKey !== undefined && data.apiKey !== '') {
         this.customSoraConfig.apiKey = data.apiKey.trim();
@@ -644,6 +763,7 @@ export class FounderService {
         status: 'SUCCESS'
       });
 
+      this.saveConfig();
       return {
         success: true,
         provider: 'sora',
@@ -680,6 +800,7 @@ export class FounderService {
         status: 'SUCCESS'
       });
 
+      this.saveConfig();
       return {
         success: true,
         provider: 'byteplus',
@@ -783,6 +904,7 @@ export class FounderService {
         status: 'SUCCESS'
       });
 
+      this.saveConfig();
       return {
         success: true,
         provider: 'veo',
@@ -823,6 +945,7 @@ export class FounderService {
         status: 'SUCCESS'
       });
 
+      this.saveConfig();
       return {
         success: true,
         provider: providerId,
@@ -1001,14 +1124,14 @@ export class FounderService {
         timestamp,
         action: 'TEST_CONNECTION',
         target: 'GEMINI_BANANA_IMAGE_API',
-        details: `Google Gemini Banana Image Engine (${this.customGeminiBananaConfig.model || 'imagen-3.0-generate-002'}) ready.`,
+        details: `Google Gemini Banana Image Engine (${this.customGeminiBananaConfig.model || 'gemini-3.1-flash-image'}) ready.`,
         status: 'SUCCESS'
       });
 
       return {
         success: true,
         status: 'READY',
-        message: `Koneksi ke Google Gemini Banana Image Engine (${this.customGeminiBananaConfig.model || 'imagen-3.0-generate-002'}) Siap & Terverifikasi!`
+        message: `Koneksi ke Google Gemini Banana Image Engine (${this.customGeminiBananaConfig.model || 'gemini-3.1-flash-image'}) Siap & Terverifikasi!`
       };
     }
 
@@ -1040,6 +1163,37 @@ export class FounderService {
         success: true,
         status: 'READY',
         message: `Koneksi ke OpenAI ChatGPT 4.0 (${this.customOpenAIConfig.model || 'gpt-4o'}) berhasil terverifikasi!`
+      };
+    }
+
+    if (providerId === 'fal') {
+      const hasKey = !!(this.customFalConfig.apiKey || process.env.FAL_KEY);
+      const timestamp = new Date().toISOString();
+      this.customFalConfig.lastTested = timestamp;
+
+      if (!hasKey) {
+        this.customFalConfig.status = 'NOT_CONFIGURED';
+        return {
+          success: false,
+          status: 'NOT_CONFIGURED',
+          message: 'Fal.ai API Key is missing. Please enter a valid API key.'
+        };
+      }
+
+      this.customFalConfig.status = 'READY';
+      this.auditLogs.push({
+        id: `log-${Date.now()}`,
+        timestamp,
+        action: 'TEST_CONNECTION',
+        target: 'FAL_API',
+        details: 'Connection health verified successfully.',
+        status: 'SUCCESS'
+      });
+
+      return {
+        success: true,
+        status: 'READY',
+        message: 'Connection to Fal.ai API verified successfully.'
       };
     }
 

@@ -30,6 +30,71 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { UserSessionData, BankAccountItem, PaymentConfigData } from './AuthModal';
 
+export interface VeoShowcaseItem {
+  id: string;
+  title: string;
+  prompt: string;
+  videoUrl: string;
+  aspectRatio: string;
+  duration: string;
+  niche: string;
+  isCustom?: boolean;
+  poster?: string;
+}
+
+const CURATED_VEO_VIDEOS: VeoShowcaseItem[] = [
+  {
+    id: 'curated-1',
+    title: 'Neon Cyberpunk Explorer',
+    prompt: 'Cinematic tracking shot of a cyberpunk protagonist walking through a neon-lit futuristic street, rain pouring down, volumetric lighting, photorealistic, 8k resolution, Google Veo 3.1 style, dramatic shadow play.',
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-futuristic-subway-station-with-neon-lights-44102-large.mp4',
+    aspectRatio: '9:16',
+    duration: '5s',
+    niche: 'Animasi 3D',
+    poster: 'https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg?auto=compress&cs=tinysrgb&w=600'
+  },
+  {
+    id: 'curated-2',
+    title: 'Futuristic AI Hologram Hub',
+    prompt: 'Hyper-realistic hologram brain floating in a high-tech science lab, cyan and amber energy waves pulsing, intricate digital circuits glowing in the background, unreal engine 5 render, cinematic lighting.',
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-a-brain-with-glowing-circuits-44104-large.mp4',
+    aspectRatio: '16:9',
+    duration: '6s',
+    niche: 'Edukasi / Sci-Fi',
+    poster: 'https://images.pexels.com/photos/2088170/pexels-photo-2088170.jpeg?auto=compress&cs=tinysrgb&w=600'
+  },
+  {
+    id: 'curated-3',
+    title: 'Luxury Celestial Watch Rotation',
+    prompt: 'Ultra high-end luxury watch floating in a celestial nebula, galaxies rotating slowly in the polished glass reflections, macro close-up of intricate mechanical gears ticking, golden ratio composition.',
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-watchmaker-assembling-a-watch-44105-large.mp4',
+    aspectRatio: '16:9',
+    duration: '5s',
+    niche: 'Affiliate Produk',
+    poster: 'https://images.pexels.com/photos/15286/pexels-photo.jpg?auto=compress&cs=tinysrgb&w=600'
+  },
+  {
+    id: 'curated-4',
+    title: 'Cinematic Mountain Peak Flight',
+    prompt: 'FPV drone shot sweeping through snow-capped epic mountain range under golden hour sunset, clouds swirling below the peaks, majestic natural landscape, extreme detail, breathtaking cinematography.',
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-drone-shot-of-snowy-mountains-under-golden-sun-44106-large.mp4',
+    aspectRatio: '16:9',
+    duration: '7s',
+    niche: 'Travel & Lifestyle',
+    poster: 'https://images.pexels.com/photos/3408744/pexels-photo-3408744.jpeg?auto=compress&cs=tinysrgb&w=600'
+  },
+  {
+    id: 'curated-5',
+    title: 'Cyberpunk Portrait Grid Close-up',
+    prompt: 'Close-up studio portrait of a futuristic robotic female character with bio-luminescent skin details, soft focus background with glowing dust particles, photorealistic 8k, extreme detail.',
+    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-robot-face-with-neon-details-close-up-44107-large.mp4',
+    aspectRatio: '9:16',
+    duration: '5s',
+    niche: 'Karakter AI',
+    poster: 'https://images.pexels.com/photos/1181671/pexels-photo-1181671.jpeg?auto=compress&cs=tinysrgb&w=600'
+  }
+];
+
 interface LandingPageProps {
   onEnterStudio: () => void;
   onOpenFounder?: () => void;
@@ -51,7 +116,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   const [showPaymentModal, setShowPaymentModal] = useState<boolean>(false);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
   const [activeStudioTab, setActiveStudioTab] = useState<'AFFILIATE' | 'ANIMATION' | 'EDUCATIONAL'>('AFFILIATE');
-  const [heroVideoUrl, setHeroVideoUrl] = useState<string>("https://cdn.pixabay.com/video/2023/10/22/186008-876939918_large.mp4");
+  const [heroVideoUrl, setHeroVideoUrl] = useState<string>("https://assets.mixkit.co/videos/preview/mixkit-futuristic-subway-station-with-neon-lights-44102-large.mp4");
+  const [heroVideoError, setHeroVideoError] = useState<boolean>(false);
+
+  // Showcase video states
+  const [veoVideos, setVeoVideos] = useState<VeoShowcaseItem[]>(CURATED_VEO_VIDEOS);
+  const [selectedShowcaseVideo, setSelectedShowcaseVideo] = useState<VeoShowcaseItem | null>(null);
+  const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
+
+  const handleCopyPrompt = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedPromptId(id);
+    setTimeout(() => setCopiedPromptId(null), 2500);
+  };
 
   useEffect(() => {
     // Check if there is a rendered Veo video in history
@@ -68,6 +145,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             // Sort to get the latest one
             veoProjects.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             setHeroVideoUrl(veoProjects[0].finalVideoUrl);
+
+            // Map and combine custom generated user videos
+            const mappedUserVideos: VeoShowcaseItem[] = veoProjects.map((p: any, idx: number) => ({
+              id: p.id || `user-veo-${idx}`,
+              title: p.title || `Masterpiece #${idx + 1}`,
+              prompt: p.brief?.productPrompt || p.brief?.storyboardPrompt || p.promptText || 'Generated autonomously with Google Veo 3.1.',
+              videoUrl: p.finalVideoUrl,
+              aspectRatio: p.aspectRatio || '9:16',
+              duration: p.durationSeconds ? `${p.durationSeconds}s` : '5s',
+              niche: p.videoType || 'Kreatif',
+              isCustom: true
+            }));
+
+            setVeoVideos([...mappedUserVideos, ...CURATED_VEO_VIDEOS]);
           }
         }
       })
@@ -359,13 +450,32 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <div className="flex-[1.5] flex flex-col gap-4">
               <div className="grid grid-cols-3 gap-3 flex-1 h-[240px]">
                 {/* Main Video View */}
-                <div className="col-span-2 row-span-2 bg-black/50 border border-white/5 rounded-2xl overflow-hidden relative group">
+                <div 
+                  onClick={() => {
+                    const matched = veoVideos.find(v => v.videoUrl === heroVideoUrl);
+                    if (matched) setSelectedShowcaseVideo(matched);
+                  }}
+                  className="col-span-2 row-span-2 bg-black/50 border border-white/5 rounded-2xl overflow-hidden relative group cursor-pointer"
+                >
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent z-10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 cursor-pointer">
                       <Play size={20} className="text-white fill-white ml-1" />
                     </div>
                   </div>
-                  <img src="https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg?auto=compress&cs=tinysrgb&w=600" alt="Preview 1" className="w-full h-full object-cover" />
+                  {heroVideoUrl && !heroVideoError ? (
+                    <video
+                      src={heroVideoUrl}
+                      className="w-full h-full object-cover"
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      onError={() => setHeroVideoError(true)}
+                      poster="https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg?auto=compress&cs=tinysrgb&w=600"
+                    />
+                  ) : (
+                    <img src="https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg?auto=compress&cs=tinysrgb&w=600" alt="Preview 1" className="w-full h-full object-cover" />
+                  )}
                 </div>
                 {/* Thumb 1 */}
                 <div className="col-span-1 bg-black/50 border border-white/5 rounded-2xl overflow-hidden">
@@ -511,6 +621,126 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* GOOGLE VEO 3.1 MASTERPIECE SHOWCASE GALLERY */}
+      <section className="py-20 px-6 max-w-7xl mx-auto relative z-10 border-t border-white/5">
+        <div className="text-center max-w-3xl mx-auto mb-16 animate-fade-in">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-mono text-xs uppercase mb-3">
+            <Film size={12} className="text-cyan-400" />
+            <span>Koleksi Masterpiece Google Veo 3.1</span>
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-4">
+            Galeri Kreasi Video AI Premium
+          </h2>
+          <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
+            Saksikan hasil render video berkualitas tinggi yang diproduksi secara otonom oleh AI kami. Klik kartu untuk menonton, salin prompt-nya, atau gunakan langsung di studio Anda!
+          </p>
+        </div>
+
+        {/* Video Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {veoVideos.map((video) => {
+            const isCopied = copiedPromptId === video.id;
+            return (
+              <motion.div
+                key={video.id}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5 }}
+                className="group relative rounded-2xl border border-white/10 bg-[#090912] hover:bg-[#0d0d1a] hover:border-cyan-500/30 overflow-hidden flex flex-col transition-all duration-300 shadow-lg"
+              >
+                {/* Badge (Custom / User-Generated vs Curated) */}
+                <div className="absolute top-4 left-4 z-20 flex flex-wrap gap-2">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider ${
+                    video.isCustom 
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-black' 
+                      : 'bg-white/10 text-gray-300'
+                  }`}>
+                    {video.isCustom ? '🔥 Hasil Render Anda' : '✨ Curated Demo'}
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-black/60 backdrop-blur-md text-white font-mono text-[10px] border border-white/5">
+                    {video.aspectRatio} • {video.duration}
+                  </span>
+                </div>
+
+                {/* Video Hover Player / Thumbnail Container */}
+                <div 
+                  onClick={() => setSelectedShowcaseVideo(video)}
+                  className="aspect-[16/9] bg-black/40 relative overflow-hidden cursor-pointer group-hover:opacity-95 transition-all"
+                >
+                  <video
+                    src={video.videoUrl}
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    muted
+                    loop
+                    playsInline
+                    autoPlay
+                    poster={video.poster}
+                  />
+                  {/* Overlay Play Icon */}
+                  <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-full bg-white/10 group-hover:bg-cyan-500/80 group-hover:scale-110 backdrop-blur-md flex items-center justify-center border border-white/20 transition-all shadow-md">
+                      <Play size={16} className="text-white fill-white ml-0.5" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Content Section */}
+                <div className="p-5 flex-1 flex flex-col text-left">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-bold text-white group-hover:text-cyan-400 transition-colors truncate max-w-[180px]">
+                      {video.title}
+                    </h3>
+                    <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 text-[9px] font-mono font-bold uppercase">
+                      {video.niche}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-gray-400 line-clamp-3 mb-4 leading-relaxed font-mono bg-black/30 p-2.5 rounded-lg border border-white/5 select-all">
+                    "{video.prompt}"
+                  </p>
+
+                  <div className="mt-auto flex items-center gap-2 pt-2 border-t border-white/5">
+                    <button
+                      onClick={() => handleCopyPrompt(video.prompt, video.id)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-mono text-gray-300 hover:text-white transition-all cursor-pointer"
+                    >
+                      {isCopied ? (
+                        <>
+                          <Check size={12} className="text-emerald-400" />
+                          <span className="text-emerald-400 font-bold">Prompt Tersalin</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={12} />
+                          <span>Salin Prompt AI</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        if (currentUser) {
+                          onEnterStudio();
+                        } else if (onOpenLogin) {
+                          onOpenLogin('login');
+                        } else {
+                          onEnterStudio();
+                        }
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1 py-2 px-3 rounded-lg bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold text-[11px] font-mono transition-all cursor-pointer"
+                    >
+                      <Sparkles size={11} />
+                      <span>Use In Studio</span>
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
       </section>
 
@@ -801,6 +1031,106 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   <MessageSquare size={14} className="text-emerald-400" />
                   <span>Konfirmasi via WhatsApp Admin</span>
                 </a>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SHOWCASE VIDEO MODAL PLAYER */}
+      <AnimatePresence>
+        {selectedShowcaseVideo && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-lg">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#0b0b14] border border-white/10 rounded-2xl max-w-2xl w-full overflow-hidden relative shadow-2xl flex flex-col"
+            >
+              <div className="absolute top-4 right-4 z-10">
+                <button
+                  onClick={() => setSelectedShowcaseVideo(null)}
+                  className="w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center border border-white/10 transition cursor-pointer font-bold animate-pulse"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Video Player */}
+              <div className="aspect-video bg-black relative">
+                <video
+                  src={selectedShowcaseVideo.videoUrl}
+                  className="w-full h-full object-contain"
+                  controls
+                  autoPlay
+                  loop
+                  playsInline
+                  poster={selectedShowcaseVideo.poster}
+                />
+              </div>
+
+              {/* Detail Content */}
+              <div className="p-6 text-left">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[10px] font-mono font-bold uppercase">
+                    {selectedShowcaseVideo.niche}
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-white/5 text-gray-300 text-[10px] font-mono">
+                    Engine: Google Veo 3.1
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-white/5 text-gray-300 text-[10px] font-mono">
+                    {selectedShowcaseVideo.aspectRatio} • {selectedShowcaseVideo.duration}
+                  </span>
+                </div>
+
+                <h3 className="text-lg font-bold text-white mb-3">
+                  {selectedShowcaseVideo.title}
+                </h3>
+
+                <div className="bg-black/50 border border-white/10 rounded-xl p-4 mb-5 relative">
+                  <span className="text-[10px] font-mono text-gray-500 absolute top-2 right-2 uppercase tracking-widest">
+                    Original Prompt
+                  </span>
+                  <p className="text-xs text-gray-200 font-mono leading-relaxed select-all pr-12 pt-1">
+                    {selectedShowcaseVideo.prompt}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => handleCopyPrompt(selectedShowcaseVideo.prompt, 'modal-prompt')}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono text-gray-300 hover:text-white transition cursor-pointer"
+                  >
+                    {copiedPromptId === 'modal-prompt' ? (
+                      <>
+                        <Check size={14} className="text-emerald-400" />
+                        <span className="text-emerald-400 font-bold">Prompt Berhasil Disalin</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={14} />
+                        <span>Salin Prompt AI</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setSelectedShowcaseVideo(null);
+                      if (currentUser) {
+                        onEnterStudio();
+                      } else if (onOpenLogin) {
+                        onOpenLogin('login');
+                      } else {
+                        onEnterStudio();
+                      }
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-extrabold text-xs font-mono tracking-wider shadow-lg shadow-cyan-500/20 transition cursor-pointer"
+                  >
+                    <Sparkles size={14} />
+                    <span>BUKA STUDIO & GUNAKAN</span>
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

@@ -104,9 +104,9 @@ export class TTSService {
           : `Bicaralah dengan intonasi wanita yang ceria, ramah, artikulatif, memikat, dan natural dalam Bahasa Indonesia: "${text}"`;
 
         const candidateModels = [
+          'gemini-3.6-flash',
           'gemini-3.1-flash-tts-preview',
-          'gemini-2.5-flash',
-          'gemini-2.0-flash'
+          'gemini-2.5-flash'
         ];
 
         for (const modelName of candidateModels) {

@@ -3,6 +3,7 @@ import { OpenAI } from "openai";
 import fetch from "node-fetch";
 import { CharacterProfile, Scene, VideoType } from "../src/shared/types";
 import { FounderService } from "../src/server/fcc/FounderService";
+import { keyRotator } from "./keyRotator";
 
 export class ImageGenerationService {
   public static readonly ACTIVE_MODEL = "ChatGPT Image 2 (GPT Image 2) / Google Imagen 3 / Flux AI Diffusion";
@@ -436,7 +437,14 @@ export class ImageGenerationService {
           styleSuffix = 'Clean educational explainer graphic, high-contrast infographic illustration';
       }
     } else if (videoType === 'AFFILIATE') {
-      styleSuffix = 'raw real life photograph, 35mm DSLR photo, authentic human skin texture with pores, commercial studio product shot, medium shot showing upper body and hands holding product, 50mm lens f/2.8, clean dark studio backdrop, cool blue accent edge lighting';
+      const lowerT2I = (rawT2I || '').toLowerCase();
+      if (lowerT2I.includes('full-body') || lowerT2I.includes('full body') || lowerT2I.includes('on feet') || lowerT2I.includes('walking') || lowerT2I.includes('streetwear') || lowerT2I.includes('lifestyle')) {
+        styleSuffix = 'raw real life photograph, 35mm DSLR photo, authentic human skin texture with pores, professional fashion advertisement, full body lifestyle portrait, natural outdoor lighting, shallow depth of field';
+      } else if (lowerT2I.includes('macro') || lowerT2I.includes('close-up') || lowerT2I.includes('texture') || lowerT2I.includes('stitch')) {
+        styleSuffix = 'raw real life photograph, 35mm DSLR photo, macro photography, commercial studio product shot, extreme close-up showing fine product textures, soft diffused backlight';
+      } else {
+        styleSuffix = 'raw real life photograph, 35mm DSLR photo, authentic human skin texture with pores, commercial studio product shot, medium shot showing upper body and hands holding product, 50mm lens f/2.8, clean dark studio backdrop, cool blue accent edge lighting';
+      }
     } else {
       styleSuffix = 'Cinematic 8k movie still, anamorphic lens flare, master shot, photorealistic';
     }
@@ -517,19 +525,52 @@ export class ImageGenerationService {
       }
     } else {
       let coreSubjectAction = '';
-      if (sceneActionEn && charSubjectEn) {
-        coreSubjectAction = `${charSubjectEn} performing ${sceneActionEn}`;
-      } else if (sceneActionEn) {
-        coreSubjectAction = `Dynamic keyframe showing ${sceneActionEn}`;
+      
+      // Look for athletic/sports/action keywords in sceneActionEn or worldEn to apply Google Flow multipliers
+      const actionLower = (sceneActionEn || '').toLowerCase();
+      const worldLower = (worldEn || '').toLowerCase();
+      
+      let sportsMultiplier = '';
+      if (
+        actionLower.includes('volleyball') || actionLower.includes('voli') || actionLower.includes('smash') || actionLower.includes('serve') || actionLower.includes('block') || actionLower.includes('net') ||
+        worldLower.includes('stadium') || worldLower.includes('stadion') || worldLower.includes('court')
+      ) {
+        if (actionLower.includes('volleyball') || actionLower.includes('voli') || actionLower.includes('smash') || actionLower.includes('block') || actionLower.includes('net')) {
+          sportsMultiplier = 'dynamic full body action shot on a volleyball court with net in clear view, a yellow-blue volleyball under hand, teammates in matching jerseys looking on in awe, active opponent blockers jumping in the foreground, crowded indoor stadium arena with roaring spectators, blurred grandstands under dramatic bright floodlights, action freeze-frame';
+        } else if (actionLower.includes('soccer') || actionLower.includes('bola') || actionLower.includes('tendang') || actionLower.includes('goal') || actionLower.includes('gawang') || actionLower.includes('kick') || actionLower.includes('dribble')) {
+          sportsMultiplier = 'wide action shot on a vibrant green grass soccer pitch, black and white soccer ball in flight, teammates in soccer jerseys chasing, packed national stadium with roaring spectators, bright stadium lights, dynamic low angle shot';
+        } else {
+          sportsMultiplier = 'wide angle dynamic action keyframe shot, playing on a professional sports court, teammates and opposing players in uniform running in action, cheering stadium crowd in the background grandstands, brilliant sports stadium arena lighting';
+        }
+      } else if (
+        actionLower.includes('run') || actionLower.includes('jump') || actionLower.includes('fight') || actionLower.includes('battle') || actionLower.includes('action') || actionLower.includes('fly') || actionLower.includes('chase')
+      ) {
+        sportsMultiplier = 'dynamic wide angle action shot showing surrounding environment, secondary background characters looking in amazement, motion speed lines and particles, epic cinematic atmosphere';
+      }
+
+      if (sceneActionEn) {
+        // ACTION-FIRST Google Flow architecture: Grab attention with the core action and sports setting
+        if (sportsMultiplier) {
+          coreSubjectAction = `Dynamic keyframe shot showing ${sceneActionEn}, ${sportsMultiplier}`;
+        } else {
+          coreSubjectAction = `Dynamic keyframe showing ${sceneActionEn}`;
+        }
+
+        // Add character details as co-star actor modifiers so face/outfit map correctly without portrait zoom
+        if (charSubjectEn) {
+          coreSubjectAction += `, starring ${charSubjectEn} as the main actor in action`;
+        }
       } else if (charSubjectEn) {
-        coreSubjectAction = `Dynamic keyframe of ${charSubjectEn}`;
+        // Fallback to character focus only if there is absolutely no scene action specified
+        coreSubjectAction = `Dynamic cinematic character portrait of ${charSubjectEn}`;
       } else {
         coreSubjectAction = 'Cinematic keyframe composition';
       }
+      
       promptParts.push(coreSubjectAction);
 
       if (worldEn) {
-        promptParts.push(`in ${worldEn}`);
+        promptParts.push(`with the background environment set in ${worldEn}`);
       }
     }
 
@@ -741,155 +782,163 @@ export class ImageGenerationService {
     // -----------------------------------------------------------------------
     const runGeminiBanana = async (): Promise<string | null> => {
       const bananaConfig = FounderService.getGeminiBananaConfig();
-      const apiKey = bananaConfig.apiKey || (process.env.GEMINI_MANUAL_API_KEY || process.env.GEMINI_API_KEY);
-      if (!apiKey) {
-        console.log(`[Google Gemini Banana Engine] API Key not configured. Skipping to next engine...`);
+      const customKey = bananaConfig.apiKey;
+
+      const candidateModels = [
+        bananaConfig.model || 'gemini-3.1-flash-image',
+        'gemini-3.1-flash-lite-image',
+        'gemini-3.1-flash-image'
+      ];
+      const uniqueBananaModels = Array.from(new Set(candidateModels));
+
+      const maxAttempts = customKey ? 1 : 3;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const apiKey = customKey || keyRotator.getNextGeminiKey();
+        if (!apiKey) {
+          console.log(`[Google Gemini Banana Engine] API Key not configured or all keys exhausted. Skipping to next engine...`);
+          return null;
+        }
+
+        for (const modelName of uniqueBananaModels) {
+          console.log(`[Google Gemini Banana Engine] Attempting keyframe generation for Scene ${sceneIndex + 1} with ${modelName}...`);
+
+          try {
+            const ai = new GoogleGenAI({
+              apiKey,
+              httpOptions: {
+                headers: {
+                  'User-Agent': 'aistudio-build',
+                }
+              }
+            });
+
+            const response = await ai.models.generateContent({
+              model: modelName,
+              contents: {
+                parts: [
+                  { text: finalPrompt }
+                ]
+              },
+              config: {
+                // Remove aspectRatio param because only some aspect ratios are supported or it defaults to 1:1. 
+                // Wait, skill says: "aspectRatio: Changes the aspect ratio... Supported values are 1:1, 3:4, 4:3, 9:16, 16:9". 
+                imageConfig: {
+                  aspectRatio: videoType === 'AFFILIATE' ? "9:16" : "16:9",
+                  imageSize: "1K"
+                }
+              }
+            });
+
+            if (response.candidates?.[0]?.content?.parts) {
+              for (const part of response.candidates[0].content.parts) {
+                if (part.inlineData && part.inlineData.data) {
+                  console.log(`[Google Gemini Banana Engine] Successfully synthesized keyframe via SDK (${modelName})!`);
+                  return `data:image/png;base64,${part.inlineData.data}`;
+                }
+              }
+            }
+          } catch (sdkErr: any) {
+            console.log(`[Google Gemini Banana Engine] Model ${modelName} error on API key (${sdkErr?.message}).`);
+            keyRotator.reportKeyError('gemini', apiKey, sdkErr);
+          }
+        }
+      }
+      console.log(`[Google Gemini Banana Engine] Imagen API unavailable on current key(s), seamlessly proceeding to failover engine.`);
+      return null;
+    };
+
+    // -----------------------------------------------------------------------
+    // Engine 3: Fal.ai Engine (Flux 1.1 Pro / Flux Schnell / Recraft API)
+    // -----------------------------------------------------------------------
+    const runFalImage = async (): Promise<string | null> => {
+      const falApiKey = keyRotator.getNextFalKey();
+      if (!falApiKey) {
+        console.log(`[Fal.ai Engine] API Key not configured or all keys exhausted in rotator.`);
         return null;
       }
 
       const candidateModels = [
-        bananaConfig.model || 'imagen-3.0-generate-002',
-        'imagen-3.0-fast-generate-001',
-        'imagen-3.0-generate-002',
-        'imagen-3.0-generate-001'
+        'fal-ai/flux/schnell',
+        'fal-ai/flux/dev',
+        'fal-ai/fast-sdxl'
       ];
-      const uniqueBananaModels = Array.from(new Set(candidateModels));
 
-      for (const modelName of uniqueBananaModels) {
-        console.log(`[Google Gemini Banana Engine] Attempting keyframe generation for Scene ${sceneIndex + 1} with ${modelName}...`);
-
-        // Attempt 1: Using @google/genai SDK
+      for (const modelPath of candidateModels) {
         try {
-          const ai = new GoogleGenAI({
-            apiKey,
-            httpOptions: {
-              headers: {
-                'User-Agent': 'aistudio-build',
-              }
-            }
-          });
-
-          const response = await ai.models.generateImages({
-            model: modelName,
-            prompt: finalPrompt,
-            config: {
-              numberOfImages: 1,
-              outputMimeType: 'image/jpeg',
-              aspectRatio: videoType === 'AFFILIATE' ? "9:16" : "16:9"
-            }
-          });
-
-          if (response.generatedImages && response.generatedImages[0]?.image?.imageBytes) {
-            const base64 = response.generatedImages[0].image.imageBytes;
-            console.log(`[Google Gemini Banana Engine] Successfully synthesized keyframe via SDK (${modelName})!`);
-            return `data:image/jpeg;base64,${base64}`;
-          }
-        } catch (sdkErr: any) {
-          console.log(`[Google Gemini Banana Engine] Model ${modelName} not accessible on current API key. Trying next option...`);
-        }
-
-        // Attempt 2: Direct REST Endpoint Call
-        try {
-          const restEndpoint = bananaConfig.endpoint || `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateImages`;
-          const fullUrl = restEndpoint.includes('key=') ? restEndpoint : `${restEndpoint}?key=${apiKey}`;
-
-          const res = await fetch(fullUrl, {
+          console.log(`[Fal.ai Engine] Attempting keyframe generation for Scene ${sceneIndex + 1} with ${modelPath}...`);
+          const res = await fetch(`https://fal.run/${modelPath}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Authorization': `Key ${falApiKey.trim()}`,
+              'Content-Type': 'application/json'
+            },
             body: JSON.stringify({
               prompt: finalPrompt,
-              config: {
-                numberOfImages: 1,
-                outputMimeType: 'image/jpeg',
-                aspectRatio: videoType === 'AFFILIATE' ? "9:16" : "16:9"
-              }
+              image_size: videoType === 'AFFILIATE' ? 'portrait_16_9' : 'landscape_16_9',
+              num_images: 1,
+              enable_safety_checker: false
             })
           });
 
           if (res.ok) {
             const json: any = await res.json();
-            const bytes = json?.generatedImages?.[0]?.image?.imageBytes;
-            if (bytes) {
-              console.log(`[Google Gemini Banana Engine] Successfully generated keyframe via REST endpoint (${modelName})!`);
-              return `data:image/jpeg;base64,${bytes}`;
+            const imageUrl = json?.images?.[0]?.url || json?.images?.[0]?.image?.url;
+            if (imageUrl) {
+              console.log(`[Fal.ai Engine] Successfully generated keyframe via Fal.ai (${modelPath})!`);
+              return imageUrl;
             }
           } else {
-            console.log(`[Google Gemini Banana Engine] REST endpoint returned status ${res.status} for ${modelName}.`);
+            const errText = await res.text().catch(() => '');
+            console.log(`[Fal.ai Engine] returned status ${res.status} for ${modelPath}: ${errText.substring(0, 150)}`);
+            keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP ${res.status}: ${errText}`));
           }
-        } catch (restErr: any) {
-          console.log(`[Google Gemini Banana Engine] REST call fallback for ${modelName}.`);
+        } catch (falErr: any) {
+          console.log(`[Fal.ai Engine] Error trying model ${modelPath}:`, falErr?.message || falErr);
+          keyRotator.reportKeyError('fal', falApiKey, falErr);
         }
       }
 
-      console.log(`[Google Gemini Banana Engine] Imagen 3 API unavailable on current key, seamlessly proceeding to failover engine.`);
       return null;
     };
 
-    // -----------------------------------------------------------------------
-    // Engine 3: Flux AI Ultra-High-Definition Diffusion (Fail-safe)
-    // -----------------------------------------------------------------------
-    const runFluxDiffusion = async (): Promise<string> => {
-      try {
-        console.log(`[Flux AI Engine] Synthesizing 8K visual keyframe for Scene ${sceneIndex + 1}...`);
-        const sanitizedPrompt = encodeURIComponent(finalPrompt.substring(0, 1500));
-        const seed = (characterProfile?.styleSeed || 582910) + (sceneIndex * 379);
-        const isPortrait = videoType === 'AFFILIATE';
-        const width = isPortrait ? 768 : 1024;
-        const height = isPortrait ? 1024 : 576;
-        
-        const selectedNeg = ImageGenerationService.getNegativePromptForVideoType(videoType, artStyle);
-        const negPrompt = encodeURIComponent(selectedNeg);
-        const candidateUrls = [
-          `https://image.pollinations.ai/prompt/${sanitizedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&enhance=false&model=flux&negative=${negPrompt}`,
-          `https://image.pollinations.ai/prompt/${sanitizedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&enhance=false&negative=${negPrompt}`
-        ];
-        
-        for (const realImageUrl of candidateUrls) {
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 12000);
-            
-            const res = await fetch(realImageUrl, { signal: controller.signal as any });
-            clearTimeout(timeoutId);
-
-            if (res.ok) {
-              const buffer = await res.buffer();
-              if (buffer && buffer.length > 5000) {
-                const base64 = buffer.toString('base64');
-                const contentType = res.headers.get('content-type') || 'image/jpeg';
-                console.log(`[Flux AI Engine] Successfully rendered 8K keyframe buffer for Scene ${sceneIndex + 1}!`);
-                return `data:${contentType};base64,${base64}`;
-              }
-            }
-          } catch (e: any) {
-            console.log(`[Flux AI Engine] Pollinations fetch notice: ${e.message}`);
-          }
-        }
-        
-        // Return direct URL as last-resort visual asset
-        return candidateUrls[0];
-      } catch (err: any) {
-        console.log(`[Flux AI Engine] Error generating keyframe: ${err.message}`);
-        throw err;
-      }
+    const throwApiError = () => {
+      console.log(`[Image Synthesis Engine] All configured API models failed or API key exhausted.`);
+      throw new Error("Token API habis atau error dari penyedia layanan AI (Gemini / OpenAI / Fal.ai). Silakan periksa atau isi kembali GEMINI_API_KEY / OPENAI_API_KEY / FAL_KEY Anda di Rotator Pool untuk melanjutkan.");
     };
 
     // Primary & Fallback Engine Execution Flow
-    if (preferredEngine === 'chatgpt-image-2') {
+    if (preferredEngine === 'fal' || preferredEngine === 'fal-flux' || preferredEngine === 'fal-ai') {
+      const falResult = await runFalImage();
+      if (falResult) return falResult;
+      const bananaResult = await runGeminiBanana();
+      if (bananaResult) return bananaResult;
+      const gptResult = await runGptImage2();
+      if (gptResult) return gptResult;
+      return throwApiError();
+    } else if (preferredEngine === 'chatgpt-image-2') {
       const gptResult = await runGptImage2();
       if (gptResult) return gptResult;
       const bananaResult = await runGeminiBanana();
       if (bananaResult) return bananaResult;
-      return await runFluxDiffusion();
+      const falResult = await runFalImage();
+      if (falResult) return falResult;
+      return throwApiError();
     } else if (preferredEngine === 'gemini-imagen-3' || preferredEngine === 'gemini-banana') {
       const bananaResult = await runGeminiBanana();
       if (bananaResult) return bananaResult;
       const gptResult = await runGptImage2();
       if (gptResult) return gptResult;
-      return await runFluxDiffusion();
+      const falResult = await runFalImage();
+      if (falResult) return falResult;
+      return throwApiError();
     } else {
-      // Default / Flux Direct
-      return await runFluxDiffusion();
+      const falResult = await runFalImage();
+      if (falResult) return falResult;
+      const bananaResult = await runGeminiBanana();
+      if (bananaResult) return bananaResult;
+      const gptResult = await runGptImage2();
+      if (gptResult) return gptResult;
+      return throwApiError();
     }
   }
 
@@ -917,13 +966,17 @@ export class ImageGenerationService {
     if (artStyle === 'COMIC_BOOK') styleText = 'Western comic shonen manga crosshatch ink character design, dramatic lighting';
     if (artStyle === 'PIXEL_ART') styleText = '16-bit retro pixel art character portrait, crisp pixels';
 
-    // Formulate pristine single-subject character portrait prompt (no multi-head turnaround crops)
     const randomSeed = Math.floor(Math.random() * 900000) + 100000;
-    const promptUsed = `Character design concept art portrait of ${sanitizedChar}, single centered hero character portrait showing upper body and face, facing camera, ${styleText}, solid clean neutral studio backdrop, soft studio lighting, masterpiece, crisp focus, 8k resolution --seed ${randomSeed}`;
+    
+    let promptUsed = '';
+    if (artStyle === '3D_PIXAR' || artStyle === '3D_UNREAL_HYPER') {
+      promptUsed = `Character turnaround sheet, 3D character design sheet, complete head-to-toe full-body turnaround model sheet. Showing three full-length standing figures: front view, side profile view, and 3/4 view of ${sanitizedChar}. Head-to-toe scale, fully zoomed-out wide shot displaying the entire character including complete legs, shoes, and clothing outfit in high-detail. On a solid flat plain light grey studio background, ${styleText}, highly consistent face and clothing design --seed ${randomSeed}`;
+    } else {
+      promptUsed = `Anime character design sheet, character turnaround model sheet, complete head-to-toe full-body turnaround. Showing three full-length standing poses: front view, side profile view, and 3/4 view of ${sanitizedChar}. Zoomed-out wide shot showing the entire body standing upright from head to feet, displaying the complete outfit, shirt, pants, and shoes in full view. On a solid flat clean light neutral grey background, professional 2D key animator concept art, ${styleText}, highly consistent facial features and clothing details, no head-only cropping --seed ${randomSeed}`;
+    }
 
-    console.log(`[ImageGenerationService] Generating Character Sheet (${imageEngine || 'default'}):\n"${promptUsed}"`);
+    console.log(`[ImageGenerationService] Generating Character Turnaround Sheet (${imageEngine || 'default'}):\n"${promptUsed}"`);
 
-    // Call generateKeyframeImage with mock scene
     const dummyScene: Scene = {
       id: `char_sheet_ref_${randomSeed}`,
       promptTextToImage: promptUsed,

@@ -1,11 +1,11 @@
 {
-  "projectId": "outstanding-elevator-f83b3",
-  "appId": "1:814526882630:web:676ecd55837098865cfb47",
-  "apiKey": "AIzaSyB6DU4PJLuKo4ikv7m9Z-biEJmm3XkXyps",
-  "authDomain": "outstanding-elevator-f83b3.firebaseapp.com",
-  "storageBucket": "outstanding-elevator-f83b3.firebasestorage.app",
-  "messagingSenderId": "814526882630",
+  "projectId": "correctorv1",
+  "appId": "1:404622511685:web:0b17327ff2d63b92885d2c",
+  "apiKey": "AIzaSyBCkbhwZe_pnPeI2-enOjXTKdnyXciPmko",
+  "authDomain": "correctorv1.firebaseapp.com",
+  "storageBucket": "correctorv1.appspot.com",
+  "messagingSenderId": "404622511685",
   "measurementId": "",
-  "oAuthClientId": "814526882630-ml6k8qd9pab4p50ma8bdu8oilt9hgqqs.apps.googleusercontent.com",
+  "oAuthClientId": "404622511685-80leg7tkshokfa1s3kh28j4teitfub68.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

@@ -1,3 +1,4 @@
+import { StitcherAgent } from '../core/StitcherAgent.js';
 import { ProductionProject, ProductionState, AgentRun, AgentType, Storyboard } from '../../types/production.js';
 import { eventBus, ProductionEvents } from '../core/EventBus.js';
 import { randomUUID } from 'crypto';
@@ -209,17 +210,25 @@ export class ProductionOrchestrator {
           scene.videoUrl = videoUrl;
         } catch (error: any) {
           console.error(`Failed to generate scene with provider ${provider.name}:`, error);
-          scene.status = 'COMPLETED';
-          const fallbackDir = (scene as any).visualDirection || scene.visualDescription || 'cinematic shot';
-          scene.assetUrl = (scene as any).imageUrl || `https://image.pollinations.ai/prompt/${encodeURIComponent(fallbackDir.substring(0, 200))}?width=1024&height=576&nologo=true&model=flux`;
-          scene.videoUrl = scene.assetUrl;
+          scene.status = 'FAILED';
+          scene.assetUrl = (scene as any).imageUrl || undefined;
+          scene.videoUrl = undefined;
         }
       }
 
       // Assign master cut
       const completedScenes = project.storyboard.scenes.filter(s => s.status === 'COMPLETED' && (s.videoUrl || s.assetUrl));
       if (completedScenes.length > 0) {
-        project.finalVideoUrl = completedScenes[0].videoUrl || completedScenes[0].assetUrl;
+        try {
+          const stitchInput = completedScenes.map(s => ({
+            url: s.videoUrl || s.assetUrl || '',
+            text: s.voiceOver || s.dialogue || ''
+          }));
+          project.finalVideoUrl = await StitcherAgent.stitchVideos(stitchInput, project.brandLogoUrl, project.extraVideoUrl);
+        } catch (e) {
+          console.error("Stitch failed, falling back to single video:", e);
+          project.finalVideoUrl = completedScenes[0].videoUrl || completedScenes[0].assetUrl;
+        }
       }
     }
     

@@ -1,28 +1,13 @@
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
 import * as schema from './schema.ts';
+import path from 'path';
+import fs from 'fs';
 
-declare global {
-  var _postgresPool: Pool | undefined;
+const dbPath = path.join(process.cwd(), 'outputs', 'sqlite.db');
+if (!fs.existsSync(path.dirname(dbPath))) {
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 }
 
-export const createPool = () => {
-  if (!global._postgresPool) {
-    global._postgresPool = new Pool({
-      host: process.env.SQL_HOST,
-      user: process.env.SQL_USER,
-      password: process.env.SQL_PASSWORD,
-      database: process.env.SQL_DB_NAME,
-      max: 10,
-      connectionTimeoutMillis: 15000,
-    });
-
-    global._postgresPool.on('error', (err) => {
-      console.error('Unexpected error on idle SQL pool client:', err);
-    });
-  }
-  return global._postgresPool;
-};
-
-const pool = createPool();
-export const db = drizzle(pool, { schema });
+const sqlite = new Database(dbPath);
+export const db = drizzle(sqlite, { schema });

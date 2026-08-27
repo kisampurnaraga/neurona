@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 import { FounderDashboard } from './components/FounderDashboard';
 import { FounderAudioVoiceLibrary } from './components/FounderAudioVoiceLibrary';
+import { FounderGallery } from './components/FounderGallery';
+import { Play } from 'lucide-react';
 
 interface ProviderItem {
   id: string;
@@ -79,7 +81,7 @@ interface FCCConfig {
 export default function FounderControlCenter({ onExit }: { onExit?: () => void }) {
   const [config, setConfig] = useState<FCCConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'providers' | 'audio' | 'vault' | 'flags' | 'logs' | 'users'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'providers' | 'audio' | 'vault' | 'flags' | 'logs' | 'users' | 'gallery'>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Sora / Provider Config Modal State
@@ -392,6 +394,12 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
             active={activeTab === 'logs'} 
             onClick={() => { setActiveTab('logs'); setMobileMenuOpen(false); }} 
           />
+          <MobileNavItem 
+            icon={<Play size={16} />} 
+            label="Video Gallery" 
+            active={activeTab === 'gallery'} 
+            onClick={() => { setActiveTab('gallery'); setMobileMenuOpen(false); }} 
+          />
         </div>
       )}
 
@@ -455,6 +463,12 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
             active={activeTab === 'logs'} 
             onClick={() => setActiveTab('logs')} 
           />
+          <NavItem 
+            icon={<Play size={16}/>} 
+            label="Video Gallery" 
+            active={activeTab === 'gallery'} 
+            onClick={() => setActiveTab('gallery')} 
+          />
         </nav>
         
         <div className="p-4 border-t border-[#1a1a1a] bg-[#050505]">
@@ -481,6 +495,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
               {activeTab === 'flags' && 'Operational Feature Flags'}
               {activeTab === 'users' && 'Manajemen Pengguna & Aktivasi Manual WhatsApp'}
               {activeTab === 'logs' && 'Privileged Audit Trails'}
+              {activeTab === 'gallery' && 'Video Gallery & Landing Page Demos'}
             </h1>
           </div>
           <div className="flex items-center gap-3">
@@ -826,18 +841,24 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
                   {[
                     { 
+                      id: 'fal', 
+                      label: 'Fal.ai Universal API', 
+                      badge: 'FAL.AI READY', 
+                      desc: 'Akses ke semua model video top-tier (Wan, Seedance, Sora, Kling).' 
+                    },
+                    { 
                       id: 'byteplus', 
-                      label: 'BytePlus ModelArk (PixelDance / Doubao)', 
-                      badge: 'REKOMENDASI FOUNDER (BARU)', 
-                      desc: 'Engine video komersial BytePlus PixelDance. Gerakan dinamis & Product Lock ekstrem.' 
+                      label: 'BytePlus ModelArk (PixelDance)', 
+                      badge: 'BYTEPLUS ARK', 
+                      desc: 'Engine video komersial BytePlus PixelDance. Gerakan dinamis.' 
                     },
                     { 
                       id: 'veo', 
                       label: 'Google Veo 3.1', 
-                      badge: 'API READY (DEEPMIND)', 
+                      badge: 'DEEPMIND VEO', 
                       desc: 'Engine video fotorealistik DeepMind (veo-3.1-generate-preview).' 
                     },
                     { 
@@ -848,39 +869,82 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                     },
                     { 
                       id: 'sora', 
-                      label: 'OpenAI Sora Turbo', 
-                      badge: 'DISABLED (NO PUBLIC API)', 
-                      desc: 'Belum tersedia API publik resmi. Gunakan BytePlus atau Veo.' 
+                      label: 'OpenAI Sora Direct', 
+                      badge: 'DISABLED (USE FAL)', 
+                      desc: 'Gunakan Fal.ai untuk akses Sora via API.' 
                     }
                   ].map(eng => {
-                    const isSelected = (config.primaryVideoEngine || localStorage.getItem('neurona_video_model') || 'byteplus') === eng.id;
+                    const activeModelId = config.primaryVideoEngine || localStorage.getItem('neurona_video_model') || 'byteplus';
+                    const isSelected = activeModelId === eng.id || (eng.id === 'fal' && activeModelId.startsWith('fal-'));
                     const isSora = eng.id === 'sora';
+                    
                     return (
-                      <button
-                        key={eng.id}
-                        disabled={isSora}
-                        onClick={() => handleSetVideoEngine(eng.id as any)}
-                        className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-2.5 ${
-                          isSora 
-                            ? 'opacity-50 cursor-not-allowed bg-[#0d0d0d] border-[#1f1f1f] text-gray-500'
-                            : isSelected 
-                            ? 'bg-blue-950/60 border-blue-500 shadow-[0_0_18px_rgba(59,130,246,0.35)] text-white cursor-pointer ring-1 ring-blue-400/50' 
-                            : 'bg-[#0f0f0f] border-[#222] hover:border-gray-600 text-gray-400 hover:text-gray-200 cursor-pointer hover:bg-slate-900/60'
-                        }`}
-                      >
-                        <div>
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-xs font-bold text-white">{eng.label}</span>
-                            {isSelected && <CheckCircle2 size={16} className="text-blue-400 shrink-0" />}
+                      <div key={eng.id} className="relative flex flex-col gap-1.5">
+                        <button
+                          disabled={isSora}
+                          onClick={() => {
+                            if (eng.id === 'fal') {
+                              handleSetVideoEngine('fal-wan21' as any);
+                              localStorage.setItem('neurona_video_model', 'fal-wan21');
+                            } else {
+                              handleSetVideoEngine(eng.id as any);
+                              localStorage.setItem('neurona_video_model', eng.id);
+                            }
+                          }}
+                          className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-2.5 h-full ${
+                            isSora 
+                              ? 'opacity-50 cursor-not-allowed bg-[#0d0d0d] border-[#1f1f1f] text-gray-500'
+                              : isSelected 
+                              ? 'bg-blue-950/60 border-blue-500 shadow-[0_0_18px_rgba(59,130,246,0.35)] text-white cursor-pointer ring-1 ring-blue-400/50' 
+                              : 'bg-[#0f0f0f] border-[#222] hover:border-gray-600 text-gray-400 hover:text-gray-200 cursor-pointer hover:bg-slate-900/60'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-bold text-white">{eng.label}</span>
+                              {isSelected && <CheckCircle2 size={16} className="text-blue-400 shrink-0" />}
+                            </div>
+                            <div className="text-[10px] opacity-80 mt-1 leading-relaxed">{eng.desc}</div>
                           </div>
-                          <div className="text-[10px] opacity-80 mt-1 leading-relaxed">{eng.desc}</div>
-                        </div>
-                        <span className={`text-[9px] font-mono px-2 py-0.5 rounded w-fit uppercase font-semibold ${
-                          isSelected ? 'bg-blue-600 text-white shadow-sm' : isSora ? 'bg-[#181818] text-gray-600' : 'bg-[#1e1e1e] text-gray-400'
-                        }`}>
-                          {eng.badge}
-                        </span>
-                      </button>
+                          <span className={`text-[9px] font-mono px-2 py-0.5 rounded w-fit uppercase font-semibold ${
+                            isSelected ? 'bg-blue-600 text-white shadow-sm' : isSora ? 'bg-[#181818] text-gray-600' : 'bg-[#1e1e1e] text-gray-400'
+                          }`}>
+                            {eng.badge}
+                          </span>
+                        </button>
+                        
+                        {/* Sub-menu for Fal.ai Specific Models */}
+                        {isSelected && eng.id === 'fal' && (
+                          <div className="absolute top-full left-0 mt-1 w-full z-10 p-2 bg-slate-900 border border-blue-500/40 rounded-xl shadow-xl flex flex-col gap-1">
+                            <span className="text-[9px] font-bold text-blue-300 px-1 mb-0.5">Pilih Sub-Model:</span>
+                            {[
+                              { id: 'fal-wan21', label: 'Wan 2.1' },
+                              { id: 'fal-seedance25', label: 'Seedance 2.5' },
+                              { id: 'fal-seedance20', label: 'Seedance 2.0' },
+                              { id: 'fal-sora3', label: 'Sora 3' },
+                              { id: 'fal-sora2', label: 'Sora 2' },
+                              { id: 'fal-kling15', label: 'Kling 1.5' },
+                              { id: 'fal-minimax', label: 'MiniMax H3' }
+                            ].map(subOpt => (
+                              <button
+                                key={subOpt.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSetVideoEngine(subOpt.id as any);
+                                  localStorage.setItem('neurona_video_model', subOpt.id);
+                                }}
+                                className={`text-[10px] font-bold px-2 py-1.5 rounded-lg text-left transition ${
+                                  activeModelId === subOpt.id
+                                    ? 'bg-blue-600/30 text-white border border-blue-500/50'
+                                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-200 border border-transparent'
+                                }`}
+                              >
+                                {subOpt.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -1083,6 +1147,11 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
             <FounderAudioVoiceLibrary />
           )}
 
+          {/* TAB: VIDEO GALLERY */}
+          {activeTab === 'gallery' && (
+            <FounderGallery />
+          )}
+
         </div>
       </main>
 
@@ -1162,7 +1231,41 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                 <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">
                   Model Identifier
                 </label>
-                {(editingProvider.id === 'veo' || editingProvider.id === 'google_veo') ? (
+                {(editingProvider.id === 'fal') ? (
+                  <div className="relative">
+                    <select
+                      id="fcc-fal-model-select"
+                      value={inputModel || 'fal-ai/hunyuan-video'}
+                      onChange={e => setInputModel(e.target.value)}
+                      className="w-full bg-[#141414] border border-[#2a2a2a] focus:border-indigo-500 rounded-xl px-4 py-2.5 text-xs font-medium text-white outline-none transition-colors appearance-none cursor-pointer pr-10"
+                    >
+                      <option value="fal-ai/wan-v2.1" className="bg-[#1a1a1a] text-white py-2">
+                        Wan 2.1 (Sangat efisien & hemat)
+                      </option>
+                      <option value="fal-ai/seedance-2.5" className="bg-[#1a1a1a] text-white py-2">
+                        Seedance 2.5 (Audio & sinematik)
+                      </option>
+                      <option value="fal-ai/seedance-2.0" className="bg-[#1a1a1a] text-white py-2">
+                        Seedance 2.0 (Cepat & stabil)
+                      </option>
+                      <option value="fal-ai/sora-3" className="bg-[#1a1a1a] text-white py-2">
+                        Sora 3 (Realistis & natural)
+                      </option>
+                      <option value="fal-ai/hunyuan-video" className="bg-[#1a1a1a] text-white py-2">
+                        Hunyuan Video (Default)
+                      </option>
+                      <option value="fal-ai/kling-1.5" className="bg-[#1a1a1a] text-white py-2">
+                        Kling 1.5 (Kreatif)
+                      </option>
+                      <option value="fal-ai/minimax-h3" className="bg-[#1a1a1a] text-white py-2">
+                        MiniMax H3 (Karakter presisi)
+                      </option>
+                    </select>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </div>
+                  </div>
+                ) : (editingProvider.id === 'veo' || editingProvider.id === 'google_veo') ? (
                   <div className="relative">
                     <select
                       id="fcc-veo-model-select"

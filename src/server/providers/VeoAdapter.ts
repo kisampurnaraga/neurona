@@ -11,13 +11,13 @@ export class VeoAdapter implements VideoGenerationProvider {
   isMock = false;
 
   async getStatus(): Promise<ProviderStatus> {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = FounderService.getVeoConfig().apiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) return 'NOT_CONFIGURED';
     return 'READY';
   }
 
   async generateScene(scene: Scene, context: string): Promise<string> {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = FounderService.getVeoConfig().apiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) {
       throw new Error("GEMINI_API_KEY tidak terdeteksi. Silakan atur GEMINI_API_KEY untuk menggunakan Google Veo.");
     }
@@ -50,37 +50,110 @@ export class VeoAdapter implements VideoGenerationProvider {
     // Check if starting image exists (Base64 or URL)
     let imageData: { imageBytes: string; mimeType: string } | undefined = undefined;
     if (scene.imageUrl && typeof scene.imageUrl === 'string') {
-      if (scene.imageUrl.startsWith('data:image/')) {
-        const parts = scene.imageUrl.split(',');
-        const mimeMatch = parts[0].match(/:(.*?);/);
-        const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
-        const imageBytes = parts[1];
-        if (imageBytes && imageBytes.length > 50) {
-          imageData = { imageBytes, mimeType };
+      try {
+        if (scene.imageUrl.startsWith('data:image/')) {
+          const parts = scene.imageUrl.split(',');
+          const mimeMatch = parts[0].match(/:(.*?);/);
+          const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+          const imageBytes = parts[1];
+          if (imageBytes && imageBytes.length > 50) {
+            imageData = { imageBytes, mimeType };
+          }
+        } else if (scene.imageUrl.startsWith('/api/images/')) {
+          // Local image
+          const filename = scene.imageUrl.split('/').pop();
+          if (filename) {
+            const filepath = path.join(process.cwd(), 'public', 'images', filename);
+            if (fs.existsSync(filepath)) {
+              const buffer = fs.readFileSync(filepath);
+              const ext = path.extname(filename).toLowerCase();
+              const mimeType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.webp' ? 'image/webp' : 'image/png';
+              imageData = { imageBytes: buffer.toString('base64'), mimeType };
+            }
+          }
+        } else if (scene.imageUrl.startsWith('http')) {
+          // External URL
+          const imgRes = await fetch(scene.imageUrl);
+          if (imgRes.ok) {
+            const buffer = Buffer.from(await imgRes.arrayBuffer());
+            const contentType = imgRes.headers.get('content-type') || 'image/png';
+            imageData = { imageBytes: buffer.toString('base64'), mimeType: contentType };
+          }
         }
+      } catch (err) {
+        console.warn(`[Google Veo 3.1] Gagal memuat gambar referensi, menggunakan mode text-to-video. Detail:`, err);
       }
     }
 
     const modelName = FounderService.getVeoModel() || process.env.VEO_MODEL || 'veo-3.1-generate-preview';
 
     try {
-      console.log(`[Google Veo 3.1] Mengirim payload ke model '${modelName}' (Image-to-Video mode: ${imageData ? 'YES' : 'Text-to-Video'})...`);
+      console.log(`[Google Veo 3.1] Mengirim payload ke model '${modelName}' (Image-to-Video mode: ${imageData ? 'YES' : 'Text-to-Video'}) via REST...`);
       
-      const payload: any = {
-        model: modelName,
-        prompt: promptText,
-        config: {
-          numberOfVideos: 1,
-          resolution: '720p',
+      const instances: any[] = [
+        {
+          prompt: promptText
+        }
+      ];
+
+      if (imageData) {
+        instances[0].image = {
+          bytesBase64Encoded: imageData.imageBytes,
+          mimeType: imageData.mimeType
+        };
+      }
+
+      const payload = {
+        instances,
+        parameters: {
+          sampleCount: 1,
           aspectRatio: aspectRatio,
+          resolution: '720p',
+          personGeneration: 'allow_adult'
         }
       };
 
-      if (imageData) {
-        payload.image = imageData;
+      const modelPath = modelName.startsWith('models/') ? modelName : `models/${modelName}`;
+      const generateUrl = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:predictLongRunning?key=${apiKey}`;
+      
+      let response: any;
+      let initSuccess = false;
+      const initMaxAttempts = 12; // Wait up to 3 minutes total (12 * 15 seconds)
+      let lastInitErrorMsg = '';
+
+      for (let initAttempt = 1; initAttempt <= initMaxAttempts; initAttempt++) {
+        console.log(`[Google Veo 3.1] Mengirim payload - Attempt ${initAttempt}/${initMaxAttempts}...`);
+        
+        response = await fetch(generateUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'aistudio-build'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          initSuccess = true;
+          break;
+        }
+
+        const errorText = await response.text();
+        lastInitErrorMsg = errorText;
+
+        if (response.status === 429) {
+          console.log(`[Google Veo 3.1] Kapasitas render sedang padat (429). Proses render lain terdeteksi aktif. Mengaktifkan Mode Sabar: Menunggu 15 detik sebelum mencoba lagi...`);
+          await new Promise((resolve) => setTimeout(resolve, 15000));
+        } else {
+          throw new Error(`Google Veo API Error: ${response.status} ${response.statusText} - ${errorText}`);
+        }
       }
 
-      let operation = await ai.models.generateVideos(payload);
+      if (!initSuccess || !response || !response.ok) {
+        throw new Error(`Kapasitas render video Anda sedang padat (429: Too Many Requests / Quota Exceeded) setelah beberapa kali mencoba. Batas kuota model Veo 3.1 dari Google AI Studio dibatasi secara konkuren. Silakan tunggu sampai render sebelumnya selesai Bos! Detail: ${lastInitErrorMsg}`);
+      }
+
+      const operation = await response.json() as { name: string };
 
       if (!operation || !operation.name) {
         throw new Error("Gagal memulai task Google Veo: Operation name tidak ditemukan dari response API.");
@@ -97,9 +170,19 @@ export class VeoAdapter implements VideoGenerationProvider {
         await new Promise((resolve) => setTimeout(resolve, 5000));
 
         try {
-          const op = new GenerateVideosOperation();
-          op.name = operationName;
-          const updated = await ai.operations.getVideosOperation({ operation: op });
+          const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${operationName}?key=${apiKey}`;
+          const pollRes = await fetch(pollUrl, {
+            headers: {
+              'User-Agent': 'aistudio-build'
+            }
+          });
+
+          if (!pollRes.ok) {
+            const errorText = await pollRes.text();
+            throw new Error(`Polling Error: ${pollRes.status} - ${errorText}`);
+          }
+
+          const updated = await pollRes.json() as any;
 
           console.log(`[Google Veo 3.1] Polling [${attempt}/${maxAttempts}] - Status done: ${updated.done}`);
 
@@ -135,7 +218,7 @@ export class VeoAdapter implements VideoGenerationProvider {
         throw new Error(`Gagal mengunduh file video dari Google Cloud (HTTP ${videoRes.status})`);
       }
 
-      const buffer = await videoRes.buffer();
+      const buffer = Buffer.from(await videoRes.arrayBuffer());
       const outputDir = path.join(process.cwd(), 'public', 'videos');
       if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });

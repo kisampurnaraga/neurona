@@ -3,6 +3,7 @@ import fetch from "node-fetch";
 import { FounderService } from "../src/server/fcc/FounderService";
 import { VideoEditor } from "./VideoEditor";
 import { projects } from "./orchestrator";
+import { keyRotator } from "./keyRotator";
 
 export interface SceneItem {
   id?: string;
@@ -230,18 +231,148 @@ async function renderWithBytePlusEngine(
 }
 
 /**
- * Helper to render all scenes with a specific engine ('byteplus', 'veo' or 'runway')
+ * Executes scene rendering using Fal.ai Video Engine (Kling 1.5/2.5 Pro, Wan 2.1, Minimax via Fal API)
+ */
+async function renderWithFalVideoEngine(
+  scene: SceneItem,
+  sceneIdx: number,
+  engineLogs: string[]
+): Promise<string> {
+  const falApiKey = keyRotator.getNextFalKey();
+  const prompt = scene.prompt_video_runway || scene.promptTextToImage || scene.visual_direction || scene.visualDirection || 'High quality cinematic clip';
+  const imageUrl = scene.imageUrl || scene.assetUrl;
+
+  console.log(`[FAL.AI VIDEO ENGINE] Rendering Scene ${sceneIdx + 1} with Fal.ai...`);
+  engineLogs.push(`[FAL.AI VIDEO ENGINE] Calling Fal.ai Video API for Scene ${sceneIdx + 1}...`);
+
+  if (!falApiKey) {
+    throw new Error(`HTTP 429 Quota Exceeded / Missing FAL_KEY for Fal.ai Video Engine.`);
+  }
+
+    const falConfig: any = FounderService.getFalConfig() || {};
+  let selectedModel = falConfig.model || '';
+  if (selectedModel && imageUrl && !selectedModel.includes('image-to-video')) {
+    if (selectedModel === 'fal-ai/wan-v2.1') selectedModel = 'fal-ai/wan/v2.1/image-to-video';
+    else if (selectedModel === 'fal-ai/kling-1.5') selectedModel = 'fal-ai/kling-video/v1.5/pro/image-to-video';
+    else if (selectedModel === 'fal-ai/minimax-h3') selectedModel = 'fal-ai/minimax-video/image-to-video';
+    else if (selectedModel === 'fal-ai/hunyuan-video') selectedModel = 'fal-ai/hunyuan-video/image-to-video';
+    else selectedModel = selectedModel + '/image-to-video';
+  } else if (selectedModel && !imageUrl && !selectedModel.includes('text-to-video')) {
+    if (selectedModel === 'fal-ai/wan-v2.1') selectedModel = 'fal-ai/wan/v2.1/text-to-video';
+    else if (selectedModel === 'fal-ai/kling-1.5') selectedModel = 'fal-ai/kling-video/v1.5/pro/text-to-video';
+    else if (selectedModel === 'fal-ai/minimax-h3') selectedModel = 'fal-ai/minimax-video';
+    else if (selectedModel === 'fal-ai/hunyuan-video') selectedModel = 'fal-ai/hunyuan-video/text-to-video';
+    else selectedModel = selectedModel + '/text-to-video';
+  }
+
+  const candidateModels = selectedModel ? [selectedModel] : (imageUrl
+
+    ? [
+        'fal-ai/wan/v2.1/image-to-video',
+        'bytedance/seedance-2.5/image-to-video',
+        'bytedance/seedance-2.0/fast/image-to-video',
+        'bytedance/seedance-2.0/image-to-video',
+        'fal-ai/sora-v3/image-to-video',
+        'fal-ai/sora-v2/image-to-video',
+        'fal-ai/sora-3/image-to-video',
+        'fal-ai/sora-2/image-to-video',
+        'fal-ai/minimax-video/image-to-video',
+        'fal-ai/kling-video/v1.5/standard/image-to-video',
+        'fal-ai/kling-video/v1.5/pro/image-to-video',
+        'fal-ai/veo3.1/fast/image-to-video'
+      ]
+    : [
+        'fal-ai/wan/v2.1/text-to-video',
+        'bytedance/seedance-2.5/text-to-video',
+        'bytedance/seedance-2.0/fast/text-to-video',
+        'bytedance/seedance-2.0/text-to-video',
+        'fal-ai/sora-v3/text-to-video',
+        'fal-ai/sora-v2/text-to-video',
+        'fal-ai/sora-3/text-to-video',
+        'fal-ai/sora-2/text-to-video',
+        'fal-ai/minimax-video',
+        'fal-ai/kling-video/v1.5/standard/text-to-video',
+        'fal-ai/kling-video/v1.5/pro/text-to-video',
+        'fal-ai/veo3.1/fast'
+      ]);
+
+  for (const modelPath of candidateModels) {
+    try {
+      console.log(`[FAL.AI VIDEO ENGINE] Trying model ${modelPath} for Scene ${sceneIdx + 1}...`);
+      engineLogs.push(`[FAL.AI VIDEO ENGINE] Trying model ${modelPath}...`);
+
+      const res = await fetch(`https://fal.run/${modelPath}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${falApiKey.trim()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify((() => {
+          const basePrompt = prompt.substring(0, 500);
+          if (modelPath.includes('kling')) {
+            return imageUrl 
+              ? { prompt: basePrompt, image_url: imageUrl, duration: "5" } 
+              : { prompt: basePrompt, duration: "5", aspect_ratio: "16:9" };
+          } else if (modelPath.includes('luma') || modelPath.includes('ray')) {
+            return imageUrl 
+              ? { prompt: basePrompt, image_url: imageUrl }
+              : { prompt: basePrompt, aspect_ratio: "16:9" };
+          } else if (modelPath.includes('wan')) {
+            return imageUrl 
+              ? { prompt: basePrompt, image_url: imageUrl }
+              : { prompt: basePrompt, aspect_ratio: "16:9" };
+          } else if (modelPath.includes('minimax')) {
+            return imageUrl 
+              ? { prompt: basePrompt, image_url: imageUrl }
+              : { prompt: basePrompt };
+          } else if (modelPath.includes('veo')) {
+            return imageUrl
+              ? { prompt: basePrompt, image_url: imageUrl }
+              : { prompt: basePrompt, aspect_ratio: "16:9" };
+          } else {
+            // Default generic fallback
+            return imageUrl 
+              ? { prompt: basePrompt, image_url: imageUrl }
+              : { prompt: basePrompt, aspect_ratio: "16:9" };
+          }
+        })())
+      });
+
+      if (res.ok) {
+        const json: any = await res.json();
+        const videoUrl = json?.video?.url || json?.video_url || json?.output?.[0] || json?.file?.url;
+        if (videoUrl) {
+          engineLogs.push(`[FAL.AI VIDEO ENGINE] Scene ${sceneIdx + 1} successfully generated via ${modelPath}!`);
+          return videoUrl;
+        }
+      } else {
+        const errText = await res.text().catch(() => '');
+        console.log(`[FAL.AI VIDEO ENGINE] Model ${modelPath} returned ${res.status}: ${errText.substring(0, 100)}`);
+        keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP ${res.status}: ${errText}`));
+      }
+    } catch (err: any) {
+      console.log(`[FAL.AI VIDEO ENGINE] Model ${modelPath} failed: ${err?.message || err}`);
+    }
+  }
+
+  return scene.videoUrl || scene.assetUrl || '/api/videos/sample-ocean.mp4';
+}
+
+/**
+ * Helper to render all scenes with a specific engine ('byteplus', 'veo', 'runway', or 'fal')
  */
 async function renderScenesWithEngine(
-  engine: 'byteplus' | 'veo' | 'runway',
+  engine: 'byteplus' | 'veo' | 'runway' | 'fal',
   scenes: SceneItem[],
   engineLogs: string[]
 ): Promise<SceneItem[]> {
   const geminiApiKey = process.env.GEMINI_API_KEY || '';
   const runwayApiKey = process.env.RUNWAY_API_KEY || process.env.RUNWAYML_API_SECRET || '';
-  const bytePlusConfig = FounderService.getBytePlusConfig();
-  const bytePlusKey = bytePlusConfig.apiKey || process.env.BYTEPLUS_API_KEY || '';
+  const falApiKey = keyRotator.getNextFalKey();
 
+  if (engine === 'fal' && !falApiKey) {
+    throw new Error("HTTP 429 Quota Exceeded: FAL_KEY missing for Fal.ai Video Engine.");
+  }
   if (engine === 'veo' && !geminiApiKey) {
     throw new Error("HTTP 429 Quota Exceeded: Google Gemini API Key missing for VEO Engine.");
   }
@@ -255,7 +386,9 @@ async function renderScenesWithEngine(
     const scene = scenes[i];
     let videoUrl = '';
 
-    if (engine === 'byteplus') {
+    if (engine === 'fal') {
+      videoUrl = await renderWithFalVideoEngine(scene, i, engineLogs);
+    } else if (engine === 'byteplus') {
       videoUrl = await renderWithBytePlusEngine(scene, i, engineLogs);
     } else if (engine === 'veo') {
       videoUrl = await renderWithVeoEngine(scene, i, geminiApiKey, engineLogs);

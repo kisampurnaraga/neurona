@@ -19,6 +19,7 @@ import {
 import { getVideoProvider } from "../src/server/providers";
 import { LLMService } from "./llmService";
 import { ImageGenerationService } from "./imageService";
+import { keyRotator } from "./keyRotator";
 
 export const projectEvents = new EventEmitter();
 export const projects = new Map<string, ProductionProject>();
@@ -121,15 +122,26 @@ export function saveProjects() {
             finalVideoUrl: project.finalVideoUrl || null,
             data: JSON.stringify(project)
           }
-        }).catch(err => console.error("DB Save Error (Project " + id + "):", err.message));
+        }).catch(err => console.error("DB Save Error (Project " + id + "):", err));
       }
     } catch(e) {
-      console.error("Failed to sync projects to Postgres:", e);
+      console.error("Failed to sync projects to SQLite:", e);
     }
   })();
 }
 
 export function loadProjects() {
+  (async () => {
+    try {
+      await db.insert(dbUsers).values({
+        uid: 'default',
+        email: 'default@example.com',
+        name: 'Default User'
+      }).onConflictDoNothing();
+    } catch(e) {
+      console.log('Seed default user error:', e.message);
+    }
+  })();
   (async () => {
     try {
       const rows = await db.select().from(dbProjects);
@@ -151,9 +163,9 @@ export function loadProjects() {
           } catch(e) {}
         }
       }
-      console.log(`Loaded ${projects.size} projects from Postgres DB.`);
+      console.log(`Loaded ${projects.size} projects from SQLite DB.`);
     } catch(e) {
-      console.error("Failed to load projects from Postgres:", e);
+      console.error("Failed to load projects from SQLite:", e);
     }
   })();
 }
@@ -162,8 +174,9 @@ loadProjects();
 
 
 function getGenAI(): GoogleGenAI | null {
-  if (process.env.GEMINI_API_KEY) {
-    return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+  const apiKey = keyRotator.getNextGeminiKey();
+  if (apiKey) {
+    return new GoogleGenAI({ apiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
   }
   return null;
 }
@@ -372,7 +385,9 @@ export class ProductionOrchestrator {
         characterDescription: animationConfig?.characterDescription || "Karakter utama yang berani dan penuh ekspresi",
         worldSetting: animationConfig?.worldSetting || "Dunia penuh warna dengan pencahayaan sinematik",
         voiceTone: animationConfig?.voiceTone || 'CHEERFUL',
-        aspectRatio: animationConfig?.aspectRatio || '16:9'
+        aspectRatio: animationConfig?.aspectRatio || '16:9',
+        characterReferenceUrl: animationConfig?.characterReferenceUrl,
+        characterReferenceUrls: animationConfig?.characterReferenceUrls
       } : undefined,
       educationalConfig: resolvedType === 'EDUCATIONAL' ? {
         subjectTitle: educationalConfig?.subjectTitle || "Konsep Pembelajaran Menarik",
@@ -505,7 +520,7 @@ export class ProductionOrchestrator {
       await simulateAgent(1000);
 
       // 2. Storyboard Director formulation with OpenAI ChatGPT 4.0 & Gemini Multi-Model
-      const charImg = currentConfig?.characterImage || project.affiliateConfig?.characterImage;
+      const charImg = currentConfig?.characterReferenceUrl || currentConfig?.characterImage || project.affiliateConfig?.characterImage;
       const charVision = currentConfig?.characterVisualAnalysis || (project.affiliateConfig as any)?.characterVisualAnalysis || '';
 
       // Initialize characterProfile BEFORE constructing scene prompts so T2I lock has all details
@@ -543,6 +558,7 @@ export class ProductionOrchestrator {
           styleSeed: 8849201,
           colorPalette: ["#0284c7", "#38bdf8", "#f59e0b"],
           referenceImageUrl: charImg || undefined,
+          referenceImageUrls: anim?.characterReferenceUrls || (charImg ? [charImg] : undefined),
           consistencyAnchorPrompt: `[Consistent Animated Character: ${charName}, ${rawDesc}, ${anim?.artStyle || '3D Pixar'}]`
         };
       } else if (vType === 'AFFILIATE') {

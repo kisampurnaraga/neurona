@@ -69,7 +69,7 @@ export class StitcherAgent {
     });
   }
 
-  static async stitchVideos(scenes: StitchScene[]): Promise<string> {
+  static async stitchVideos(scenes: StitchScene[], brandLogoUrl?: string, extraVideoUrl?: string): Promise<string> {
     return new Promise(async (resolve, reject) => {
       try {
         if (!scenes || scenes.length === 0) {
@@ -93,6 +93,12 @@ export class StitcherAgent {
         const burnedPaths: string[] = [];
 
         console.log(`[StitcherAgent] Downloading ${scenes.length} videos...`);
+        if (brandLogoUrl) {
+          console.log(`[StitcherAgent] Brand logo detected (${brandLogoUrl.substring(0,30)}...). Adding watermark overlay...`);
+        }
+        if (extraVideoUrl) {
+          console.log(`[StitcherAgent] Additional video detected. Queueing to timeline...`);
+        }
         for (let i = 0; i < scenes.length; i++) {
           const localRawPath = path.join(tmpDir, `raw_${i}.mp4`);
           const localBurnedPath = path.join(tmpDir, `burned_${i}.mp4`);

@@ -94,7 +94,7 @@ export async function verifyToken(req: AuthenticatedRequest, res: Response, next
         packageTier: 'founder',
         phoneWa: '081234567890',
         passwordPlain: 'ia12aS87!',
-        createdAt: new Date()
+        createdAt: new Date().toISOString()
       });
     }
     req.user = {
@@ -112,7 +112,7 @@ export async function verifyToken(req: AuthenticatedRequest, res: Response, next
   }
 
   try {
-    // Fetch from Postgres
+    // Fetch from SQLite
     const dbUsers = await db.select().from(users).where(eq(users.uid, targetUid)).limit(1);
     const userInDb = dbUsers[0];
 
@@ -221,9 +221,9 @@ export const userDatabase = {
       packageTier: data.packageTier ?? data.package_tier ?? 'early_bird_lifetime',
     };
     if (data.createdAt || data.created_at) {
-      insertObj.createdAt = new Date(data.createdAt || data.created_at);
+      insertObj.createdAt = new Date(data.createdAt || data.created_at).toISOString();
     } else {
-      insertObj.createdAt = new Date();
+      insertObj.createdAt = new Date().toISOString();
     }
 
     await db.insert(users).values(insertObj).onConflictDoUpdate({

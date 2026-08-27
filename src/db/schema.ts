@@ -1,7 +1,7 @@
-import { integer, pgTable, text, timestamp, boolean } from 'drizzle-orm/pg-core';
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { relations } from 'drizzle-orm';
 
-export const users = pgTable('users', {
+export const users = sqliteTable('users', {
   uid: text('uid').primaryKey(),
   email: text('email').notNull(),
   name: text('name'),
@@ -9,20 +9,20 @@ export const users = pgTable('users', {
   passwordPlain: text('password_plain'),
   role: text('role').default('user'),
   credits: integer('credits').default(0),
-  statusAktif: boolean('status_aktif').default(false),
+  statusAktif: integer('status_aktif', { mode: 'boolean' }).default(false),
   packageTier: text('package_tier'),
-  createdAt: timestamp('created_at').defaultNow(),
+  createdAt: text('created_at'),
 });
 
-export const projects = pgTable('projects', {
+export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(),
   userId: text('user_id').references(() => users.uid).notNull(),
   title: text('title').notNull(),
   status: text('status'),
   videoType: text('video_type'),
   finalVideoUrl: text('final_video_url'),
-  data: text('data'), // JSON string representing the full project
-  createdAt: timestamp('created_at').defaultNow(),
+  data: text('data'),
+  createdAt: text('created_at'),
 });
 
 export const usersRelations = relations(users, ({ many }) => ({

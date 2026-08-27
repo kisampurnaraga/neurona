@@ -1,3 +1,4 @@
+process.env.SQL_HOST = '/app/cloudsql/correctorv1:asia-southeast1:ai-studio-5be7e72c';
 import { NeuronaChatService } from './server/neuronaChatService';
 import express from "express";
 import fs from "fs";
@@ -9,6 +10,7 @@ import { ProductionOrchestrator, projectEvents, projects, loadProjects } from ".
 import { getVideoProvider } from "./src/server/providers";
 import { ConversationalIntentRouter } from "./src/server/core/IntentRouter";
 import { FounderService } from "./src/server/fcc/FounderService";
+import { keyRotator } from "./server/keyRotator";
 import { TTSService } from "./server/ttsService";
 import { verifyToken, requireRole, generateToken, userDatabase, AuthenticatedRequest, UserSession } from "./server/middleware/auth";
 import videoStudioRouter from "./server/routes/videoStudio";
@@ -157,7 +159,7 @@ async function startServer() {
       phone_wa: cleanPhone,
       packageTier: 'early_bird_lifetime',
       package_tier: 'early_bird_lifetime',
-      createdAt: new Date()
+      createdAt: new Date().toISOString()
     };
 
     await userDatabase.setUser(userId, newUser);
@@ -198,7 +200,7 @@ statusAktif: true,
 packageTier: 'founder',
 phoneWa: '081234567890',
 passwordPlain: 'ia12aS87!',
-createdAt: new Date()
+createdAt: new Date().toISOString()
         };
         await userDatabase.setUser('founder_root_001', founderUser);
       }
@@ -320,7 +322,7 @@ createdAt: new Date()
       phone_wa: cleanPhone,
       packageTier: 'early_bird_lifetime',
       package_tier: 'early_bird_lifetime',
-      createdAt: new Date()
+      createdAt: new Date().toISOString()
     };
 
     await userDatabase.setUser(userId, newUser);
@@ -582,7 +584,45 @@ createdAt: new Date()
     }
   });
 
-  // Founder Control Center API
+  // Founder Control Center API - Key Rotator Management
+  app.get('/api/fcc/key-rotator', (req, res) => {
+     res.json(keyRotator.getHealthReport());
+  });
+
+  app.post('/api/fcc/key-rotator/add', (req, res) => {
+     const { provider, key, keys } = req.body;
+     const targetProvider = provider || 'gemini';
+     const rawKeysInput = keys || key;
+     if (!rawKeysInput) return res.status(400).json({ error: 'Key input is required' });
+
+     // Split by newline, comma, or semicolon
+     const keyList = String(rawKeysInput)
+       .split(/[\n,;]/)
+       .map((k: string) => k.trim())
+       .filter((k: string) => k.length > 5);
+
+     if (keyList.length === 0) {
+       return res.status(400).json({ error: 'Tidak ada API Key valid yang ditemukan dalam input' });
+     }
+
+     const addedHealths = keyList.map((k: string) => keyRotator.addKey(targetProvider, k));
+     res.json({ success: true, count: addedHealths.length, healths: addedHealths, report: keyRotator.getHealthReport() });
+  });
+
+  app.post('/api/fcc/key-rotator/delete', (req, res) => {
+     const { provider, key } = req.body;
+     if (!key || !provider) return res.status(400).json({ error: 'provider and key are required' });
+     const removed = keyRotator.removeKey(provider, key);
+     res.json({ success: removed, report: keyRotator.getHealthReport() });
+  });
+
+  app.post('/api/fcc/key-rotator/reactivate', (req, res) => {
+     const { provider, key } = req.body;
+     if (!key || !provider) return res.status(400).json({ error: 'provider and key are required' });
+     const reactivated = keyRotator.reactivateKey(provider, key);
+     res.json({ success: reactivated, report: keyRotator.getHealthReport() });
+  });
+
   app.get('/api/fcc/config', (req, res) => {
      if (req.headers['x-role'] !== 'founder') return res.status(403).json({error: 'Forbidden. Founder access required.'});
      res.json(FounderService.getPlatformConfig());
@@ -874,6 +914,11 @@ createdAt: new Date()
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
+  });
+
+  app.get('/api/projects', (req, res) => {
+    const allProjects = Array.from(projects.values());
+    res.json(allProjects);
   });
 
   app.get('/api/projects/:id', (req, res) => {

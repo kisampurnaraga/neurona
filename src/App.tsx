@@ -1,4 +1,6 @@
 import { GalleryModal } from './components/GalleryModal';
+import { ContentCreatorDashboard } from './components/ContentCreatorDashboard';
+import { RenderGalleryModal } from './components/RenderGalleryModal';
 import { Wallet, Key, Coins } from 'lucide-react';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -38,6 +40,7 @@ import {
   Layers,
   FileText,
   BookOpen,
+  Cpu,
   GraduationCap,
   Palette,
   Globe,
@@ -143,12 +146,24 @@ import { FinalContentDashboard } from './components/FinalContentDashboard';
 
 export default function App() {
   const [showGallery, setShowGallery] = useState(false);
+  const [isRenderGalleryOpen, setIsRenderGalleryOpen] = useState(false);
+  const [isContentCreatorOpen, setIsContentCreatorOpen] = useState(false);
   const [currentRoute, setCurrentRoute] = useState(window.location.pathname || '/');
   const [currentView, setCurrentView] = useState<'STUDIO' | 'HUD_NODE' | 'TIMELINE'>('HUD_NODE');
   const [prompt, setPrompt] = useState("");
-  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(() => localStorage.getItem('neurona_current_project_id') || null);
+
+  useEffect(() => {
+    if (projectId) {
+      localStorage.setItem('neurona_current_project_id', projectId);
+    } else {
+      localStorage.removeItem('neurona_current_project_id');
+    }
+  }, [projectId]);
+
   const [project, setProject] = useState<ProductionProject | null>(null);
   const [providerInfo, setProviderInfo] = useState<{provider: string, isMock: boolean, status: string} | null>(null);
+  const [selectedVideoEngine, setSelectedVideoEngine] = useState<string>(() => localStorage.getItem('neurona_video_model') || 'fal');
 
   // User Authentication & Session State
   const [currentUser, setCurrentUser] = useState<UserSessionData | null>(() => {
@@ -304,6 +319,7 @@ export default function App() {
 
   const [isAwake, setIsAwake] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
+  const [isDraftingNewProject, setIsDraftingNewProject] = useState(false);
   const [conversationalMessage, setConversationalMessage] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceMuted, setVoiceMuted] = useState(neuronaVoice.getMuted());
@@ -338,6 +354,16 @@ export default function App() {
     }
   }, [currentUser]);
   const hasAutoOpenedStoryboardRef = useRef<string | null>(null);
+
+  // Auto-open storyboard when restoring from refresh
+  useEffect(() => {
+    if (project && !isStoryboardMatrixOpen) {
+      if ((project.status === 'AWAITING_APPROVAL' || (project.progress >= 50 && project.storyboard?.scenes?.length)) && hasAutoOpenedStoryboardRef.current !== project.id) {
+        hasAutoOpenedStoryboardRef.current = project.id;
+        setIsStoryboardMatrixOpen(true);
+      }
+    }
+  }, [project, isStoryboardMatrixOpen]);
   const [isFinalDashboardOpen, setIsFinalDashboardOpen] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [copiedScript, setCopiedScript] = useState(false);
@@ -535,7 +561,7 @@ export default function App() {
     setConversationalMessage(null);
 
     try {
-      const savedVideoModel = localStorage.getItem('neurona_video_model') || 'runway';
+      const savedVideoModel = selectedVideoEngine || localStorage.getItem('neurona_video_model') || 'fal';
       const savedVoiceId = localStorage.getItem('neurona_voice_id') || 'tryaudio-female-citra';
       const currentVoice = neuronaVoice.getCurrentVoice();
 
@@ -578,6 +604,8 @@ export default function App() {
       }
 
       if (data.projectId && data.projectId !== projectId) {
+        setProject(null);
+        setIsDraftingNewProject(true);
         setProjectId(data.projectId);
       }
     } catch (e) {
@@ -740,6 +768,7 @@ export default function App() {
         try {
           const update = JSON.parse(e.data);
           setProject(update);
+          setIsDraftingNewProject(false);
 
           // Auto open Storyboard Matrix when storyboard is ready (50% milestone)
           if ((update.status === 'AWAITING_APPROVAL' || (update.progress >= 50 && update.storyboard?.scenes?.length)) && hasAutoOpenedStoryboardRef.current !== update.id) {
@@ -775,6 +804,7 @@ export default function App() {
         if (res.ok) {
           const update = await res.json().catch(() => null);
           if (update) {
+            setIsDraftingNewProject(false);
             setProject(prev => {
               if (!prev || JSON.stringify(prev) !== JSON.stringify(update)) {
                 return update;
@@ -1043,10 +1073,12 @@ export default function App() {
             project={project} 
             prompt={prompt}
             setPrompt={setPrompt}
-            isThinking={isThinking}
+            isThinking={isThinking || isDraftingNewProject}
             onInteract={(customPrompt) => handleInteract(customPrompt || prompt)}
             onUploadAssets={handleFileUpload}
             onOpenStoryboard={() => setIsStoryboardMatrixOpen(true)}
+            onOpenRenderGallery={() => setIsRenderGalleryOpen(true)}
+            onOpenContentCreator={() => setIsContentCreatorOpen(true)}
             onOpenStudioSelector={() => setIsStudioSelectorOpen(true)}
             onOpenVisualStudio={() => setIsStudioSelectorOpen(true)}
             onOpenScriptWriter={() => {
@@ -1089,6 +1121,15 @@ export default function App() {
             onChooseStoryboardOnly={handleChooseStoryboardOnly}
             onResyncScene={handleResyncScene}
           />
+
+          {/* Content Creator Dashboard */}
+          {isRenderGalleryOpen && (
+            <RenderGalleryModal onClose={() => setIsRenderGalleryOpen(false)} />
+          )}
+          {/* Content Creator Dashboard */}
+          {isContentCreatorOpen && (
+            <ContentCreatorDashboard onClose={() => setIsContentCreatorOpen(false)} />
+          )}
 
           {/* Credit Top-Up Modal */}
           <CreditTopUpModal
@@ -1475,6 +1516,41 @@ export default function App() {
                     )})}
                   </div>
 
+                  {/* Video Engine Model Selection Dropdowns */}
+                  <div className="bg-black/50 border border-amber-500/30 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
+                    <span className="font-bold text-amber-300 text-[11px] flex items-center gap-1.5">
+                      <Cpu size={13} className="text-amber-400" />
+                      Pilih Model AI:
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center bg-black/60 border border-white/10 rounded-lg overflow-hidden">
+                        <div className="bg-amber-900/40 px-2 py-1.5 flex items-center justify-center border-r border-white/10">
+                          <Film size={12} className="text-amber-400" />
+                        </div>
+                        <select
+                          value={selectedVideoEngine}
+                          onChange={(e) => {
+                            setSelectedVideoEngine(e.target.value);
+                            localStorage.setItem('neurona_video_model', e.target.value);
+                          }}
+                          className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
+                          style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right .5rem center', backgroundSize: '.65em auto' }}
+                        >
+                          <option value="fal-wan21">Wan 2.1</option>
+                          <option value="fal-seedance25">Seedance 2.5</option>
+                          <option value="fal-seedance20">Seedance 2.0</option>
+                          <option value="fal-sora3">Sora 3</option>
+                          <option value="fal-sora2">Sora 2</option>
+                          <option value="fal-kling15">Kling 1.5</option>
+                          <option value="fal-minimax">MiniMax H3</option>
+                          <option value="byteplus">PixelDance</option>
+                          <option value="veo">Google Veo 3.1</option>
+                          <option value="runway">Runway Gen-3</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="pt-2 flex flex-wrap justify-end gap-2">
                     <button
                       onClick={handleGenerateAllImages}
@@ -1637,8 +1713,14 @@ export default function App() {
 
               {/* Scene Breakdown & Script */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                  <span>Adegan Storyboard ({project?.storyboard?.scenes?.length || 0})</span>
+                <div className="flex items-center justify-between text-xs font-semibold text-gray-400 uppercase tracking-wider flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span>Adegan Storyboard ({project?.storyboard?.scenes?.length || 0})</span>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-[10px] font-mono text-amber-300 font-bold flex items-center gap-1">
+                      <Cpu size={10} />
+                      <span>Engine: {selectedVideoEngine.toUpperCase()}</span>
+                    </span>
+                  </div>
                   {project?.videoType && (
                     <span className="text-[10px] text-indigo-400 font-mono">
                       {project.videoType}

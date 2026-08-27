@@ -90,6 +90,8 @@ export interface ProductionProject {
   brief?: ProductionBrief;
   storyboard?: Storyboard;
   finalVideoUrl?: string;
+  brandLogoUrl?: string;
+  extraVideoUrl?: string;
   assets: any[];
   agentRuns: AgentRun[];
   createdAt: Date;

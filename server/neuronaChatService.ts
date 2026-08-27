@@ -6,7 +6,10 @@ export class NeuronaChatService {
 
   static async chat(userId: string, userMessage: string, history: any[] = []): Promise<{ message: string, action: string | null }> {
     try {
-      const apiKey = process.env.GEMINI_MANUAL_API_KEY || process.env.GEMINI_API_KEY;
+      const apiKey = FounderService.getVeoConfig().apiKey || 
+                     FounderService.getGeminiBananaConfig().apiKey || 
+                     process.env.GEMINI_MANUAL_API_KEY || 
+                     process.env.GEMINI_API_KEY;
       if (!apiKey) throw new Error('API Key missing');
 
       const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
@@ -35,7 +38,7 @@ Perhatian:
       }));
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-3.6-flash',
         contents: [
           ...formattedHistory,
           { role: 'user', parts: [{ text: userMessage }] }
@@ -59,7 +62,16 @@ Perhatian:
         return { message: responseText, action: null };
       }
     } catch (err: any) {
-      console.error("[NeuronaChat] Error:", err.message);
+      const errMsg = err?.message || '';
+      console.error("[NeuronaChat] Error:", errMsg);
+      
+      if (errMsg.includes('prepayment credits') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('429')) {
+        return {
+          message: "Maaf Bos, saldo kredit / kuota prepayment Google AI Studio Bos sudah habis atau depleted. Silakan kunjungi Google AI Studio (https://aistudio.google.com) untuk melakukan top-up atau mengatur penagihan proyek Bos agar saya bisa aktif kembali membantu Bos membuat video keren!",
+          action: null
+        };
+      }
+      
       return { message: "Maaf Bos, saat ini jaringan saraf saya sedang terganggu. Ada yang bisa saya bantu lagi?", action: null };
     }
   }

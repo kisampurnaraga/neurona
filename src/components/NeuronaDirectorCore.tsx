@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
 import { 
   Zap, 
   Home, 
@@ -26,11 +27,13 @@ import {
   RefreshCw,
   Eye,
   Lock,
+  Key,
   ArrowRight
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { ProductionProject, ProductAsset } from '../shared/types';
 import { neuronaVoice } from '../utils/speechSynthesis';
+import { KeyRotatorModal } from './KeyRotatorModal';
 
 interface NeuronaDirectorCoreProps {
   project: ProductionProject | null;
@@ -45,6 +48,8 @@ interface NeuronaDirectorCoreProps {
   onOpenScriptWriter: () => void;
   onOpenAudioStudio: () => void;
   onOpenTimeline: () => void;
+  onOpenRenderGallery: () => void;
+  onOpenContentCreator: () => void;
   onOpenTopUp: () => void;
   onOpenLanding: () => void;
   onOpenFounder?: () => void;
@@ -66,6 +71,8 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
   onOpenScriptWriter,
   onOpenAudioStudio,
   onOpenTimeline,
+  onOpenRenderGallery,
+  onOpenContentCreator,
   onOpenTopUp,
   onOpenLanding,
   onOpenFounder,
@@ -76,6 +83,7 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
   const [activeTab, setActiveTab] = useState<'home' | 'studio' | 'storyboard' | 'video_os' | 'assets' | 'projects' | 'ai_agents' | 'analytics' | 'settings'>('home');
   const [activeMobileTab, setActiveMobileTab] = useState<'home' | 'studio' | 'projects' | 'profile'>('home');
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [isRotatorOpen, setIsRotatorOpen] = useState(false);
 
   // Speech Recognition (Voice Input) & Voice State
   const [isListening, setIsListening] = useState(false);
@@ -91,8 +99,10 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
   // Determine active production phase for live orbital nodes
   const isIdeating = isThinking || (project?.status === 'IN_PROGRESS' && (project?.currentStep === 'IDEA' || project?.currentStep === 'ANALYZING' || project?.currentStep === 'SCRIPT_GENERATION' || (project?.progress || 0) < 50));
   const isStoryboardReady = project?.status === 'AWAITING_APPROVAL' || (project?.progress || 0) >= 50 || Boolean(project?.storyboard?.scenes && project.storyboard.scenes.length > 0);
-  const isRendering = project?.status === 'IN_PROGRESS' && (project?.progress || 0) >= 50;
   const isCompleted = project?.status === 'COMPLETED';
+  const isVisualGenerating = project?.storyboard?.scenes?.some((s: any) => s.imageStatus === 'GENERATING') || false;
+  const isVideoGenerating = project?.storyboard?.scenes?.some((s: any) => s.videoStatus === 'GENERATING') || false;
+  const isRendering = (project?.status === 'IN_PROGRESS' && (project?.progress || 0) >= 50) || isVideoGenerating;
 
   // Voice subscription & Voice rhythm simulation
   useEffect(() => {
@@ -247,14 +257,15 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
     {
       id: 'visual',
       label: 'VISUAL STUDIO',
-      desc: 'Pilih Animasi / Affiliate / Edukasi',
+      desc: isVisualGenerating ? 'Generating Image...' : 'Pilih Animasi / Affiliate / Edukasi',
       color: '#06b6d4', // Cyan/Teal
-      glow: 'rgba(6, 182, 212, 0.6)',
-      border: 'border-cyan-400',
-      bg: 'bg-cyan-500/15',
+      glow: isVisualGenerating ? 'rgba(6, 182, 212, 0.9)' : 'rgba(6, 182, 212, 0.6)',
+      border: isVisualGenerating ? 'border-cyan-400 ring-2 ring-cyan-400 animate-pulse' : 'border-cyan-400',
+      bg: isVisualGenerating ? 'bg-cyan-500/30 shadow-[0_0_30px_#06b6d4]' : 'bg-cyan-500/15',
       icon: ImageIcon,
       angle: 0, // Right
-      isActive: false,
+      isActive: isVisualGenerating,
+      badge: isVisualGenerating ? 'GENERATING' : undefined,
       action: onOpenStudioSelector || onOpenVisualStudio
     },
     {
@@ -298,8 +309,8 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
     },
     {
       id: 'render',
-      label: 'RENDER VEO',
-      desc: isRendering ? 'Rendering 60fps...' : isCompleted ? 'Master 100% Selesai' : 'BytePlus & Veo Engine',
+      label: 'VIDEO RENDER',
+      desc: isRendering ? 'Rendering 60fps...' : isCompleted ? 'Master 100% Selesai' : 'Cloud Video Engine',
       color: '#f97316', // Orange
       glow: isRendering ? 'rgba(249, 115, 22, 0.9)' : 'rgba(249, 115, 22, 0.6)',
       border: isRendering ? 'border-orange-400 ring-2 ring-orange-400 animate-pulse' : 'border-orange-400',
@@ -308,18 +319,12 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
       angle: 180, // Left
       isActive: isRendering,
       badge: isRendering ? 'RENDERING' : isCompleted ? 'DONE 100%' : undefined,
-      action: () => {
-        if (isStoryboardReady) {
-          onOpenStoryboard();
-        } else {
-          onOpenStudioSelector?.();
-        }
-      }
+      action: onOpenRenderGallery
     },
     {
       id: 'social',
-      label: 'SOCIAL VIRAL',
-      desc: 'TikTok / IG / YT Tags',
+      label: 'CONTENT CREATOR',
+      desc: 'AI Planner & YouTube Analytics',
       color: '#ec4899', // Pink
       glow: 'rgba(236, 72, 153, 0.6)',
       border: 'border-pink-400',
@@ -328,12 +333,7 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
       angle: -135, // Top Left
       isActive: false,
       action: () => {
-        if (project) {
-          onOpenStoryboard();
-        } else {
-          setPrompt("Buatkan strategi hook dan hashtag viral TikTok untuk produk saya");
-          onInteract("Buatkan strategi hook dan hashtag viral TikTok untuk produk saya");
-        }
+        onOpenContentCreator();
       }
     }
   ];
@@ -536,6 +536,16 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
               <span className="hidden md:inline text-xs font-semibold text-slate-300 pr-1">
                 {currentUser?.name ? currentUser.name.split(' ')[0] : 'Profil'}
               </span>
+            </button>
+
+            {/* API Rotator Pool Modal Trigger */}
+            <button
+              onClick={() => setIsRotatorOpen(true)}
+              className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20 hover:border-cyan-500/50 transition text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm shadow-cyan-500/10"
+              title="Buka API Key Rotator Pool (Gemini & OpenAI)"
+            >
+              <Key size={14} className="text-cyan-400 animate-pulse" />
+              <span className="hidden sm:inline">API Rotator</span>
             </button>
 
             {/* Founder FCC Dedicated Icon (ONLY shown if role === 'founder') */}
@@ -745,6 +755,16 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                   );
                 })}
 
+                {/* Floating Loading Indicator for better visibility */}
+                {isIdeating && (
+                  <div className="absolute top-[75%] left-1/2 -translate-x-1/2 z-30 px-6 py-3 rounded-full bg-slate-900/90 border border-cyan-500/50 backdrop-blur-md shadow-[0_0_30px_rgba(6,182,212,0.3)] flex items-center gap-3 animate-in slide-in-from-bottom-4 fade-in duration-500">
+                     <RefreshCw className="w-5 h-5 text-cyan-400 animate-spin" />
+                     <div className="flex flex-col text-center">
+                       <span className="text-xs font-bold text-cyan-100 uppercase tracking-widest">Menyusun Naskah & Storyboard</span>
+                       <span className="text-[9px] text-cyan-400 font-mono animate-pulse">AI Agent sedang merancang adegan...</span>
+                     </div>
+                  </div>
+                )}
               </div>
 
               {/* Bottom Response & Video Preview Banner */}
@@ -938,6 +958,35 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                 </div>
               </div>
 
+              {/* Card 4: SCENE DURATIONS CHART */}
+              {project?.storyboard?.scenes && project.storyboard.scenes.length > 0 && (
+                <div className="p-4 rounded-2xl bg-[#090D1A] border border-slate-800/90 shadow-xl space-y-3">
+                  <h3 className="text-xs font-bold text-white tracking-wider uppercase">SCENE DURATIONS</h3>
+                  <div className="h-40 w-full mt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={project.storyboard.scenes.map((s: any, i: number) => ({ name: `S${i+1}`, duration: s.duration }))}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                        <XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} width={20} />
+                        <Tooltip
+                          cursor={{ fill: '#1e293b', opacity: 0.4 }}
+                          contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '11px', color: '#f8fafc' }}
+                          itemStyle={{ color: '#818cf8' }}
+                          formatter={(val: number) => [`${val}s`, 'Durasi']}
+                        />
+                        <Bar dataKey="duration" radius={[4, 4, 0, 0]}>
+                          {
+                            project.storyboard.scenes.map((entry: any, index: number) => (
+                              <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#6366f1' : '#a855f7'} />
+                            ))
+                          }
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
             </div>
 
           </div>
@@ -1053,6 +1102,11 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
         </div>
 
       </div>
+
+      <KeyRotatorModal
+        isOpen={isRotatorOpen}
+        onClose={() => setIsRotatorOpen(false)}
+      />
 
     </div>
   );

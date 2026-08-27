@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from "openai";
 import { FounderService } from "../src/server/fcc/FounderService";
 import { RunwayStyleLibrary } from "./StyleLibrary";
+import { keyRotator } from "./keyRotator";
 
 export interface LLMGenerationResult<T = any> {
   data: T;
@@ -14,18 +15,15 @@ export interface LLMGenerationResult<T = any> {
 let openAIClient: OpenAI | null = null;
 
 export function getOpenAIClient(): OpenAI | null {
-  const key = process.env.OPENAI_API_KEY;
+  const key = keyRotator.getNextOpenAIKey() || process.env.OPENAI_API_KEY;
   if (!key) return null;
-  if (!openAIClient) {
-    openAIClient = new OpenAI({ apiKey: key });
-  }
-  return openAIClient;
+  return new OpenAI({ apiKey: key });
 }
 
 export function getGenAI(): GoogleGenAI | null {
-  const key = process.env.GEMINI_API_KEY;
+  const key = keyRotator.getNextGeminiKey();
   if (!key) return null;
-  return new GoogleGenAI({ apiKey: key });
+  return new GoogleGenAI({ apiKey: key, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
 }
 
 export function getPreferredLLMProvider(): 'gemini' | 'openai' | 'anthropic' | 'auto' {

@@ -159,6 +159,13 @@ export class QueueService {
     record.updatedAt = new Date().toISOString();
     taskRegistry.set(taskId, record);
 
+    // Check for user cancellation before heavy Veo generation starts
+    const currentRecord = taskRegistry.get(taskId);
+    if (currentRecord && (currentRecord.status === 'failed' || currentRecord.error === 'CANCELLED_BY_USER')) {
+      console.log(`[Worker] Render Job ${taskId} was cancelled by user before starting Google Veo render.`);
+      return currentRecord;
+    }
+
     try {
       // Step 1: Render Video with Google Veo API
       console.log(`[Worker] Step 1/3: Calling Google Veo for prompt: "${promptText.substring(0, 50)}..."`);
@@ -237,5 +244,21 @@ export class QueueService {
 
   public static getTaskStatus(taskId: string): TaskStatusRecord | null {
     return taskRegistry.get(taskId) || null;
+  }
+
+  public static cancelTask(taskId: string): boolean {
+    const record = taskRegistry.get(taskId);
+    if (record) {
+      if (record.status === 'queued' || record.status === 'processing') {
+        record.status = 'failed';
+        record.error = 'CANCELLED_BY_USER';
+        record.progress = 0;
+        record.updatedAt = new Date().toISOString();
+        taskRegistry.set(taskId, record);
+        console.log(`[QueueService] Task ${taskId} successfully marked as CANCELLED_BY_USER.`);
+        return true;
+      }
+    }
+    return false;
   }
 }

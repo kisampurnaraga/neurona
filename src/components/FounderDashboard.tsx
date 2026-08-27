@@ -25,6 +25,7 @@ import { Settings, Film, CreditCard, Video,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FounderVideoInspector } from './FounderVideoInspector';
+import { KeyRotatorModal } from './KeyRotatorModal';
 import { AVAILABLE_VOICES } from '../utils/speechSynthesis';
 
 export interface ActivatedUser {
@@ -179,6 +180,7 @@ const PaymentSettingsPanel = () => {
 
 export const FounderDashboard: React.FC<FounderDashboardProps> = ({ onBack }) => {
   const [activeTab, setActiveTab] = useState<'users' | 'activation_form' | 'stats' | 'payment' | 'inspector' | 'settings'>('users');
+  const [isRotatorModalOpen, setIsRotatorModalOpen] = useState(false);
   
   // Form State for Manual Activation
   const [inputName, setInputName] = useState('');
@@ -581,6 +583,14 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
           >
             <Film size={15} />
             <span>Video Inspector</span>
+          </button>
+
+          <button
+            onClick={() => setIsRotatorModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 border border-cyan-500/40 text-cyan-300 font-mono text-xs uppercase font-bold tracking-wider hover:border-cyan-400 transition-all cursor-pointer ml-auto shadow-lg shadow-cyan-500/10"
+          >
+            <Key size={15} className="text-cyan-400 animate-pulse" />
+            <span>🔑 API Key Rotator Pool</span>
           </button>
         </div>
 
@@ -1052,6 +1062,11 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
           </div>
         )}
       </div>
+
+      <KeyRotatorModal
+        isOpen={isRotatorModalOpen}
+        onClose={() => setIsRotatorModalOpen(false)}
+      />
     </div>
   );
 };

@@ -209,6 +209,26 @@ router.get('/task/:taskId', (req, res) => {
   });
 });
 
+/**
+ * POST /api/v1/studio/task/:taskId/cancel
+ * Cancel a rendering task to prevent token/credit waste
+ */
+router.post('/task/:taskId/cancel', verifyToken, (req, res) => {
+  const { taskId } = req.params;
+  const success = QueueService.cancelTask(taskId);
+  if (success) {
+    return res.json({
+      success: true,
+      message: 'Tugas render berhasil dibatalkan.'
+    });
+  } else {
+    return res.status(400).json({
+      success: false,
+      message: 'Gagal membatalkan tugas. Tugas mungkin sudah selesai atau tidak ditemukan.'
+    });
+  }
+});
+
 
 router.post(
   '/multi-niche-director',

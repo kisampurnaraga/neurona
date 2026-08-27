@@ -50,7 +50,7 @@ export class BytePlusAdapter implements VideoGenerationProvider {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const data: any = await response.json();
         console.log(`[BytePlus Adapter] Task successfully submitted. Task ID:`, data.id || data.task_id);
         
         if (data.video_url || data.url) {

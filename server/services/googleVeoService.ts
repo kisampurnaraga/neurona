@@ -59,7 +59,7 @@ export class GoogleVeoService {
     referenceImageUrl?: string,
     options: VeoOptions = {}
   ): Promise<VeoRenderResult> {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = FounderService.getVeoConfig().apiKey || process.env.GEMINI_API_KEY;
     const aspectRatio: '9:16' | '16:9' = options.aspectRatio || '9:16';
     const resolution = options.resolution || '720p';
     const modelName = options.model || FounderService.getVeoModel() || process.env.VEO_MODEL || 'veo-3.1-generate-preview';
@@ -106,24 +106,72 @@ export class GoogleVeoService {
         }
       }
 
-      const payload: any = {
-        model: modelName,
-        prompt: promptText,
-        config: {
-          numberOfVideos: options.numberOfVideos || 1,
-          resolution: resolution,
+      const instances: any[] = [
+        {
+          prompt: promptText
+        }
+      ];
+
+      if (imageData) {
+        instances[0].image = {
+          bytesBase64Encoded: imageData.imageBytes,
+          mimeType: imageData.mimeType
+        };
+      }
+
+      const payload = {
+        instances,
+        parameters: {
+          sampleCount: options.numberOfVideos || 1,
           aspectRatio: aspectRatio,
+          resolution: resolution,
           personGeneration: options.personGeneration || 'allow_adult'
         }
       };
 
-      if (imageData) {
-        payload.image = imageData;
+      console.log(`[GoogleVeoService] Preparing video generation request to Google Veo API via REST (predictLongRunning)...`);
+      
+      const modelPath = modelName.startsWith('models/') ? modelName : `models/${modelName}`;
+      const generateUrl = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:predictLongRunning?key=${apiKey}`;
+      
+      let response: any;
+      let initSuccess = false;
+      const initMaxAttempts = 12; // Wait up to 3 minutes total (12 * 15 seconds)
+      let lastInitErrorMsg = '';
+
+      for (let initAttempt = 1; initAttempt <= initMaxAttempts; initAttempt++) {
+        console.log(`[GoogleVeoService] Dispatching video generation request - Attempt ${initAttempt}/${initMaxAttempts}...`);
+        
+        response = await fetch(generateUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'neuronna-video-studio/3.1'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          initSuccess = true;
+          break;
+        }
+
+        const errorText = await response.text();
+        lastInitErrorMsg = errorText;
+
+        if (response.status === 429) {
+          console.log(`[GoogleVeoService] Kapasitas render Google Veo sedang padat (429). Ada proses render lain yang sedang berjalan. Mode Sabar (Patience Mode) diaktifkan: Menunggu 15 detik sebelum mencoba lagi...`);
+          await new Promise((resolve) => setTimeout(resolve, 15000));
+        } else {
+          throw new Error(`Google Veo API Error: ${response.status} ${response.statusText} - ${errorText}`);
+        }
       }
 
-      console.log(`[GoogleVeoService] Dispatching video generation request to Google Veo API...`);
-      
-      let operation = await ai.models.generateVideos(payload);
+      if (!initSuccess || !response || !response.ok) {
+        throw new Error(`Kapasitas render video Anda sedang padat (429: Too Many Requests / Quota Exceeded) setelah beberapa kali mencoba. Batas kuota model Veo 3.1 dari Google AI Studio dibatasi secara konkuren. Silakan tunggu sampai render sebelumnya selesai Bos! Detail: ${lastInitErrorMsg}`);
+      }
+
+      const operation = await response.json() as { name: string };
       
       if (!operation || !operation.name) {
         throw new Error("Gagal memulai render Google Veo: Operasi tidak mengembalikan operation name.");
@@ -139,9 +187,19 @@ export class GoogleVeoService {
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 5000));
         try {
-          const op = new GenerateVideosOperation();
-          op.name = operationName;
-          const updated = await ai.operations.getVideosOperation({ operation: op });
+          const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${operationName}?key=${apiKey}`;
+          const pollRes = await fetch(pollUrl, {
+            headers: {
+              'User-Agent': 'neuronna-video-studio/3.1'
+            }
+          });
+
+          if (!pollRes.ok) {
+            const errorText = await pollRes.text();
+            throw new Error(`Polling Error: ${pollRes.status} - ${errorText}`);
+          }
+
+          const updated = await pollRes.json() as any;
           
           if (attempt % 3 === 0 || updated.done) {
             console.log(`[GoogleVeoService] Polling [${attempt}/${maxAttempts}] - Done: ${updated.done}`);

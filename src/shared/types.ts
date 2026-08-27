@@ -27,6 +27,7 @@ export interface CharacterProfile {
   colorPalette: string[];
   consistencyAnchorPrompt: string;
   referenceImageUrl?: string;
+  referenceImageUrls?: string[];
 }
 
 export interface Scene {
@@ -113,6 +114,7 @@ export interface AnimationConfig {
   imageEngine?: string;
   characterVisualAnalysis?: string;
   characterReferenceUrl?: string;
+  characterReferenceUrls?: string[];
 }
 
 export interface EducationalConfig {
@@ -191,6 +193,8 @@ export interface ProductionProject {
   userChoice?: 'STORYBOARD_ONLY' | 'GENERATE_IMAGES' | 'FULL_PRODUCTION';
   activeProductionStage?: 'STORYBOARD' | 'IMAGES' | 'VIDEOS' | 'COMPLETED';
   finalVideoUrl?: string;
+  brandLogoUrl?: string;
+  extraVideoUrl?: string;
   error?: string;
   providerError?: ProviderError;
   activeAgent?: string;
