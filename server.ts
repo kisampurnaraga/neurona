@@ -875,21 +875,23 @@ createdAt: new Date().toISOString()
 
   app.post('/api/projects/:id/generate-scene-image', async (req, res) => {
     try {
-      const { sceneId, imageEngine, resolution } = req.body;
-      await ProductionOrchestrator.generateSceneImage(req.params.id, sceneId, imageEngine, resolution || '1K');
+      const { sceneId, imageEngine, resolution, allowFallbackToFlux } = req.body;
+      await ProductionOrchestrator.generateSceneImage(req.params.id, sceneId, imageEngine, resolution || '1K', allowFallbackToFlux);
       res.json({ success: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      const isQuotaErr = e.message && e.message.includes('[NANO_QUOTA_EXHAUSTED]');
+      res.status(isQuotaErr ? 402 : 500).json({ error: e.message, code: isQuotaErr ? 'NANO_QUOTA_EXHAUSTED' : 'INTERNAL_ERROR' });
     }
   });
 
   app.post('/api/projects/:id/generate-all-images', async (req, res) => {
     try {
-      const { imageEngine, resolution } = req.body;
-      await ProductionOrchestrator.generateAllSceneImages(req.params.id, imageEngine, resolution || '1K');
+      const { imageEngine, resolution, allowFallbackToFlux } = req.body;
+      await ProductionOrchestrator.generateAllSceneImages(req.params.id, imageEngine, resolution || '1K', allowFallbackToFlux);
       res.json({ success: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      const isQuotaErr = e.message && e.message.includes('[NANO_QUOTA_EXHAUSTED]');
+      res.status(isQuotaErr ? 402 : 500).json({ error: e.message, code: isQuotaErr ? 'NANO_QUOTA_EXHAUSTED' : 'INTERNAL_ERROR' });
     }
   });
 

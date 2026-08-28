@@ -766,6 +766,7 @@ export class ImageGenerationService {
     masterCharacterImageUrl?: string;
     masterProductImageUrl?: string;
     forceRegenerate?: boolean;
+    allowFallbackToFlux?: boolean;
     onLog?: (msg: string, level?: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR') => void;
   }): Promise<string> {
     const { 
@@ -783,6 +784,7 @@ export class ImageGenerationService {
       masterCharacterImageUrl,
       masterProductImageUrl,
       forceRegenerate,
+      allowFallbackToFlux,
       onLog
     } = params;
 
@@ -871,6 +873,9 @@ export class ImageGenerationService {
       preferredEngine = 'fal';
     }
 
+    let falQuotaErrorOccurred = false;
+    let falQuotaErrorMessage = '';
+
     // -----------------------------------------------------------------------
     // Engine 1: Fal.ai Engine (Nano Banana 2 / Nano Banana Pro Edit / Flux Schnell)
     // -----------------------------------------------------------------------
@@ -878,6 +883,8 @@ export class ImageGenerationService {
       const falApiKey = keyRotator.getNextFalKey();
       if (!falApiKey) {
         console.log(`[Fal.ai Engine] API Key not configured or all keys exhausted in rotator.`);
+        falQuotaErrorOccurred = true;
+        falQuotaErrorMessage = 'Seluruh FAL_KEY dalam rotator habis atau tidak terkonfigurasi.';
         return null;
       }
 
@@ -938,8 +945,12 @@ export class ImageGenerationService {
               } catch (e) {}
 
               if (queueRes.status === 401) {
+                falQuotaErrorOccurred = true;
+                falQuotaErrorMessage = `HTTP 401 Unauthorized pada Fal.ai (${parsedDetail})`;
                 keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 401 Unauthorized: ${parsedDetail}`));
               } else if (queueRes.status === 402) {
+                falQuotaErrorOccurred = true;
+                falQuotaErrorMessage = `Saldo token API Fal.ai (${modelPath}) habis (HTTP 402 Payment Required).`;
                 keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 402 Payment Required: Saldo Fal.ai habis`));
               }
 
@@ -1038,9 +1049,13 @@ export class ImageGenerationService {
               } catch (e) {}
 
               if (res.status === 401) {
+                falQuotaErrorOccurred = true;
+                falQuotaErrorMessage = `HTTP 401 Unauthorized pada Fal.ai (${parsedErr})`;
                 console.error(`[Fal.ai Engine 401] Autentikasi Fal.ai gagal untuk model '${modelPath}': ${parsedErr}`);
                 keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 401 Unauthorized: ${parsedErr}`));
               } else if (res.status === 402) {
+                falQuotaErrorOccurred = true;
+                falQuotaErrorMessage = `Saldo token API Fal.ai (${modelPath}) habis (HTTP 402 Payment Required).`;
                 console.error(`[Fal.ai Engine 402] Saldo/Kuota Fal.ai habis: ${parsedErr}`);
                 keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 402 Payment Required: Saldo habis`));
               } else if (res.status === 422) {
@@ -1264,6 +1279,13 @@ export class ImageGenerationService {
     if (preferredEngine === 'fal') {
       const falResult = await runFalImage();
       if (falResult) return falResult;
+
+      // Check if Fal.ai quota/token was exhausted and user didn't explicitly request Flux or allow fallback
+      const isExplicitDraft = rawEngine === 'draft' || rawEngine === 'flux-diffusion' || rawEngine === 'fal-ai/flux/schnell';
+      if (falQuotaErrorOccurred && !allowFallbackToFlux && !isExplicitDraft) {
+        throw new Error(`[NANO_QUOTA_EXHAUSTED] ${falQuotaErrorMessage || 'Saldo token API Nano Banana Pro (Fal.ai) pada server habis (HTTP 402).'}`);
+      }
+
       const bananaResult = await runGeminiBanana();
       if (bananaResult) return bananaResult;
       const gptResult = await runGptImage2();

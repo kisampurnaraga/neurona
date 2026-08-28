@@ -1379,7 +1379,7 @@ export class ProductionOrchestrator {
   /**
    * Generates a single Scene's consistent character keyframe image (Cost: based on model & resolution)
    */
-  static async generateSceneImage(id: string, sceneId: string, imageEngine?: string, resolution: string = '1K') {
+  static async generateSceneImage(id: string, sceneId: string, imageEngine?: string, resolution: string = '1K', allowFallbackToFlux?: boolean) {
     const project = projects.get(id);
     if (!project) return;
     ensureStoryboardExists(project);
@@ -1394,6 +1394,8 @@ export class ProductionOrchestrator {
 
     const scene = project.storyboard.scenes[sceneIdx];
     scene.imageStatus = 'GENERATING';
+    delete (scene as any).lastError;
+    delete (project as any).lastQuotaWarning;
 
     // Save image model to scene & project for full consistency
     const effectiveEngine = imageEngine || (scene as any).imageEngine || (project as any).imageModel || 'standard';
@@ -1446,6 +1448,7 @@ export class ProductionOrchestrator {
         masterCharacterImageUrl: masterCharUrl,
         masterProductImageUrl: masterProdUrl,
         forceRegenerate: true,
+        allowFallbackToFlux,
         onLog: (msg, level) => {
           appendLog(project, 'SINTA', msg, level || 'INFO');
           projectEvents.emit(`update:${id}`, project);
@@ -1471,6 +1474,16 @@ export class ProductionOrchestrator {
       projectEvents.emit(`update:${id}`, project);
     } catch (e: any) {
       scene.imageStatus = 'FAILED';
+      (scene as any).lastError = e.message;
+      if (e.message && e.message.includes('[NANO_QUOTA_EXHAUSTED]')) {
+        (project as any).lastQuotaWarning = {
+          sceneId,
+          engine: effectiveEngine,
+          message: e.message,
+          timestamp: Date.now()
+        };
+      }
+
       // Refund Credits on error
       if (project.userId && creditCalc.credits > 0 && holdSuccess) {
         await CreditService.refundCredits(project.userId, creditCalc.credits, `Refund: Gagal render keyframe scene ${sceneIdx + 1}`);
@@ -1478,13 +1491,14 @@ export class ProductionOrchestrator {
       appendLog(project, 'ERROR', `Gagal generate keyframe adegan ${sceneIdx + 1}: ${e.message}`, 'ERROR');
       saveProjects();
       projectEvents.emit(`update:${id}`, project);
+      throw e;
     }
   }
 
   /**
    * Generates consistent character keyframe images for all scenes
    */
-  static async generateAllSceneImages(id: string, imageEngine?: string, resolution: string = '1K') {
+  static async generateAllSceneImages(id: string, imageEngine?: string, resolution: string = '1K', allowFallbackToFlux?: boolean) {
     const project = projects.get(id);
     if (!project) return;
     ensureStoryboardExists(project);
@@ -1548,6 +1562,7 @@ export class ProductionOrchestrator {
           masterCharacterImageUrl: masterCharUrl,
           masterProductImageUrl: masterProdUrl,
           forceRegenerate: true,
+          allowFallbackToFlux,
           onLog: (msg, level) => {
             appendLog(project, 'SINTA', msg, level || 'INFO');
             projectEvents.emit(`update:${id}`, project);

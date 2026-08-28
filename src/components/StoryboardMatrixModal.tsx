@@ -43,6 +43,7 @@ import {
 import type { ProductionProject, Scene } from '../shared/types';
 import { neuronaVoice } from '../utils/speechSynthesis';
 import { getProjectAspectRatioClass } from '../utils/aspectRatio';
+import { NanoQuotaAlertModal } from './NanoQuotaAlertModal';
 
 interface StoryboardMatrixModalProps {
   isOpen: boolean;
@@ -51,8 +52,8 @@ interface StoryboardMatrixModalProps {
   currentCredits: number;
   onApproveAndPay: (creditsCost: number) => void;
   onOpenTopUp: () => void;
-  onGenerateSceneImage?: (sceneId: string, cost: number, imageEngine?: string) => Promise<void>;
-  onGenerateAllImages?: (totalCost: number, imageEngine?: string) => Promise<void>;
+  onGenerateSceneImage?: (sceneId: string, cost: number, imageEngine?: string, allowFallbackToFlux?: boolean) => Promise<void>;
+  onGenerateAllImages?: (totalCost: number, imageEngine?: string, allowFallbackToFlux?: boolean) => Promise<void>;
   onGenerateSceneVideo?: (sceneId: string, cost: number, videoModel?: string) => Promise<void>;
   onChooseStoryboardOnly?: () => Promise<void>;
   onResyncScene?: (action: 'ADD' | 'REMOVE', targetIndex: number) => Promise<void>;
@@ -181,6 +182,25 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [isNlePlaying, setIsNlePlaying] = useState<boolean>(false);
   const [faceLocks, setFaceLocks] = useState<Record<string, boolean>>({});
   const [productLocks, setProductLocks] = useState<Record<string, boolean>>({});
+  const [quotaAlert, setQuotaAlert] = useState<{
+    isOpen: boolean;
+    sceneId?: string | null;
+    errorMessage?: string;
+    engine?: string;
+  }>({ isOpen: false });
+
+  // Monitor project for backend quota warning pushed via SSE
+  useEffect(() => {
+    if ((project as any)?.lastQuotaWarning) {
+      const q = (project as any).lastQuotaWarning;
+      setQuotaAlert({
+        isOpen: true,
+        sceneId: q.sceneId,
+        errorMessage: q.message,
+        engine: q.engine
+      });
+    }
+  }, [(project as any)?.lastQuotaWarning]);
 
   // Determine dynamic reference bubble configs based on the studio's project type (niche)
   const getReferenceBubblesConfig = () => {
@@ -468,7 +488,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     }, estimatedDuration);
   };
 
-  const handleGenerateAllImages = async (engine?: ImageModelId) => {
+  const handleGenerateAllImages = async (engine?: ImageModelId, allowFallbackToFlux?: boolean) => {
     const chosenEngine = engine || selectedImageEngine;
     const modelOpt = IMAGE_MODEL_OPTIONS.find(m => m.id === chosenEngine) || currentEngineOption;
     const calculatedTotal = scenes.length * modelOpt.costPerImage;
@@ -480,14 +500,23 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     setIsProcessingAction('all-images');
     try {
       if (onGenerateAllImages) {
-        await onGenerateAllImages(calculatedTotal, chosenEngine);
+        await onGenerateAllImages(calculatedTotal, chosenEngine, allowFallbackToFlux);
+      }
+    } catch (err: any) {
+      if (err?.message?.includes('[NANO_QUOTA_EXHAUSTED]') || err?.code === 'NANO_QUOTA_EXHAUSTED') {
+        setQuotaAlert({
+          isOpen: true,
+          sceneId: null,
+          engine: chosenEngine,
+          errorMessage: err.message
+        });
       }
     } finally {
       setIsProcessingAction(null);
     }
   };
 
-  const handleGenerateSingleImage = async (sceneId: string, cost?: number, engine?: ImageModelId) => {
+  const handleGenerateSingleImage = async (sceneId: string, cost?: number, engine?: ImageModelId, allowFallbackToFlux?: boolean) => {
     const chosenEngine = engine || sceneImageModels[sceneId] || selectedImageEngine;
     const modelOpt = IMAGE_MODEL_OPTIONS.find(m => m.id === chosenEngine) || currentEngineOption;
     const appliedCost = cost ?? modelOpt.costPerImage;
@@ -499,7 +528,16 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     setIsProcessingAction(`image-${sceneId}`);
     try {
       if (onGenerateSceneImage) {
-        await onGenerateSceneImage(sceneId, appliedCost, chosenEngine);
+        await onGenerateSceneImage(sceneId, appliedCost, chosenEngine, allowFallbackToFlux);
+      }
+    } catch (err: any) {
+      if (err?.message?.includes('[NANO_QUOTA_EXHAUSTED]') || err?.code === 'NANO_QUOTA_EXHAUSTED') {
+        setQuotaAlert({
+          isOpen: true,
+          sceneId,
+          engine: chosenEngine,
+          errorMessage: err.message
+        });
       }
     } finally {
       setIsProcessingAction(null);
@@ -2695,6 +2733,23 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
         </div>
       )}
+
+      {/* Nano Banana Token Quota Alert & Fallback Dialog */}
+      <NanoQuotaAlertModal
+        isOpen={quotaAlert.isOpen}
+        sceneId={quotaAlert.sceneId}
+        errorMessage={quotaAlert.errorMessage}
+        onClose={() => setQuotaAlert(prev => ({ ...prev, isOpen: false }))}
+        onOpenTopUp={onOpenTopUp}
+        onContinueWithFlux={() => {
+          setQuotaAlert(prev => ({ ...prev, isOpen: false }));
+          if (quotaAlert.sceneId) {
+            handleGenerateSingleImage(quotaAlert.sceneId, 1, 'draft', true);
+          } else {
+            handleGenerateAllImages('draft', true);
+          }
+        }}
+      />
     </div>
   );
 };

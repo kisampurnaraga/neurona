@@ -653,7 +653,7 @@ export default function App() {
     }
   };
 
-  const handleGenerateSceneImage = async (sceneId: string, cost: number = 5, imageEngine?: string) => {
+  const handleGenerateSceneImage = async (sceneId: string, cost: number = 5, imageEngine?: string, allowFallbackToFlux?: boolean) => {
     if (!projectId) return;
     if (userCredits < cost) {
       neuronaVoice.playChime('ALERT');
@@ -662,27 +662,35 @@ export default function App() {
       return;
     }
 
-    setUserCredits(prev => {
-      const next = Math.max(0, prev - cost);
-      localStorage.setItem('neurona_user_credits', next.toString());
-      return next;
-    });
-
-    neuronaVoice.playChime('SUCCESS');
-    neuronaVoice.speak(`Membuat gambar adegan konsisten dengan AI.`);
-
     try {
-      await fetch(`/api/projects/${projectId}/generate-scene-image`, { 
+      const res = await fetch(`/api/projects/${projectId}/generate-scene-image`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sceneId, imageEngine })
+        body: JSON.stringify({ sceneId, imageEngine, allowFallbackToFlux })
       });
-    } catch (e) {
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        if (res.status === 402 || errJson.code === 'NANO_QUOTA_EXHAUSTED' || (errJson.error && errJson.error.includes('[NANO_QUOTA_EXHAUSTED]'))) {
+          throw new Error(errJson.error || '[NANO_QUOTA_EXHAUSTED] Saldo token API Fal.ai (Nano Banana Pro) habis.');
+        }
+      }
+
+      setUserCredits(prev => {
+        const next = Math.max(0, prev - cost);
+        localStorage.setItem('neurona_user_credits', next.toString());
+        return next;
+      });
+
+      neuronaVoice.playChime('SUCCESS');
+      neuronaVoice.speak(`Membuat gambar adegan konsisten dengan AI.`);
+    } catch (e: any) {
       console.error(e);
+      throw e;
     }
   };
 
-  const handleGenerateAllImages = async (totalCost: number = 20, imageEngine?: string) => {
+  const handleGenerateAllImages = async (totalCost: number = 20, imageEngine?: string, allowFallbackToFlux?: boolean) => {
     if (!projectId) return;
     if (userCredits < totalCost) {
       neuronaVoice.playChime('ALERT');
@@ -691,23 +699,31 @@ export default function App() {
       return;
     }
 
-    setUserCredits(prev => {
-      const next = Math.max(0, prev - totalCost);
-      localStorage.setItem('neurona_user_credits', next.toString());
-      return next;
-    });
-
-    neuronaVoice.playChime('SUCCESS');
-    neuronaVoice.speak(`Memproses generate semua keyframe adegan.`);
-
     try {
-      await fetch(`/api/projects/${projectId}/generate-all-images`, { 
+      const res = await fetch(`/api/projects/${projectId}/generate-all-images`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageEngine })
+        body: JSON.stringify({ imageEngine, allowFallbackToFlux })
       });
-    } catch (e) {
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        if (res.status === 402 || errJson.code === 'NANO_QUOTA_EXHAUSTED' || (errJson.error && errJson.error.includes('[NANO_QUOTA_EXHAUSTED]'))) {
+          throw new Error(errJson.error || '[NANO_QUOTA_EXHAUSTED] Saldo token API Fal.ai (Nano Banana Pro) habis.');
+        }
+      }
+
+      setUserCredits(prev => {
+        const next = Math.max(0, prev - totalCost);
+        localStorage.setItem('neurona_user_credits', next.toString());
+        return next;
+      });
+
+      neuronaVoice.playChime('SUCCESS');
+      neuronaVoice.speak(`Memproses generate semua keyframe adegan.`);
+    } catch (e: any) {
       console.error(e);
+      throw e;
     }
   };
 
