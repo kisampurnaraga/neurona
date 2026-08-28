@@ -29,6 +29,7 @@ interface VideoPreviewPlayerProps {
   voiceoverText?: string;
   status?: 'PENDING' | 'GENERATING' | 'PRODUCING' | 'ASSEMBLING' | 'AUDIO' | 'EDITING' | 'QA' | 'COMPLETED' | 'FAILED' | string;
   activeAgent?: string;
+  videoModel?: string;
   progressPercentage?: number;
   currentPhaseName?: string;
   scenes?: any[];
@@ -46,6 +47,7 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
   voiceoverText,
   status = 'STANDBY',
   activeAgent = 'GATOTKACA SORA',
+  videoModel,
   progressPercentage = 0,
   currentPhaseName,
   scenes,
@@ -62,6 +64,46 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
   const [show360View, setShow360View] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [modelHealth, setModelHealth] = useState<'Pending' | 'Ready' | 'Failed' | 'Processing'>('Pending');
+
+  useEffect(() => {
+    let isMounted = true;
+    let pollInterval: NodeJS.Timeout;
+
+    const fetchStatus = async () => {
+      if (!videoModel) return;
+      try {
+        const res = await fetch(`/api/providers/status?model=${encodeURIComponent(videoModel)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted) {
+            if (data.status === 'READY') {
+              setModelHealth('Ready');
+            } else if (data.status === 'UNAVAILABLE' || data.status === 'ERROR' || data.status === 'NOT_CONFIGURED') {
+              setModelHealth('Failed');
+            } else {
+              setModelHealth('Processing');
+            }
+          }
+        } else if (res.status >= 500) {
+          if (isMounted) setModelHealth('Failed');
+        }
+      } catch (e) {
+         if (isMounted) setModelHealth('Failed');
+      }
+    };
+    
+    // Initial fetch
+    fetchStatus();
+    
+    // Poll every 10 seconds
+    pollInterval = setInterval(fetchStatus, 10000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(pollInterval);
+    };
+  }, [videoModel]);
 
   const isVideoFile = Boolean(
     src && !videoError && (
@@ -162,6 +204,17 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
           <span className="text-cyan-400 font-semibold truncate max-w-[120px] sm:max-w-[180px]">
             {activeAgent}
           </span>
+          {videoModel && (
+            <span className={`px-2 py-0.5 flex items-center gap-1 rounded-full border text-[9px] font-bold ${
+              modelHealth === 'Ready' ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50' : 
+              modelHealth === 'Failed' ? 'bg-rose-950/80 text-rose-300 border-rose-500/50' :
+              'bg-slate-900/80 text-slate-300 border-slate-500/50'
+            }`}>
+               {modelHealth === 'Processing' ? <Loader2 size={9} className="animate-spin" /> : 
+                modelHealth === 'Failed' ? <AlertCircle size={9} /> : <Zap size={9} />}
+               <span>Q: {modelHealth.toUpperCase()}</span>
+            </span>
+          )}
         </div>
 
         {/* Agent Editing Feature Badges */}

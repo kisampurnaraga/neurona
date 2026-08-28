@@ -31,6 +31,8 @@ export interface CharacterProfile {
 }
 
 export interface Scene {
+  videoProgress?: string;
+  prompt_video_runway?: string;
   id: string;
   duration: string;
   visualDirection: string;
@@ -165,6 +167,9 @@ export interface TTSVoiceConfig {
 
 export interface ProductionProject {
   id: string;
+  userId?: string;
+  masterCharacterImageUrl?: string;
+  masterProductImageUrl?: string;
   title: string;
   status: ProductionState;
   videoType: VideoType;

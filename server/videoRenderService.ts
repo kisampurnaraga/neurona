@@ -4,6 +4,9 @@ import { FounderService } from "../src/server/fcc/FounderService";
 import { VideoEditor } from "./VideoEditor";
 import { projects } from "./orchestrator";
 import { keyRotator } from "./keyRotator";
+import { getFalModel, buildFalPayload, FAL_TIER_DEFAULTS, FalTier } from "./falModelConfig";
+import { renderWithFalQueue } from "./falQueueRunner";
+import { CreditService } from "./creditService";
 
 export interface SceneItem {
   id?: string;
@@ -40,6 +43,8 @@ export interface VideoRenderPipelineParams {
   projectId: string;
   userId?: string;
   deductedCredits?: number;
+  modelId?: string;
+  tier?: FalTier;
   scenes: SceneItem[];
   social_media_kit?: SocialMediaKit;
   project_meta?: ProjectMeta;
@@ -78,20 +83,6 @@ function isQuotaError(errorMsg: string, statusCode?: number): boolean {
     msg.includes('depleted') ||
     msg.includes('prepayment')
   );
-}
-
-/**
- * Simulates or executes credit refund for the user when rendering fails terminally.
- */
-async function refundUserCredits(userId: string, projectId: string, amount: number): Promise<void> {
-  console.log(`[CREDIT SERVICE] Refunded ${amount} credits to user '${userId}' for project '${projectId}'.`);
-  
-  // Log refund in FounderService audit logs
-  const project = projects.get(projectId);
-  if (project) {
-    (project as any).refundedCredits = amount;
-    (project as any).creditRefundStatus = 'REFUNDED';
-  }
 }
 
 /**
@@ -231,140 +222,61 @@ async function renderWithBytePlusEngine(
 }
 
 /**
- * Executes scene rendering using Fal.ai Video Engine (Kling 1.5/2.5 Pro, Wan 2.1, Minimax via Fal API)
+ * Executes scene rendering using Single Source of Truth Fal.ai Video Engine
  */
 async function renderWithFalVideoEngine(
   scene: SceneItem,
   sceneIdx: number,
-  engineLogs: string[]
+  engineLogs: string[],
+  overrideModelId?: string
 ): Promise<string> {
   const falApiKey = keyRotator.getNextFalKey();
   const prompt = scene.prompt_video_runway || scene.promptTextToImage || scene.visual_direction || scene.visualDirection || 'High quality cinematic clip';
   const imageUrl = scene.imageUrl || scene.assetUrl;
 
   console.log(`[FAL.AI VIDEO ENGINE] Rendering Scene ${sceneIdx + 1} with Fal.ai...`);
-  engineLogs.push(`[FAL.AI VIDEO ENGINE] Calling Fal.ai Video API for Scene ${sceneIdx + 1}...`);
+  engineLogs.push(`[FAL.AI VIDEO ENGINE] Calling Fal.ai Queue API for Scene ${sceneIdx + 1}...`);
 
   if (!falApiKey) {
     throw new Error(`HTTP 429 Quota Exceeded / Missing FAL_KEY for Fal.ai Video Engine.`);
   }
 
-    const falConfig: any = FounderService.getFalConfig() || {};
-  let selectedModel = falConfig.model || '';
-  if (selectedModel && imageUrl && !selectedModel.includes('image-to-video')) {
-    if (selectedModel === 'fal-ai/wan-v2.1') selectedModel = 'fal-ai/wan/v2.1/image-to-video';
-    else if (selectedModel === 'fal-ai/kling-1.5') selectedModel = 'fal-ai/kling-video/v1.5/pro/image-to-video';
-    else if (selectedModel === 'fal-ai/minimax-h3') selectedModel = 'fal-ai/minimax-video/image-to-video';
-    else if (selectedModel === 'fal-ai/hunyuan-video') selectedModel = 'fal-ai/hunyuan-video/image-to-video';
-    else selectedModel = selectedModel + '/image-to-video';
-  } else if (selectedModel && !imageUrl && !selectedModel.includes('text-to-video')) {
-    if (selectedModel === 'fal-ai/wan-v2.1') selectedModel = 'fal-ai/wan/v2.1/text-to-video';
-    else if (selectedModel === 'fal-ai/kling-1.5') selectedModel = 'fal-ai/kling-video/v1.5/pro/text-to-video';
-    else if (selectedModel === 'fal-ai/minimax-h3') selectedModel = 'fal-ai/minimax-video';
-    else if (selectedModel === 'fal-ai/hunyuan-video') selectedModel = 'fal-ai/hunyuan-video/text-to-video';
-    else selectedModel = selectedModel + '/text-to-video';
+  const falConfig: any = FounderService.getFalConfig() || {};
+  const activeModelId = overrideModelId || falConfig.model || FAL_TIER_DEFAULTS.balanced;
+  const modelDef = getFalModel(activeModelId);
+  const modelPath = modelDef.id;
+
+  console.log(`[FAL.AI VIDEO ENGINE] Dispatching Scene ${sceneIdx + 1} to model: ${modelPath}`);
+  engineLogs.push(`[FAL.AI VIDEO ENGINE] Model: ${modelDef.name} (${modelPath})`);
+
+  const payload = buildFalPayload(modelPath, {
+    prompt,
+    imageUrl: imageUrl || '',
+    duration: scene.duration || modelDef.defaultDuration,
+    generateAudio: modelDef.supportsAudio
+  });
+
+  try {
+    const videoUrl = await renderWithFalQueue(modelPath, payload, falApiKey, (msg) => {
+      engineLogs.push(`[FAL.AI] ${msg}`);
+    });
+    engineLogs.push(`[FAL.AI VIDEO ENGINE] Scene ${sceneIdx + 1} completed! URL: ${videoUrl}`);
+    return videoUrl;
+  } catch (err: any) {
+    console.error(`[FAL.AI VIDEO ENGINE] Model ${modelPath} failed:`, err.message);
+    keyRotator.reportKeyError('fal', falApiKey, err);
+    throw err;
   }
-
-  const candidateModels = selectedModel ? [selectedModel] : (imageUrl
-
-    ? [
-        'fal-ai/wan/v2.1/image-to-video',
-        'bytedance/seedance-2.5/image-to-video',
-        'bytedance/seedance-2.0/fast/image-to-video',
-        'bytedance/seedance-2.0/image-to-video',
-        'fal-ai/sora-v3/image-to-video',
-        'fal-ai/sora-v2/image-to-video',
-        'fal-ai/sora-3/image-to-video',
-        'fal-ai/sora-2/image-to-video',
-        'fal-ai/minimax-video/image-to-video',
-        'fal-ai/kling-video/v1.5/standard/image-to-video',
-        'fal-ai/kling-video/v1.5/pro/image-to-video',
-        'fal-ai/veo3.1/fast/image-to-video'
-      ]
-    : [
-        'fal-ai/wan/v2.1/text-to-video',
-        'bytedance/seedance-2.5/text-to-video',
-        'bytedance/seedance-2.0/fast/text-to-video',
-        'bytedance/seedance-2.0/text-to-video',
-        'fal-ai/sora-v3/text-to-video',
-        'fal-ai/sora-v2/text-to-video',
-        'fal-ai/sora-3/text-to-video',
-        'fal-ai/sora-2/text-to-video',
-        'fal-ai/minimax-video',
-        'fal-ai/kling-video/v1.5/standard/text-to-video',
-        'fal-ai/kling-video/v1.5/pro/text-to-video',
-        'fal-ai/veo3.1/fast'
-      ]);
-
-  for (const modelPath of candidateModels) {
-    try {
-      console.log(`[FAL.AI VIDEO ENGINE] Trying model ${modelPath} for Scene ${sceneIdx + 1}...`);
-      engineLogs.push(`[FAL.AI VIDEO ENGINE] Trying model ${modelPath}...`);
-
-      const res = await fetch(`https://fal.run/${modelPath}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Key ${falApiKey.trim()}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify((() => {
-          const basePrompt = prompt.substring(0, 500);
-          if (modelPath.includes('kling')) {
-            return imageUrl 
-              ? { prompt: basePrompt, image_url: imageUrl, duration: "5" } 
-              : { prompt: basePrompt, duration: "5", aspect_ratio: "16:9" };
-          } else if (modelPath.includes('luma') || modelPath.includes('ray')) {
-            return imageUrl 
-              ? { prompt: basePrompt, image_url: imageUrl }
-              : { prompt: basePrompt, aspect_ratio: "16:9" };
-          } else if (modelPath.includes('wan')) {
-            return imageUrl 
-              ? { prompt: basePrompt, image_url: imageUrl }
-              : { prompt: basePrompt, aspect_ratio: "16:9" };
-          } else if (modelPath.includes('minimax')) {
-            return imageUrl 
-              ? { prompt: basePrompt, image_url: imageUrl }
-              : { prompt: basePrompt };
-          } else if (modelPath.includes('veo')) {
-            return imageUrl
-              ? { prompt: basePrompt, image_url: imageUrl }
-              : { prompt: basePrompt, aspect_ratio: "16:9" };
-          } else {
-            // Default generic fallback
-            return imageUrl 
-              ? { prompt: basePrompt, image_url: imageUrl }
-              : { prompt: basePrompt, aspect_ratio: "16:9" };
-          }
-        })())
-      });
-
-      if (res.ok) {
-        const json: any = await res.json();
-        const videoUrl = json?.video?.url || json?.video_url || json?.output?.[0] || json?.file?.url;
-        if (videoUrl) {
-          engineLogs.push(`[FAL.AI VIDEO ENGINE] Scene ${sceneIdx + 1} successfully generated via ${modelPath}!`);
-          return videoUrl;
-        }
-      } else {
-        const errText = await res.text().catch(() => '');
-        console.log(`[FAL.AI VIDEO ENGINE] Model ${modelPath} returned ${res.status}: ${errText.substring(0, 100)}`);
-        keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP ${res.status}: ${errText}`));
-      }
-    } catch (err: any) {
-      console.log(`[FAL.AI VIDEO ENGINE] Model ${modelPath} failed: ${err?.message || err}`);
-    }
-  }
-
-  return scene.videoUrl || scene.assetUrl || '/api/videos/sample-ocean.mp4';
 }
 
 /**
- * Helper to render all scenes with a specific engine ('byteplus', 'veo', 'runway', or 'fal')
+ * Helper to render all scenes with a specific engine ('fal', 'byteplus', 'veo', or 'runway')
  */
 async function renderScenesWithEngine(
-  engine: 'byteplus' | 'veo' | 'runway' | 'fal',
+  engine: 'fal' | 'byteplus' | 'veo' | 'runway',
   scenes: SceneItem[],
-  engineLogs: string[]
+  engineLogs: string[],
+  overrideModelId?: string
 ): Promise<SceneItem[]> {
   const geminiApiKey = process.env.GEMINI_API_KEY || '';
   const runwayApiKey = process.env.RUNWAY_API_KEY || process.env.RUNWAYML_API_SECRET || '';
@@ -387,7 +299,7 @@ async function renderScenesWithEngine(
     let videoUrl = '';
 
     if (engine === 'fal') {
-      videoUrl = await renderWithFalVideoEngine(scene, i, engineLogs);
+      videoUrl = await renderWithFalVideoEngine(scene, i, engineLogs, overrideModelId);
     } else if (engine === 'byteplus') {
       videoUrl = await renderWithBytePlusEngine(scene, i, engineLogs);
     } else if (engine === 'veo') {
@@ -429,7 +341,7 @@ async function stitchVideoScenes(projectId: string, scenes: SceneItem[]): Promis
 
 export class VideoRenderService {
   /**
-   * Main Pipeline Execution function with Dynamic Engine Routing & Dual-Tier Failover
+   * Main Pipeline Execution function with Dynamic Credit Management & Dual-Tier Failover
    */
   static async executeVideoRenderPipeline(
     params: VideoRenderPipelineParams
@@ -438,6 +350,8 @@ export class VideoRenderService {
       projectId,
       userId = 'default-user',
       deductedCredits = 15,
+      modelId,
+      tier,
       scenes,
       social_media_kit,
       project_meta
@@ -445,13 +359,36 @@ export class VideoRenderService {
 
     const engineLogs: string[] = [];
 
-    // Step 1: Check Global Config from Founder Dashboard / system_configs
-    const rawEngine = FounderService.getPrimaryVideoEngine(); // 'byteplus' | 'veo' | 'runway' | 'sora'
-    const primaryEngine: 'byteplus' | 'veo' | 'runway' = rawEngine === 'runway' ? 'runway' : (rawEngine === 'veo' ? 'veo' : 'byteplus');
-    const secondaryEngine: 'byteplus' | 'veo' | 'runway' = primaryEngine === 'byteplus' ? 'veo' : 'runway';
+    // 1. Determine dynamic credit cost from model / tier
+    const targetModelId = modelId || (tier ? FAL_TIER_DEFAULTS[tier] : undefined) || FounderService.getFalConfig()?.model || FAL_TIER_DEFAULTS.balanced;
+    const calculatedCost = CreditService.calculateCreditCost(targetModelId, {
+      duration: scenes[0]?.duration ? Number(scenes[0].duration) : 5
+    });
+    const creditAmount = calculatedCost.credits || deductedCredits || 15;
+
+    // 2. Pre-execution Credit Hold
+    console.log(`[VIDEO RENDER PIPELINE] Initiating Credit Hold for user '${userId}': ${creditAmount} credits (Model: ${targetModelId})`);
+    const holdResult = await CreditService.holdCredits(userId, creditAmount, projectId);
+    if (!holdResult.success) {
+      return {
+        status: 'ERROR',
+        message: holdResult.message || 'Kredit Anda tidak mencukupi untuk melakukan render.',
+        scenes,
+        social_media_kit,
+        project_meta,
+        engineLogs: [`[CREDIT ERROR] ${holdResult.message}`]
+      };
+    }
+
+    const holdId = holdResult.holdId;
+
+    // 3. Step 1: Check Global Config from Founder Dashboard / system_configs
+    const rawEngine = FounderService.getPrimaryVideoEngine(); // 'fal' | 'byteplus' | 'veo' | 'runway'
+    const primaryEngine: 'fal' | 'byteplus' | 'veo' | 'runway' = rawEngine === 'fal' ? 'fal' : (rawEngine === 'runway' ? 'runway' : (rawEngine === 'veo' ? 'veo' : 'fal'));
+    const secondaryEngine: 'fal' | 'byteplus' | 'veo' | 'runway' = primaryEngine === 'fal' ? 'veo' : 'fal';
 
     console.log(`[VIDEO RENDER PIPELINE] System Config Primary Engine: '${primaryEngine.toUpperCase()}'. Secondary Fallback Engine: '${secondaryEngine.toUpperCase()}'. Project ID: ${projectId}`);
-    engineLogs.push(`[SYSTEM CONFIG] Primary Engine set to '${primaryEngine.toUpperCase()}' from Founder Control Center.`);
+    engineLogs.push(`[SYSTEM CONFIG] Primary Engine set to '${primaryEngine.toUpperCase()}'. Model: '${targetModelId}'`);
 
     let primaryFailedDueToQuota = false;
     let primaryErrorMsg = '';
@@ -461,11 +398,14 @@ export class VideoRenderService {
       console.log(`[VIDEO RENDER PIPELINE] Executing Primary Engine (${primaryEngine.toUpperCase()})...`);
       engineLogs.push(`[PRIMARY EXECUTION] Launching video render on '${primaryEngine.toUpperCase()}'...`);
 
-      const renderedScenes = await renderScenesWithEngine(primaryEngine, scenes, engineLogs);
+      const renderedScenes = await renderScenesWithEngine(primaryEngine, scenes, engineLogs, targetModelId);
       const finalVideoUrl = await stitchVideoScenes(projectId, renderedScenes);
 
       console.log(`[VIDEO RENDER PIPELINE] Primary Engine (${primaryEngine.toUpperCase()}) rendering succeeded!`);
       engineLogs.push(`[SUCCESS] Master video rendering completed via ${primaryEngine.toUpperCase()}.`);
+
+      // Commit hold on success
+      await CreditService.commitHold(userId, creditAmount, holdId);
 
       return {
         status: 'SUCCESS',
@@ -485,7 +425,7 @@ export class VideoRenderService {
 
       // Server Alert for Founder
       console.warn(`[FOUNDER ALERT] [FALLBACK 1] Primary engine '${primaryEngine.toUpperCase()}' failed (Quota/429: ${primaryFailedDueToQuota}). Message: ${primaryErrorMsg}. Switching to secondary engine '${secondaryEngine.toUpperCase()}'...`);
-      engineLogs.push(`[FOUNDER ALERT - FALLBACK 1] Primary engine '${primaryEngine.toUpperCase()}' hit error/429 quota limit. Auto-failing over to secondary engine '${secondaryEngine.toUpperCase()}'...`);
+      engineLogs.push(`[FOUNDER ALERT - FALLBACK 1] Primary engine '${primaryEngine.toUpperCase()}' encountered error (${primaryErrorMsg}). Auto-failing over to secondary engine '${secondaryEngine.toUpperCase()}'...`);
     }
 
     // Step 3: Fallback Tier 1 (Execute Secondary Engine)
@@ -493,11 +433,14 @@ export class VideoRenderService {
       console.log(`[VIDEO RENDER PIPELINE] Executing Fallback 1 with Secondary Engine (${secondaryEngine.toUpperCase()})...`);
       engineLogs.push(`[FALLBACK 1 EXECUTION] Launching video render on secondary engine '${secondaryEngine.toUpperCase()}'...`);
 
-      const renderedScenes = await renderScenesWithEngine(secondaryEngine, scenes, engineLogs);
+      const renderedScenes = await renderScenesWithEngine(secondaryEngine, scenes, engineLogs, targetModelId);
       const finalVideoUrl = await stitchVideoScenes(projectId, renderedScenes);
 
       console.log(`[VIDEO RENDER PIPELINE] Fallback Engine (${secondaryEngine.toUpperCase()}) rendering succeeded!`);
       engineLogs.push(`[SUCCESS] Master video rendering completed via fallback engine ${secondaryEngine.toUpperCase()}.`);
+
+      // Commit hold on success
+      await CreditService.commitHold(userId, creditAmount, holdId);
 
       return {
         status: 'SUCCESS',
@@ -516,21 +459,17 @@ export class VideoRenderService {
 
       // Server Alert for Founder
       console.warn(`[FOUNDER ALERT] [TERMINAL FALLBACK] Secondary engine '${secondaryEngine.toUpperCase()}' ALSO failed: ${secondaryErrorMsg}. Activating Terminal Fail-Safe Protocol.`);
-      engineLogs.push(`[FOUNDER ALERT - TERMINAL FALLBACK] Both '${primaryEngine.toUpperCase()}' and '${secondaryEngine.toUpperCase()}' engines failed due to quota/network limits.`);
+      engineLogs.push(`[FOUNDER ALERT - TERMINAL FALLBACK] Both '${primaryEngine.toUpperCase()}' and '${secondaryEngine.toUpperCase()}' engines failed.`);
 
-      // Step 4: Fallback Tier 2 (Terminal Failover)
-      // - Skip FFmpeg video stitching
-      // - Refund user credits
-      // - Return PARTIAL_SUCCESS response with Phase 1 image assets, copywriting & hashtags
-      const refundAmount = deductedCredits;
-      await refundUserCredits(userId, projectId, refundAmount);
+      // Step 4: Terminal Failover -> Refund user credits
+      await CreditService.refundCredits(userId, creditAmount, `Terminal video pipeline failure: ${secondaryErrorMsg}`);
 
-      console.log(`[VIDEO RENDER PIPELINE] Terminal Fail-Safe Activated. Process cancelled, FFmpeg skipped, ${refundAmount} credits refunded to user '${userId}'.`);
-      engineLogs.push(`[TERMINAL PROTOCOL] Render process canceled (FFmpeg skipped). ${refundAmount} credits refunded. Returning Phase 1 Storyboard images & Social Media Kit.`);
+      console.log(`[VIDEO RENDER PIPELINE] Terminal Fail-Safe Activated. Process cancelled, FFmpeg skipped, ${creditAmount} credits refunded to user '${userId}'.`);
+      engineLogs.push(`[TERMINAL PROTOCOL] Render process canceled. ${creditAmount} credits refunded to user balance. Returning Phase 1 Storyboard images & Social Media Kit.`);
 
       return {
         status: "PARTIAL_SUCCESS",
-        message: "Sistem video sedang dalam kapasitas penuh. Kredit Anda telah dikembalikan. Berikut adalah aset gambar Storyboard, Copywriting, dan Hashtag yang tetap bisa Anda simpan.",
+        message: "Sistem video sedang dalam kapasitas penuh atau mengalami kendala jaringan. Kredit Anda telah dikembalikan secara utuh. Berikut adalah aset gambar Storyboard, Copywriting, dan Hashtag yang tetap bisa Anda simpan.",
         scenes: scenes.map(s => ({
           ...s,
           status: 'COMPLETED',
@@ -539,7 +478,7 @@ export class VideoRenderService {
         })),
         social_media_kit,
         project_meta,
-        refundedCredits: refundAmount,
+        refundedCredits: creditAmount,
         primaryEngineUsed: 'NONE',
         fallbackTriggered: true,
         engineLogs

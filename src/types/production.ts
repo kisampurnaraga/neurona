@@ -39,6 +39,8 @@ export interface AgentRun {
 }
 
 export interface Scene {
+  videoProgress?: string;
+  prompt_video_runway?: string;
   id: string;
   duration: number;
   objective: string;

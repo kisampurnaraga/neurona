@@ -5,6 +5,7 @@ import { BytePlusAdapter } from "./BytePlusAdapter";
 import { VeoAdapter } from "./VeoAdapter";
 import { LumaDreamMachineAdapter, KlingAIAdapter } from "./MoreVideoAdapters";
 import { VideoGenerationProvider } from "./VideoProvider";
+import { FalVideoAdapter } from "./FalVideoAdapter";
 
 let activeProviderType: string = process.env.VIDEO_PROVIDER || 'veo';
 
@@ -25,6 +26,10 @@ export function getAvailableVideoProviders() {
 
 export function getVideoProvider(preferredType?: string): VideoGenerationProvider {
   const providerType = (preferredType || activeProviderType || process.env.VIDEO_PROVIDER || 'veo').toLowerCase();
+  
+  if (providerType.includes('fal') || providerType.includes('hunyuan') || providerType.includes('wan') || providerType.includes('seedance') || providerType.includes('minimax') || providerType.includes('bytedance')) {
+    return new FalVideoAdapter();
+  }
   
   if (providerType.includes('veo') || providerType.includes('google') || providerType.includes('deepmind')) {
     return new VeoAdapter();
@@ -57,3 +62,4 @@ export * from './RunwayAdapter';
 export * from './BytePlusAdapter';
 export * from './MoreVideoAdapters';
 export * from './MockVideoProvider';
+export * from './FalVideoAdapter';

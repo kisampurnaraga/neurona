@@ -1,47 +1,72 @@
 const fs = require('fs');
-let code = fs.readFileSync('server/videoRenderService.ts', 'utf8');
+let code = fs.readFileSync('src/server/providers/FalVideoAdapter.ts', 'utf8');
 
-const oldBodyStr = `body: JSON.stringify({
-          prompt: prompt.substring(0, 500),
-          image_url: imageUrl || undefined,
-          duration: '5',
-          aspect_ratio: '16:9'
-        })`;
+const targetStr = `        const res = await fetch(\`https://fal.run/\${modelPath}\`, {`;
+const replaceStr = `        // Submit to the asynchronous queue to prevent 504 Gateway Timeouts on long video generations
+        const res = await fetch(\`https://queue.fal.run/\${modelPath}\`, {`;
 
-const newBodyStr = `body: JSON.stringify((() => {
-          const basePrompt = prompt.substring(0, 500);
-          if (modelPath.includes('kling')) {
-            return imageUrl 
-              ? { prompt: basePrompt, image_url: imageUrl, duration: "5" } 
-              : { prompt: basePrompt, duration: "5", aspect_ratio: "16:9" };
-          } else if (modelPath.includes('luma') || modelPath.includes('ray')) {
-            return imageUrl 
-              ? { prompt: basePrompt, image_url: imageUrl }
-              : { prompt: basePrompt, aspect_ratio: "16:9" };
-          } else if (modelPath.includes('wan')) {
-            return imageUrl 
-              ? { prompt: basePrompt, image_url: imageUrl }
-              : { prompt: basePrompt, aspect_ratio: "16:9" };
-          } else if (modelPath.includes('minimax')) {
-            return imageUrl 
-              ? { prompt: basePrompt, image_url: imageUrl }
-              : { prompt: basePrompt };
-          } else if (modelPath.includes('veo')) {
-            return imageUrl
-              ? { prompt: basePrompt, image_url: imageUrl }
-              : { prompt: basePrompt, aspect_ratio: "16:9" };
-          } else {
-            // Default generic fallback
-            return imageUrl 
-              ? { prompt: basePrompt, image_url: imageUrl }
-              : { prompt: basePrompt, aspect_ratio: "16:9" };
+// We also need to change how the response is handled.
+const targetHandleStr = `        if (res.ok) {
+          const json: any = await res.json();
+          const videoUrl = json?.video?.url || json?.video_url || json?.output?.[0] || json?.file?.url;
+          if (videoUrl) {
+            return videoUrl;
           }
-        })())`;
+        } else {`;
 
-if (code.includes(oldBodyStr)) {
-  code = code.replace(oldBodyStr, newBodyStr);
-  fs.writeFileSync('server/videoRenderService.ts', code);
-  console.log('Patched fal payload!');
+const replaceHandleStr = `        if (res.ok) {
+          const json: any = await res.json();
+          const requestId = json.request_id;
+          
+          if (!requestId) {
+             // Fallback if it executed synchronously anyway
+             const directUrl = json?.video?.url || json?.video_url || json?.output?.[0] || json?.file?.url;
+             if (directUrl) return directUrl;
+             throw new Error("No request_id returned from queue.");
+          }
+
+          console.log(\`[FAL.AI] Queue request submitted: \${requestId}. Polling for completion...\`);
+          
+          // Poll for completion
+          let attempts = 0;
+          while (attempts < 120) { // Max 10 minutes (120 * 5s)
+             await new Promise(r => setTimeout(r, 5000));
+             attempts++;
+             
+             const statusRes = await fetch(\`https://queue.fal.run/\${modelPath}/requests/\${requestId}/status\`, {
+                headers: {
+                  'Authorization': \`Key \${falApiKey.trim()}\`
+                }
+             });
+             
+             if (!statusRes.ok) continue; // ignore transient errors
+             
+             const statusJson: any = await statusRes.json();
+             if (statusJson.status === 'COMPLETED') {
+                 // Fetch the actual result
+                 const resultRes = await fetch(\`https://queue.fal.run/\${modelPath}/requests/\${requestId}\`, {
+                    headers: { 'Authorization': \`Key \${falApiKey.trim()}\` }
+                 });
+                 if (resultRes.ok) {
+                     const resultJson: any = await resultRes.json();
+                     const videoUrl = resultJson?.video?.url || resultJson?.video_url || resultJson?.output?.[0] || resultJson?.file?.url;
+                     if (videoUrl) return videoUrl;
+                 }
+                 throw new Error("Failed to extract video URL from completed request.");
+             } else if (statusJson.status === 'IN_PROGRESS' || statusJson.status === 'IN_QUEUE') {
+                 console.log(\`[FAL.AI] \${requestId} status: \${statusJson.status} (Attempt \${attempts})\`);
+             } else {
+                 throw new Error(\`Queue returned failure status: \${statusJson.status}\`);
+             }
+          }
+          throw new Error("Polling timeout exceeded 10 minutes.");
+        } else {`;
+
+if (code.includes(targetStr) && code.includes(targetHandleStr)) {
+  code = code.replace(targetStr, replaceStr);
+  code = code.replace(targetHandleStr, replaceHandleStr);
+  fs.writeFileSync('src/server/providers/FalVideoAdapter.ts', code);
+  console.log('Successfully patched FalVideoAdapter.ts for queue polling');
 } else {
-  console.log('oldBodyStr not found!');
+  console.log('Target strings not found in FalVideoAdapter.ts');
 }

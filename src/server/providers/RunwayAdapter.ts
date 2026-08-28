@@ -11,7 +11,7 @@ export class RunwayAdapter implements VideoGenerationProvider {
     return 'READY';
   }
 
-  async generateScene(scene: Scene, context: string): Promise<string> {
+  async generateScene(scene: Scene, context: string, onProgress?: (msg: string) => void): Promise<string> {
     const apiKey = process.env.RUNWAY_API_KEY || process.env.RUNWAYML_API_SECRET;
     const prompt = scene.promptImageToVideo || `${scene.visualDirection}. Runway Gen-3 Alpha Cinematic Motion, 4K rendering. Context: ${context}`;
     

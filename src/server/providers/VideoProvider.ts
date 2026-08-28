@@ -5,7 +5,7 @@ export interface VideoGenerationProvider {
   isMock: boolean;
   
   getStatus(): Promise<ProviderStatus>;
-  generateScene(scene: Scene, context: string): Promise<string>;
+  generateScene(scene: Scene, context: string, onProgress?: (msg: string) => void): Promise<string>;
 }
 
 // High-speed Same-Origin Local Video Endpoints (100% iFrame compatible, Range headers, zero 403)

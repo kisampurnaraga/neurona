@@ -9,7 +9,7 @@ export class MockVideoProvider implements VideoGenerationProvider {
     return 'READY';
   }
 
-  async generateScene(scene: Scene, context: string): Promise<string> {
+  async generateScene(scene: Scene, context: string, onProgress?: (msg: string) => void): Promise<string> {
     await new Promise(resolve => setTimeout(resolve, 1500));
     return getSampleVideoForScene(scene, context);
   }

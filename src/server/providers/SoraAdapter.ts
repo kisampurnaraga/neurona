@@ -9,7 +9,7 @@ export class SoraAdapter implements VideoGenerationProvider {
     return 'READY';
   }
 
-  async generateScene(scene: Scene, context: string): Promise<string> {
+  async generateScene(scene: Scene, context: string, onProgress?: (msg: string) => void): Promise<string> {
     const prompt = scene.promptImageToVideo || `${scene.visualDirection}. OpenAI Sora Cinematic Motion, 4K resolution. Context: ${context}`;
     console.log(`[Sora Adapter] Generating scene with prompt: "${prompt}"`);
     

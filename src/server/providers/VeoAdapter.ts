@@ -16,7 +16,7 @@ export class VeoAdapter implements VideoGenerationProvider {
     return 'READY';
   }
 
-  async generateScene(scene: Scene, context: string): Promise<string> {
+  async generateScene(scene: Scene, context: string, onProgress?: (msg: string) => void): Promise<string> {
     const apiKey = FounderService.getVeoConfig().apiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) {
       throw new Error("GEMINI_API_KEY tidak terdeteksi. Silakan atur GEMINI_API_KEY untuk menggunakan Google Veo.");

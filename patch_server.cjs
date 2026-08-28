@@ -1,23 +1,34 @@
 const fs = require('fs');
+let code = fs.readFileSync('server.ts', 'utf8');
 
-const serverFile = 'server.ts';
-let content = fs.readFileSync(serverFile, 'utf8');
+const targetStr = `  app.post('/api/projects/:id/generate-scene-video', async (req, res) => {
+    try {
+      const { sceneId } = req.body;
+      await ProductionOrchestrator.generateSceneVideo(req.params.id, sceneId);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });`;
 
-// Mount founderPaymentRouter if not already mounted
-if (!content.includes("app.use('/api/v1/founder/payment'")) {
-  content = content.replace(
-    "app.use('/api/v1/tasks', workerRouter);",
-    "app.use('/api/v1/tasks', workerRouter);\n  app.use('/api/v1/founder/payment', founderPaymentRouter);"
-  );
+const replaceStr = `  app.post('/api/projects/:id/generate-scene-video', async (req, res) => {
+    try {
+      const { sceneId } = req.body;
+      // Do not await to avoid 504 timeouts on the frontend. The video generation takes minutes.
+      // The frontend will poll the project state to see the updated videoUrl.
+      ProductionOrchestrator.generateSceneVideo(req.params.id, sceneId).catch(err => {
+         console.error('[BACKGROUND GENERATE VIDEO ERROR]', err);
+      });
+      res.json({ success: true, message: 'Video generation started in background.' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });`;
+
+if (code.includes('await ProductionOrchestrator.generateSceneVideo')) {
+  code = code.replace(targetStr, replaceStr);
+  fs.writeFileSync('server.ts', code);
+  console.log('Successfully patched server.ts to not await generateSceneVideo');
+} else {
+  console.log('Target string not found in server.ts');
 }
-
-// Mount /api/v1/projects if not present
-if (!content.includes("app.get('/api/v1/projects'")) {
-  content = content.replace(
-    "app.get('/api/gallery', (req, res) => {",
-    "app.get('/api/v1/projects', (req, res) => {\n    res.json({ success: true, projects: Array.from(projects.values()) });\n  });\n\n  app.get('/api/gallery', (req, res) => {"
-  );
-}
-
-fs.writeFileSync(serverFile, content);
-console.log('Successfully patched server.ts');

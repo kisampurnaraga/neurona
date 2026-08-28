@@ -1,12 +1,121 @@
 import { GoogleGenAI } from "@google/genai";
 import { OpenAI } from "openai";
 import fetch from "node-fetch";
+import fs from "fs";
+import path from "path";
 import { CharacterProfile, Scene, VideoType } from "../src/shared/types";
 import { FounderService } from "../src/server/fcc/FounderService";
 import { keyRotator } from "./keyRotator";
+import { 
+  getFalImageModelForStudio, 
+  buildFalImagePayload, 
+  sanitizeReferenceImageUrls, 
+  getFalImageModel,
+  FAL_IMAGE_MODELS 
+} from "./falModelConfig";
 
 export class ImageGenerationService {
   public static readonly ACTIVE_MODEL = "ChatGPT Image 2 (GPT Image 2) / Google Imagen 3 / Flux AI Diffusion";
+
+  /**
+   * Uploads a local file or base64 image data URI to Fal Storage (https://rest.alpha.fal.ai/storage/upload/initiate)
+   * so it can be reliably referenced by Fal Image/Video models as a public HTTPS URL.
+   */
+  public static async ensurePublicFalImageUrl(rawUrl: string, falApiKey?: string): Promise<string | null> {
+    if (!rawUrl || typeof rawUrl !== 'string') return null;
+    const trimmed = rawUrl.trim();
+    if (!trimmed) return null;
+
+    // Already a valid public HTTPS URL (not localhost or internal)
+    if (trimmed.startsWith('https://') && !trimmed.includes('localhost') && !trimmed.includes('127.0.0.1')) {
+      return trimmed;
+    }
+
+    const key = falApiKey || keyRotator.getNextFalKey();
+    if (!key) {
+      console.warn('[Fal Storage] No Fal API Key available to upload reference image.');
+      return (trimmed.startsWith('http') || trimmed.startsWith('data:image')) ? trimmed : null;
+    }
+
+    try {
+      let buffer: Buffer | null = null;
+      let contentType = 'image/png';
+      let fileName = `ref_${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
+
+      if (trimmed.startsWith('data:image/')) {
+        const match = trimmed.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+        if (match) {
+          contentType = match[1];
+          buffer = Buffer.from(match[2], 'base64');
+          const ext = contentType.split('/')[1] || 'png';
+          fileName = `ref_${Date.now()}.${ext}`;
+        }
+      } else if (trimmed.startsWith('/') || !trimmed.startsWith('http')) {
+        const resolvedPath = path.isAbsolute(trimmed) ? trimmed : path.join(process.cwd(), trimmed);
+        if (fs.existsSync(resolvedPath)) {
+          buffer = fs.readFileSync(resolvedPath);
+          if (resolvedPath.endsWith('.jpg') || resolvedPath.endsWith('.jpeg')) contentType = 'image/jpeg';
+          else if (resolvedPath.endsWith('.webp')) contentType = 'image/webp';
+          fileName = path.basename(resolvedPath);
+        }
+      }
+
+      if (!buffer) {
+        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+        return null;
+      }
+
+      console.log(`[Fal Storage] Uploading reference image (${(buffer.length / 1024).toFixed(1)} KB, ${contentType}) to Fal Storage...`);
+
+      // 1. Initiate upload
+      const initRes = await fetch('https://rest.alpha.fal.ai/storage/upload/initiate', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${key.trim()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          file_name: fileName,
+          content_type: contentType
+        })
+      });
+
+      if (!initRes.ok) {
+        const err = await initRes.text().catch(() => '');
+        console.warn(`[Fal Storage] Initiate upload failed (${initRes.status}): ${err}`);
+        return trimmed.startsWith('data:image') ? trimmed : null;
+      }
+
+      const initJson: any = await initRes.json();
+      const uploadUrl = initJson.upload_url;
+      const fileUrl = initJson.file_url;
+
+      if (!uploadUrl || !fileUrl) {
+        console.warn('[Fal Storage] Incomplete initiate response:', initJson);
+        return trimmed;
+      }
+
+      // 2. PUT binary data
+      const putRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': contentType
+        },
+        body: buffer
+      });
+
+      if (!putRes.ok) {
+        console.warn(`[Fal Storage] PUT file data failed (${putRes.status})`);
+        return trimmed;
+      }
+
+      console.log(`[Fal Storage] Reference image uploaded successfully: ${fileUrl}`);
+      return fileUrl;
+    } catch (e: any) {
+      console.warn('[Fal Storage] Error uploading image to Fal Storage:', e.message);
+      return trimmed;
+    }
+  }
 
   /**
    * Intelligently translates and cleans Indonesian descriptions, removing conversational clutter,
@@ -499,6 +608,9 @@ export class ImageGenerationService {
       const prodName = productName || 'Commercial Product';
       const prodDesc = cleanProductVision || 'red perforated toe box, black leather upper, white midsole';
       const cleanProdDesc = prodDesc.replace(/\(+/g, '').replace(/\)+/g, '').trim();
+
+      // PRIORITAS 3: Product Consistency Lock explicit anchor
+      promptParts.push("Product Consistency Lock: Keep product packaging, shape, color, and label text exactly identical to the reference product image. Do not alter or reinterpret the product design.");
       
       // Clean raw LLM text if it already has headers
       let sanitizedText = cleanedRawT2I
@@ -624,7 +736,7 @@ export class ImageGenerationService {
         motionEn = `The character is actively interacting with, showing, and holding the ${prodName}, cinematic product showcase, fluid physics, realistic lighting, 4k 60fps`;
       }
       const charBlock = charAnchor || `${charName} ${charOutfit ? `(${charOutfit})` : ''}`;
-      return `Product Lock & Character Consistency: ${charBlock} is physically holding, demonstrating and interacting with ${prodName} (${prodDesc}). Action: ${motionEn} ${arTag}`;
+      return `Product Consistency Lock: Keep product packaging, shape, color, and label text exactly identical to the reference product image. Do not alter or reinterpret the product design. ${charBlock} is physically holding, demonstrating and interacting with ${prodName} (${prodDesc}). Action: ${motionEn} ${arTag}`;
     }
 
     if (!motionEn) {
@@ -637,7 +749,7 @@ export class ImageGenerationService {
 
   /**
    * Generates a genuine AI keyframe image tailored to the scene's prompt, product context & character.
-   * Supports ChatGPT Image 2 (DALL-E 3) / Google Imagen 3 / Flux AI Real Diffusion Engine.
+   * Supports Fal.ai (Nano Banana 2 / Nano Banana Pro Edit / Flux Schnell), Google Gemini Imagen 3, ChatGPT Image 2.
    */
   static async generateKeyframeImage(params: {
     scene: Scene;
@@ -649,9 +761,30 @@ export class ImageGenerationService {
     animationConfig?: any;
     educationalConfig?: any;
     engine?: string;
+    resolution?: '0.5K' | '1K' | '2K' | '4K' | string;
+    aspectRatio?: string;
+    masterCharacterImageUrl?: string;
+    masterProductImageUrl?: string;
     forceRegenerate?: boolean;
+    onLog?: (msg: string, level?: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR') => void;
   }): Promise<string> {
-    const { scene, sceneIndex, videoType, characterProfile, artStyle, affiliateConfig, animationConfig, educationalConfig, engine, forceRegenerate } = params;
+    const { 
+      scene, 
+      sceneIndex, 
+      videoType, 
+      characterProfile, 
+      artStyle, 
+      affiliateConfig, 
+      animationConfig, 
+      educationalConfig, 
+      engine, 
+      resolution = '1K',
+      aspectRatio,
+      masterCharacterImageUrl,
+      masterProductImageUrl,
+      forceRegenerate,
+      onLog
+    } = params;
 
     // If there's an attached product asset and NOT force regenerating, return assetUrl
     if (!forceRegenerate && scene.assetUrl && (scene.assetUrl.startsWith('data:image') || scene.assetUrl.startsWith('http')) && !scene.assetUrl.includes('unsplash.com') && !scene.assetUrl.includes('test-videos') && !scene.assetUrl.includes('pollinations.ai')) {
@@ -672,108 +805,265 @@ export class ImageGenerationService {
 
     console.log(`[ImageGenerationService] Generated Optimized English Prompt for Scene ${sceneIndex + 1}:\n"${finalPrompt}"`);
 
-    const rawEngine = (engine || FounderService.getImageEngine() || 'chatgpt-image-2').toLowerCase();
-    let preferredEngine = 'flux-diffusion';
+    // Determine target aspect ratio based on studio & config
+    const cleanAspect = aspectRatio || (videoType === 'AFFILIATE' || animationConfig?.aspectRatio === '9:16' || educationalConfig?.aspectRatio === '9:16' ? '9:16' : '16:9');
+
+    // -----------------------------------------------------------------------
+    // Prepare Reference Images for Edit Models (Nano Banana 2 Edit / Nano Banana Pro Edit)
+    // -----------------------------------------------------------------------
+    let referenceImageUrls: string[] = [];
+    const activeFalKey = keyRotator.getNextFalKey() || process.env.FAL_KEY || process.env.FAL_API_KEY || undefined;
+
+    if (videoType === 'AFFILIATE') {
+      // AFFILIATE STUDIO: Product Image (index 0) + User Face Image (index 1)
+      const rawProd = masterProductImageUrl 
+        || affiliateConfig?.productImages?.[0] 
+        || affiliateConfig?.productImage 
+        || (scene.assetUrl && !scene.assetUrl.includes('pollinations') ? scene.assetUrl : undefined);
+
+      const rawFace = masterCharacterImageUrl 
+        || characterProfile?.referenceImageUrl 
+        || affiliateConfig?.characterImage;
+
+      // Upload local/base64 images to Fal Storage if needed
+      const prodUrl = rawProd ? await ImageGenerationService.ensurePublicFalImageUrl(rawProd, activeFalKey) : null;
+      const faceUrl = rawFace ? await ImageGenerationService.ensurePublicFalImageUrl(rawFace, activeFalKey) : null;
+
+      if (prodUrl) referenceImageUrls.push(prodUrl);
+      if (faceUrl && faceUrl !== prodUrl) referenceImageUrls.push(faceUrl);
+
+      // PRIORITAS 2: Hard Block if Affiliate has fewer than 2 reference images (Product + Face)
+      if (referenceImageUrls.length < 2) {
+        const missingParts: string[] = [];
+        if (!prodUrl) missingParts.push('Foto Produk');
+        if (!faceUrl) missingParts.push('Foto Model/Wajah Kreator');
+        const errAffiliateMsg = `[Affiliate Studio Validation Failed] Studio Affiliate mewajibkan minimal 2 gambar referensi (${missingParts.join(' & ')} belum tersedia). Mohon upload foto produk dan foto model/karakter terlebih dahulu sebelum melakukan generate keyframe!`;
+        console.error(errAffiliateMsg);
+        if (onLog) onLog(errAffiliateMsg, 'ERROR');
+        throw new Error(errAffiliateMsg);
+      }
+    } else {
+      // ANIMATION & EDUCATIONAL STUDIO:
+      // If subsequent scene (sceneIndex > 0) or master character reference exists
+      const rawChar = masterCharacterImageUrl 
+        || characterProfile?.referenceImageUrl 
+        || (Array.isArray(characterProfile?.referenceImageUrls) && characterProfile.referenceImageUrls[0]);
+
+      if (rawChar) {
+        const charUrl = await ImageGenerationService.ensurePublicFalImageUrl(rawChar, activeFalKey);
+        if (charUrl) {
+          referenceImageUrls.push(charUrl);
+        }
+      }
+    }
+
+    // Sanitize URLs to ensure valid array format and max 14 limit
+    referenceImageUrls = sanitizeReferenceImageUrls(referenceImageUrls);
+
+    // Determine preferred engine
+    const rawEngine = (engine || FounderService.getImageEngine() || 'fal').toLowerCase();
+    let preferredEngine = 'fal';
     if (rawEngine.includes('gemini') || rawEngine.includes('imagen') || rawEngine.includes('banana')) {
       preferredEngine = 'gemini-imagen-3';
     } else if (rawEngine.includes('chatgpt') || rawEngine.includes('dall-e') || rawEngine.includes('openai') || rawEngine.includes('gpt')) {
       preferredEngine = 'chatgpt-image-2';
     } else {
-      preferredEngine = 'flux-diffusion';
+      preferredEngine = 'fal';
     }
 
     // -----------------------------------------------------------------------
-    // Engine 1: OpenAI ChatGPT Image 2 (DALL-E 3 / DALL-E 2)
+    // Engine 1: Fal.ai Engine (Nano Banana 2 / Nano Banana Pro Edit / Flux Schnell)
     // -----------------------------------------------------------------------
-    const runGptImage2 = async (): Promise<string | null> => {
-      const gptConfig = FounderService.getGptImage2Config();
-      const apiKey = gptConfig.apiKey || process.env.OPENAI_API_KEY;
-      if (!apiKey) {
-        console.log(`[ChatGPT Image 2 Engine] OpenAI API Key not configured. Skipping to next engine...`);
+    const runFalImage = async (): Promise<string | null> => {
+      const falApiKey = keyRotator.getNextFalKey();
+      if (!falApiKey) {
+        console.log(`[Fal.ai Engine] API Key not configured or all keys exhausted in rotator.`);
         return null;
       }
 
-      try {
-        let customBaseURL = gptConfig.endpoint ? gptConfig.endpoint.trim() : undefined;
-        if (customBaseURL) {
-          customBaseURL = customBaseURL.replace(/\/images\/generations\/?$/, '').replace(/\/+$/, '');
-          if (customBaseURL.includes('api.openai.com/v1')) {
-            customBaseURL = undefined;
-          }
-        }
+      // Determine model from single source of truth based on studio mode, tier, & reference images
+      const selectedTier = (rawEngine === 'draft' || rawEngine === 'precision' || rawEngine === 'standard') ? rawEngine : undefined;
+      const isDraftMode = selectedTier === 'draft' || rawEngine === 'flux-diffusion' || rawEngine === 'fal-ai/flux/schnell';
 
-        const openai = new OpenAI({ 
-          apiKey,
-          baseURL: customBaseURL
-        });
+      // For draft mode (FLUX.1 Schnell), strictly ignore reference images (pure text-to-image)
+      const effectiveRefImages = isDraftMode ? [] : referenceImageUrls;
 
-        const targetModel = gptConfig.model || 'dall-e-3';
-        console.log(`[ChatGPT Image 2 Engine] Requesting keyframe generation for Scene ${sceneIndex + 1} (${targetModel})...`);
+      const targetModelDef = getFalImageModelForStudio(videoType, {
+        isSubsequentScene: sceneIndex > 0,
+        hasReferenceImages: effectiveRefImages.length > 0,
+        tier: selectedTier,
+        forceModelId: rawEngine.startsWith('fal-ai/') ? rawEngine : undefined
+      });
 
-        // If custom endpoint is set, try standard REST image generation first
-        if (customBaseURL) {
-          const directEndpoint = gptConfig.endpoint || `${customBaseURL}/images/generations`;
-          try {
-            const apiRes = await fetch(directEndpoint, {
+      console.log(`[Fal.ai Engine] Studio [${videoType}] -> Selected Model: ${targetModelDef.id} (Tier: ${selectedTier || 'default'}, Ref Images: ${effectiveRefImages.length})`);
+      if (onLog) onLog(`Routing Scene ${sceneIndex + 1} ke fal.ai [${targetModelDef.id}] (Ref Images: ${effectiveRefImages.length})...`, 'INFO');
+
+      // Model target: Draft tier strictly uses flux/schnell without fallback. Affiliate strictly uses nano-banana-pro/edit.
+      const candidateModels = [targetModelDef.id];
+
+      for (const modelPath of candidateModels) {
+        try {
+          // Construct payload according to official schema
+          const payload = buildFalImagePayload(modelPath, {
+            prompt: finalPrompt,
+            imageUrls: (modelPath.includes('/edit') && effectiveRefImages.length > 0) ? effectiveRefImages : undefined,
+            aspectRatio: cleanAspect,
+            resolution: resolution as any,
+            safetyTolerance: videoType === 'AFFILIATE' ? '6' : '5' // High tolerance for authentic human faces & products
+          });
+
+          const isHighResQueue = resolution === '4K' || resolution === '2K';
+          const startTime = Date.now();
+
+          if (isHighResQueue) {
+            // ASYNC QUEUE MODE (Fal Queue runner for 4K / 2K generations)
+            console.log(`[Fal.ai Queue] Submitting 4K/2K payload to https://queue.fal.run/${modelPath}...`);
+            if (onLog) onLog(`Mengantrekan render keyframe resolusi tinggi (${resolution || '4K'}) ke queue.fal.run [${modelPath}]...`, 'INFO');
+
+            const queueRes = await fetch(`https://queue.fal.run/${modelPath}`, {
               method: 'POST',
               headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
+                'Authorization': `Key ${falApiKey.trim()}`,
+                'Content-Type': 'application/json'
               },
-              body: JSON.stringify({
-                model: targetModel,
-                prompt: finalPrompt.substring(0, 1000),
-                n: 1,
-                size: "1024x1024"
-              })
-            });
-            if (apiRes.ok) {
-              const resData: any = await apiRes.json();
-              if (resData?.data && resData.data[0]?.url) {
-                console.log(`[ChatGPT Image 2 Engine] Successfully generated image via custom endpoint!`);
-                return resData.data[0].url;
-              }
-              if (resData?.data && resData.data[0]?.b64_json) {
-                return `data:image/png;base64,${resData.data[0].b64_json}`;
-              }
-            }
-          } catch (endpointErr) {
-            console.log(`[ChatGPT Image 2 Engine] Custom endpoint unreachable, trying standard client...`);
-          }
-        }
-
-        // Try standard OpenAI image models with cascade fallback (dall-e-3 -> dall-e-2)
-        const modelsToTry = targetModel === 'chatgpt-image-2' 
-          ? ['dall-e-3', 'dall-e-2'] 
-          : [targetModel, 'dall-e-3', 'dall-e-2'];
-        
-        const uniqueModels = Array.from(new Set(modelsToTry));
-
-        for (const m of uniqueModels) {
-          try {
-            const response = await openai.images.generate({
-              model: m as any,
-              prompt: finalPrompt.substring(0, 1000),
-              n: 1,
-              size: m === 'dall-e-2' ? "512x512" : "1024x1024"
+              body: JSON.stringify(payload)
             });
 
-            if (response?.data && response.data[0]?.url) {
-              console.log(`[ChatGPT Image 2 Engine] Successfully generated image with ${m} for Scene ${sceneIndex + 1}!`);
-              return response.data[0].url;
+            if (!queueRes.ok) {
+              const errText = await queueRes.text().catch(() => '');
+              let parsedDetail = errText;
+              try {
+                const errJson = JSON.parse(errText);
+                parsedDetail = errJson.detail || errJson.message || errText;
+              } catch (e) {}
+
+              if (queueRes.status === 401) {
+                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 401 Unauthorized: ${parsedDetail}`));
+              } else if (queueRes.status === 402) {
+                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 402 Payment Required: Saldo Fal.ai habis`));
+              }
+
+              throw new Error(`[FAL.AI QUEUE SUBMIT FAILED] HTTP ${queueRes.status}: ${parsedDetail}`);
             }
-          } catch (modelErr: any) {
-            const msg = modelErr?.message || '';
-            if (msg.includes('does not exist') || modelErr?.status === 400 || modelErr?.status === 404) {
-              console.log(`[ChatGPT Image 2 Engine] Model '${m}' not available on current key/endpoint. Trying fallback...`);
+
+            const queueJson: any = await queueRes.json();
+            const requestId = queueJson.request_id;
+            const statusUrl = queueJson.status_url || `https://queue.fal.run/${modelPath}/requests/${requestId}/status`;
+            const responseUrl = queueJson.response_url || `https://queue.fal.run/${modelPath}/requests/${requestId}`;
+
+            console.log(`[Fal.ai Queue] Request queued ID: ${requestId}. Polling for completion...`);
+
+            let completedJson: any = null;
+            const maxPollTimeMs = 180000; // 3 minutes timeout
+            const pollIntervalMs = 2500;
+
+            while (Date.now() - startTime < maxPollTimeMs) {
+              await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+              const pollRes = await fetch(statusUrl, {
+                headers: { 'Authorization': `Key ${falApiKey.trim()}` }
+              });
+
+              if (pollRes.ok) {
+                const pollJson: any = await pollRes.json();
+                const queueStatus = (pollJson.status || '').toUpperCase();
+                const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
+                console.log(`[Fal.ai Queue] Job ${requestId.substring(0, 8)} status: ${queueStatus} (${elapsedSec}s)`);
+
+                if (queueStatus === 'COMPLETED') {
+                  const finalRes = await fetch(responseUrl, {
+                    headers: { 'Authorization': `Key ${falApiKey.trim()}` }
+                  });
+                  if (finalRes.ok) {
+                    completedJson = await finalRes.json();
+                  } else {
+                    completedJson = pollJson;
+                  }
+                  break;
+                } else if (queueStatus === 'FAILED') {
+                  const jobErr = pollJson.error || pollJson.logs || 'Queue task failed';
+                  throw new Error(`[FAL.AI QUEUE JOB FAILED] Model ${modelPath}: ${JSON.stringify(jobErr)}`);
+                }
+              }
+            }
+
+            const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+            if (!completedJson) {
+              // NO SILENT SYNC FALLBACK: Fail cleanly and trigger automatic credit refund to prevent HTTP 504 gateway timeout
+              throw new Error(`[FAL.AI QUEUE TIMEOUT] Render antrean resolusi ${resolution} waktu habis setelah ${durationSec}s. Permintaan dihentikan demi stabilitas server. Kredit akan otomatis di-refund.`);
+            }
+
+            const imageUrl = completedJson?.images?.[0]?.url || completedJson?.images?.[0]?.image?.url || completedJson?.image?.url || completedJson?.output?.[0];
+            if (imageUrl) {
+              console.log(`[Fal.ai Queue] Successfully generated ${resolution} keyframe in ${durationSec}s via queue (${modelPath})!`);
+              if (onLog) onLog(`Keyframe ${resolution} Adegan ${sceneIndex + 1} berhasil digenerate via Queue (${durationSec}s) [${modelPath}]`, 'SUCCESS');
+              return imageUrl;
+            }
+
+            throw new Error(`[FAL.AI QUEUE ERROR] Job selesai tetapi tidak ditemukan URL gambar pada response payload.`);
+          } else {
+            // DIRECT SYNC MODE (0.5K / 1K)
+            console.log(`[Fal.ai Engine] Submitting sync payload to https://fal.run/${modelPath}...`);
+            const res = await fetch(`https://fal.run/${modelPath}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Key ${falApiKey.trim()}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+              const json: any = await res.json();
+              
+              // Check Content Safety / NSFW flags
+              if (json?.has_nsfw_concepts && Array.isArray(json.has_nsfw_concepts) && json.has_nsfw_concepts.some(Boolean)) {
+                const safetyMsg = `[FAL.AI SAFETY FILTER] Gambar adegan ${sceneIndex + 1} ditolak oleh filter keamanan (NSFW / Safety Trigger). Sesuaikan kata kunci atau tingkatkan toleransi keamanan.`;
+                console.warn(safetyMsg);
+                if (onLog) onLog(safetyMsg, 'WARN');
+              }
+
+              const imageUrl = json?.images?.[0]?.url || json?.images?.[0]?.image?.url || json?.image?.url || json?.output?.[0];
+              if (imageUrl) {
+                const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+                console.log(`[Fal.ai Engine] Successfully generated keyframe via Fal.ai (${modelPath}) in ${durationSec}s!`);
+                if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate [${modelPath}] (${durationSec}s)`, 'SUCCESS');
+                return imageUrl;
+              }
             } else {
-              console.log(`[ChatGPT Image 2 Engine] Notice for model '${m}': ${msg.substring(0, 100)}`);
+              const errText = await res.text().catch(() => '');
+              let parsedErr = errText;
+              try {
+                const errJson = JSON.parse(errText);
+                parsedErr = errJson.detail || errJson.message || errText;
+              } catch (e) {}
+
+              if (res.status === 401) {
+                console.error(`[Fal.ai Engine 401] Autentikasi Fal.ai gagal untuk model '${modelPath}': ${parsedErr}`);
+                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 401 Unauthorized: ${parsedErr}`));
+              } else if (res.status === 402) {
+                console.error(`[Fal.ai Engine 402] Saldo/Kuota Fal.ai habis: ${parsedErr}`);
+                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 402 Payment Required: Saldo habis`));
+              } else if (res.status === 422) {
+                console.error(`[Fal.ai Engine 422] Validasi payload gagal untuk model '${modelPath}': ${parsedErr}`);
+                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 422 Unprocessable Entity: ${parsedErr}`));
+              } else if (res.status === 429) {
+                console.error(`[Fal.ai Engine 429] Rate limit tercapai untuk model '${modelPath}': ${parsedErr}`);
+                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 429 Rate Limit Exceeded`));
+              } else {
+                console.error(`[Fal.ai Engine HTTP ${res.status}] Error: ${parsedErr}`);
+                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP ${res.status}: ${parsedErr}`));
+              }
+
+              throw new Error(`[FAL.AI SYNC ERROR ${res.status}] ${parsedErr}`);
             }
           }
+        } catch (falErr: any) {
+          console.error(`[Fal.ai Engine] Error running model ${modelPath}:`, falErr?.message || falErr);
+          keyRotator.reportKeyError('fal', falApiKey, falErr);
+          throw falErr;
         }
-      } catch (openAiErr: any) {
-        console.log(`[ChatGPT Image 2 Engine] Service unavailable, initiating seamless failover...`);
       }
+
       return null;
     };
 
@@ -820,11 +1110,9 @@ export class ImageGenerationService {
                 ]
               },
               config: {
-                // Remove aspectRatio param because only some aspect ratios are supported or it defaults to 1:1. 
-                // Wait, skill says: "aspectRatio: Changes the aspect ratio... Supported values are 1:1, 3:4, 4:3, 9:16, 16:9". 
                 imageConfig: {
-                  aspectRatio: videoType === 'AFFILIATE' ? "9:16" : "16:9",
-                  imageSize: "1K"
+                  aspectRatio: cleanAspect as any,
+                  imageSize: resolution === '4K' ? '2K' : (resolution === '2K' ? '2K' : '1K')
                 }
               }
             });
@@ -848,66 +1136,103 @@ export class ImageGenerationService {
     };
 
     // -----------------------------------------------------------------------
-    // Engine 3: Fal.ai Engine (Flux 1.1 Pro / Flux Schnell / Recraft API)
+    // Engine 3: OpenAI ChatGPT Image 2 (DALL-E 3 / DALL-E 2)
     // -----------------------------------------------------------------------
-    const runFalImage = async (): Promise<string | null> => {
-      const falApiKey = keyRotator.getNextFalKey();
-      if (!falApiKey) {
-        console.log(`[Fal.ai Engine] API Key not configured or all keys exhausted in rotator.`);
+    const runGptImage2 = async (): Promise<string | null> => {
+      const gptConfig = FounderService.getGptImage2Config();
+      const apiKey = gptConfig.apiKey || process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        console.log(`[ChatGPT Image 2 Engine] OpenAI API Key not configured. Skipping to next engine...`);
         return null;
       }
 
-      const candidateModels = [
-        'fal-ai/flux/schnell',
-        'fal-ai/flux/dev',
-        'fal-ai/fast-sdxl'
-      ];
-
-      for (const modelPath of candidateModels) {
-        try {
-          console.log(`[Fal.ai Engine] Attempting keyframe generation for Scene ${sceneIndex + 1} with ${modelPath}...`);
-          const res = await fetch(`https://fal.run/${modelPath}`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Key ${falApiKey.trim()}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              prompt: finalPrompt,
-              image_size: videoType === 'AFFILIATE' ? 'portrait_16_9' : 'landscape_16_9',
-              num_images: 1,
-              enable_safety_checker: false
-            })
-          });
-
-          if (res.ok) {
-            const json: any = await res.json();
-            const imageUrl = json?.images?.[0]?.url || json?.images?.[0]?.image?.url;
-            if (imageUrl) {
-              console.log(`[Fal.ai Engine] Successfully generated keyframe via Fal.ai (${modelPath})!`);
-              return imageUrl;
-            }
-          } else {
-            const errText = await res.text().catch(() => '');
-            console.log(`[Fal.ai Engine] returned status ${res.status} for ${modelPath}: ${errText.substring(0, 150)}`);
-            keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP ${res.status}: ${errText}`));
+      try {
+        let customBaseURL = gptConfig.endpoint ? gptConfig.endpoint.trim() : undefined;
+        if (customBaseURL) {
+          customBaseURL = customBaseURL.replace(/\/images\/generations\/?$/, '').replace(/\/+$/, '');
+          if (customBaseURL.includes('api.openai.com/v1')) {
+            customBaseURL = undefined;
           }
-        } catch (falErr: any) {
-          console.log(`[Fal.ai Engine] Error trying model ${modelPath}:`, falErr?.message || falErr);
-          keyRotator.reportKeyError('fal', falApiKey, falErr);
         }
-      }
 
+        const openai = new OpenAI({ 
+          apiKey,
+          baseURL: customBaseURL
+        });
+
+        const targetModel = gptConfig.model || 'dall-e-3';
+        console.log(`[ChatGPT Image 2 Engine] Requesting keyframe generation for Scene ${sceneIndex + 1} (${targetModel})...`);
+
+        // If custom endpoint is set, try standard REST image generation first
+        if (customBaseURL) {
+          const directEndpoint = gptConfig.endpoint || `${customBaseURL}/images/generations`;
+          try {
+            const apiRes = await fetch(directEndpoint, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+              },
+              body: JSON.stringify({
+                model: targetModel,
+                prompt: finalPrompt.substring(0, 1000),
+                n: 1,
+                size: cleanAspect === '9:16' ? "1024x1792" : "1792x1024"
+              })
+            });
+            if (apiRes.ok) {
+              const resData: any = await apiRes.json();
+              if (resData?.data && resData.data[0]?.url) {
+                console.log(`[ChatGPT Image 2 Engine] Successfully generated image via custom endpoint!`);
+                return resData.data[0].url;
+              }
+              if (resData?.data && resData.data[0]?.b64_json) {
+                return `data:image/png;base64,${resData.data[0].b64_json}`;
+              }
+            }
+          } catch (endpointErr) {
+            console.log(`[ChatGPT Image 2 Engine] Custom endpoint unreachable, trying standard client...`);
+          }
+        }
+
+        // Try standard OpenAI image models with cascade fallback (dall-e-3 -> dall-e-2)
+        const modelsToTry = targetModel === 'chatgpt-image-2' 
+          ? ['dall-e-3', 'dall-e-2'] 
+          : [targetModel, 'dall-e-3', 'dall-e-2'];
+        
+        const uniqueModels = Array.from(new Set(modelsToTry));
+
+        for (const m of uniqueModels) {
+          try {
+            const response = await openai.images.generate({
+              model: m as any,
+              prompt: finalPrompt.substring(0, 1000),
+              n: 1,
+              size: cleanAspect === '9:16' ? "1024x1792" : (m === 'dall-e-2' ? "512x512" : "1792x1024")
+            });
+
+            if (response?.data && response.data[0]?.url) {
+              console.log(`[ChatGPT Image 2 Engine] Successfully generated image with ${m} for Scene ${sceneIndex + 1}!`);
+              return response.data[0].url;
+            }
+          } catch (modelErr: any) {
+            const msg = modelErr?.message || '';
+            console.log(`[ChatGPT Image 2 Engine] Notice for model '${m}': ${msg.substring(0, 100)}`);
+          }
+        }
+      } catch (openAiErr: any) {
+        console.log(`[ChatGPT Image 2 Engine] Service unavailable, initiating seamless failover...`);
+      }
       return null;
     };
 
     const throwApiError = () => {
       console.log(`[Image Synthesis Engine] All configured API models failed or API key exhausted.`);
-      throw new Error("Token API habis atau error dari penyedia layanan AI (Gemini / OpenAI / Fal.ai). Silakan periksa atau isi kembali GEMINI_API_KEY / OPENAI_API_KEY / FAL_KEY Anda di Rotator Pool untuk melanjutkan.");
+      throw new Error("Token API habis atau error dari penyedia layanan AI (Fal.ai / Gemini / OpenAI). Silakan periksa atau isi kembali FAL_KEY / GEMINI_API_KEY / OPENAI_API_KEY Anda di Rotator Pool untuk melanjutkan.");
     };
 
     // Primary & Fallback Engine Execution Flow
-    if (preferredEngine === 'fal' || preferredEngine === 'fal-flux' || preferredEngine === 'fal-ai') {
+    if (preferredEngine === 'fal') {
       const falResult = await runFalImage();
       if (falResult) return falResult;
       const bananaResult = await runGeminiBanana();
@@ -918,18 +1243,18 @@ export class ImageGenerationService {
     } else if (preferredEngine === 'chatgpt-image-2') {
       const gptResult = await runGptImage2();
       if (gptResult) return gptResult;
-      const bananaResult = await runGeminiBanana();
-      if (bananaResult) return bananaResult;
       const falResult = await runFalImage();
       if (falResult) return falResult;
+      const bananaResult = await runGeminiBanana();
+      if (bananaResult) return bananaResult;
       return throwApiError();
     } else if (preferredEngine === 'gemini-imagen-3' || preferredEngine === 'gemini-banana') {
       const bananaResult = await runGeminiBanana();
       if (bananaResult) return bananaResult;
-      const gptResult = await runGptImage2();
-      if (gptResult) return gptResult;
       const falResult = await runFalImage();
       if (falResult) return falResult;
+      const gptResult = await runGptImage2();
+      if (gptResult) return gptResult;
       return throwApiError();
     } else {
       const falResult = await runFalImage();

@@ -1,7 +1,7 @@
 import { GalleryModal } from './components/GalleryModal';
 import { ContentCreatorDashboard } from './components/ContentCreatorDashboard';
 import { RenderGalleryModal } from './components/RenderGalleryModal';
-import { Wallet, Key, Coins } from 'lucide-react';
+import { Wallet, Key, Coins, Activity } from 'lucide-react';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { VideoPreviewPlayer } from './components/VideoPreviewPlayer';
@@ -142,6 +142,7 @@ function useClapDetector(onClap: () => void) {
   }, [onClap]);
 }
 
+import { SystemHealthDashboard } from "./components/SystemHealthDashboard";
 import { FinalContentDashboard } from './components/FinalContentDashboard';
 
 export default function App() {
@@ -306,7 +307,7 @@ export default function App() {
             }
           }
         } catch (e) {
-          console.error('Failed to sync user session', e);
+          console.warn('Failed to sync user session', e.message || e);
         }
       }
     };
@@ -333,6 +334,7 @@ export default function App() {
   const [isStoryboardMatrixOpen, setIsStoryboardMatrixOpen] = useState(false);
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
+  const [isSystemHealthOpen, setIsSystemHealthOpen] = useState(false);
   const [userCredits, setUserCredits] = useState<number>(() => {
     try {
       const savedUser = localStorage.getItem('neuronna_user_session');
@@ -1131,6 +1133,11 @@ export default function App() {
             <ContentCreatorDashboard onClose={() => setIsContentCreatorOpen(false)} />
           )}
 
+          {/* System Health Dashboard */}
+          {isSystemHealthOpen && (
+            <SystemHealthDashboard onClose={() => setIsSystemHealthOpen(false)} />
+          )}
+
           {/* Credit Top-Up Modal */}
           <CreditTopUpModal
             isOpen={isCreditModalOpen}
@@ -1281,6 +1288,15 @@ export default function App() {
                   <span className="uppercase">{providerInfo.provider}</span>
                 </div>
               )}
+              
+              <button
+                onClick={() => setIsSystemHealthOpen(true)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500/40 text-[10px] font-mono uppercase text-gray-400 hover:text-cyan-300 transition-colors"
+                title="System Health Dashboard"
+              >
+                <Activity size={11} className="text-cyan-400" />
+                <span className="hidden sm:inline">System Health</span>
+              </button>
               
               <button 
                 id="btn-landing-pricing-access"
@@ -1703,6 +1719,7 @@ export default function App() {
                 voiceoverText={currentScene?.voiceOver}
                 status={project?.status}
                 activeAgent={project?.activeAgent || 'GATOTKACA SORA'}
+                videoModel={project?.videoModel}
                 progressPercentage={project?.overallProgress || 0}
                 currentPhaseName={project?.currentPhaseName}
                 scenes={project?.storyboard?.scenes}

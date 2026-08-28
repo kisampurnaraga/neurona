@@ -29,6 +29,7 @@ import {
 import { FounderDashboard } from './components/FounderDashboard';
 import { FounderAudioVoiceLibrary } from './components/FounderAudioVoiceLibrary';
 import { FounderGallery } from './components/FounderGallery';
+import { FounderFalLiveTester } from './components/FounderFalLiveTester';
 import { Play } from 'lucide-react';
 
 interface ProviderItem {
@@ -46,7 +47,7 @@ interface ProviderItem {
 interface FCCConfig {
   providers: ProviderItem[];
   flags: Record<string, boolean>;
-  imageEngine?: 'chatgpt-image-2' | 'openai' | 'dall-e-3' | 'gemini_banana' | 'google_image' | 'imagen-3' | 'flux-diffusion';
+  imageEngine?: 'draft' | 'standard' | 'precision' | 'chatgpt-image-2' | 'openai' | 'dall-e-3' | 'gemini_banana' | 'google_image' | 'imagen-3' | 'flux-diffusion';
   llmEngine?: 'gemini' | 'gemini-1.5-pro' | 'gemini-2.5-pro' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gemini-2.5-flash';
   primaryVideoEngine?: 'byteplus' | 'veo' | 'runway' | 'sora';
   health: {
@@ -81,7 +82,7 @@ interface FCCConfig {
 export default function FounderControlCenter({ onExit }: { onExit?: () => void }) {
   const [config, setConfig] = useState<FCCConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'providers' | 'audio' | 'vault' | 'flags' | 'logs' | 'users' | 'gallery'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'providers' | 'livetest' | 'audio' | 'vault' | 'flags' | 'logs' | 'users' | 'gallery'>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Sora / Provider Config Modal State
@@ -243,7 +244,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
     }
   };
 
-  const handleSetImageEngine = async (engine: 'chatgpt-image-2' | 'dall-e-3' | 'imagen-3' | 'flux-diffusion') => {
+  const handleSetImageEngine = async (engine: 'draft' | 'standard' | 'precision' | 'chatgpt-image-2' | 'dall-e-3' | 'imagen-3' | 'flux-diffusion') => {
     try {
       const res = await fetch('/api/fcc/image-engine', {
         method: 'POST',
@@ -432,6 +433,13 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
             onClick={() => setActiveTab('providers')} 
           />
           <NavItem 
+            icon={<Zap size={16} className="text-purple-400" />} 
+            label="Fal.ai Live Test Studio" 
+            active={activeTab === 'livetest'} 
+            badge="Uji Riil"
+            onClick={() => setActiveTab('livetest')} 
+          />
+          <NavItem 
             icon={<Volume2 size={16}/>} 
             label="Audio Voice Library" 
             active={activeTab === 'audio'} 
@@ -491,6 +499,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
             <h1 className="text-xs uppercase tracking-widest font-bold text-gray-200">
               {activeTab === 'overview' && 'Metrik & Finansial'}
               {activeTab === 'providers' && 'Konfigurasi Agen AI & Engine'}
+              {activeTab === 'livetest' && 'Fal.ai Live Test Studio (Real Render Verification)'}
               {activeTab === 'vault' && 'Kredensial API Vault'}
               {activeTab === 'flags' && 'Operational Feature Flags'}
               {activeTab === 'users' && 'Manajemen Pengguna & Aktivasi Manual WhatsApp'}
@@ -770,54 +779,81 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                 </div>
               </div>
 
-              {/* Default Image Engine Selector Card */}
+              {/* Single Source of Truth Image Model Tiers Selector Card */}
               <div className="p-5 bg-[#080808] border border-indigo-900/40 rounded-2xl space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
                     <div className="flex items-center gap-2">
                       <Sparkles size={16} className="text-indigo-400" />
-                      <h3 className="text-xs font-bold text-white uppercase tracking-widest">Default Image Generation Engine</h3>
+                      <h3 className="text-xs font-bold text-white uppercase tracking-widest">Image Model Tiers (Single Source of Truth)</h3>
                       <span className="text-[9px] px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-700/50 font-bold uppercase font-mono">
-                        Active: {config.imageEngine || 'chatgpt-image-2'}
+                        Active Tier: {config.imageEngine === 'draft' ? 'Draft' : config.imageEngine === 'precision' ? 'Precision' : 'Standard'}
                       </span>
                     </div>
                     <p className="text-xs text-gray-400 mt-1">
-                      Pilih mesin pembuat gambar/keyframe visual adegan. ChatGPT Image 2 aktif secara default, namun Anda dapat memilih mesin alternatif di bawah.
+                      Tier model gambar yang digunakan oleh seluruh orchestrator studio produksi (Animasi, Edukasi, & Affiliate).
                     </p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {[
-                    { id: 'chatgpt-image-2', label: 'ChatGPT Image 2', badge: 'OpenAI Primary', desc: 'OpenAI GPT Image 2 Engine' },
-                    { id: 'gemini_banana', label: 'Gemini Banana', badge: 'Google AI Studio', desc: 'Google Imagen 3 (Banana)' },
-                    { id: 'imagen-3', label: 'Google Imagen 3', badge: 'Photorealistic', desc: 'Google GenAI Imagen 3' },
-                    { id: 'flux-diffusion', label: 'Flux AI Diffusion', badge: 'Unlimited Speed', desc: 'Real Neural Diffusion' },
-                    { id: 'dall-e-3', label: 'DALL-E 3 Standard', badge: 'Standard OpenAI', desc: 'Standard DALL-E 3' }
+                    {
+                      id: 'draft',
+                      tierKey: 'draft',
+                      label: 'Hemat / Draft',
+                      badge: 'FLUX.1 Schnell',
+                      badgeColor: 'bg-amber-950 text-amber-300 border-amber-800',
+                      model: 'fal-ai/flux/schnell ($0.003/MP)',
+                      desc: 'Eksplorasi gaya visual cepat, tanpa jaminan konsistensi karakter/produk.',
+                      studio: 'Tersedia di semua Studio (Mode Draft/Eksplorasi Cepat)'
+                    },
+                    {
+                      id: 'standard',
+                      tierKey: 'standard',
+                      label: 'Standar (Default)',
+                      badge: 'Nano Banana 2 & Edit',
+                      badgeColor: 'bg-emerald-950 text-emerald-300 border-emerald-800',
+                      model: 'fal-ai/nano-banana-2 / edit ($0.08)',
+                      desc: 'Konsistensi karakter memadai untuk volume tinggi.',
+                      studio: 'Default Studio Animasi & Edukasi'
+                    },
+                    {
+                      id: 'precision',
+                      tierKey: 'precision',
+                      label: 'Presisi Tinggi',
+                      badge: 'Nano Banana Pro Edit',
+                      badgeColor: 'bg-purple-950 text-purple-300 border-purple-800',
+                      model: 'fal-ai/nano-banana-pro/edit ($0.15)',
+                      desc: 'Wajib untuk produk/wajah yang harus 100% identik & visual konsisten.',
+                      studio: 'Terkunci di Studio Affiliate (Opsional Climax Animasi/Edukasi)'
+                    }
                   ].map(eng => {
-                    const isSelected = (config.imageEngine || 'chatgpt-image-2') === eng.id;
+                    const isSelected = (config.imageEngine || 'standard') === eng.id || (config.imageEngine === 'chatgpt-image-2' && eng.id === 'standard');
                     return (
                       <button
                         key={eng.id}
                         onClick={() => handleSetImageEngine(eng.id as any)}
-                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                        className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
                           isSelected 
-                            ? 'bg-indigo-950/50 border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.25)] text-white' 
+                            ? 'bg-indigo-950/40 border-indigo-500 shadow-[0_0_18px_rgba(99,102,241,0.25)] text-white ring-1 ring-indigo-400' 
                             : 'bg-[#0f0f0f] border-[#222] hover:border-gray-600 text-gray-400 hover:text-gray-200'
                         }`}
                       >
-                        <div>
+                        <div className="space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold">{eng.label}</span>
-                            {isSelected && <CheckCircle2 size={14} className="text-indigo-400" />}
+                            <span className="text-sm font-bold text-white">{eng.label}</span>
+                            {isSelected ? <CheckCircle2 size={16} className="text-indigo-400" /> : <div className="w-3.5 h-3.5 rounded-full border border-gray-700" />}
                           </div>
-                          <div className="text-[10px] opacity-75 mt-0.5">{eng.desc}</div>
+                          <div className="text-[11px] text-gray-300 font-mono">{eng.model}</div>
+                          <p className="text-xs text-gray-400 leading-relaxed">{eng.desc}</p>
                         </div>
-                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded w-fit uppercase font-semibold ${
-                          isSelected ? 'bg-indigo-600 text-white' : 'bg-[#1e1e1e] text-gray-500'
-                        }`}>
-                          {eng.badge}
-                        </span>
+                        <div className="pt-2 border-t border-gray-800/80 flex flex-col gap-1">
+                          <span className={`text-[9px] font-mono px-2 py-0.5 rounded border w-fit uppercase font-semibold ${eng.badgeColor}`}>
+                            {eng.badge}
+                          </span>
+                          <span className="text-[10px] text-gray-500">{eng.studio}</span>
+                        </div>
                       </button>
                     );
                   })}
@@ -915,16 +951,20 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                         
                         {/* Sub-menu for Fal.ai Specific Models */}
                         {isSelected && eng.id === 'fal' && (
-                          <div className="absolute top-full left-0 mt-1 w-full z-10 p-2 bg-slate-900 border border-blue-500/40 rounded-xl shadow-xl flex flex-col gap-1">
-                            <span className="text-[9px] font-bold text-blue-300 px-1 mb-0.5">Pilih Sub-Model:</span>
+                          <div className="absolute top-full left-0 mt-1 w-64 z-10 p-2 bg-slate-900 border border-blue-500/40 rounded-xl shadow-xl flex flex-col gap-1 max-h-72 overflow-y-auto">
+                            <span className="text-[9px] font-bold text-blue-300 px-1 mb-0.5">Pilih Model Fal.ai:</span>
                             {[
-                              { id: 'fal-wan21', label: 'Wan 2.1' },
-                              { id: 'fal-seedance25', label: 'Seedance 2.5' },
-                              { id: 'fal-seedance20', label: 'Seedance 2.0' },
-                              { id: 'fal-sora3', label: 'Sora 3' },
-                              { id: 'fal-sora2', label: 'Sora 2' },
-                              { id: 'fal-kling15', label: 'Kling 1.5' },
-                              { id: 'fal-minimax', label: 'MiniMax H3' }
+                              { id: 'fal-ai/wan-i2v', label: 'Wan 2.1 (Budget - 720p)' },
+                              { id: 'bytedance/seedance-2.0/fast/image-to-video', label: 'SeaDance 2.0 Fast (Budget)' },
+                              { id: 'fal-ai/hunyuan-video-image-to-video', label: 'Hunyuan Video (Budget)' },
+                              { id: 'bytedance/seedance-2.0/image-to-video', label: 'SeaDance 2.0 Std (Balanced)' },
+                              { id: 'fal-ai/kling-video/v2.1/standard/image-to-video', label: 'Kling 2.1 Std (Balanced)' },
+                              { id: 'fal-ai/kling-video/o3/standard/image-to-video', label: 'Kling O3 Std (Balanced)' },
+                              { id: 'fal-ai/minimax/video-01/image-to-video', label: 'MiniMax Video 01 (Balanced)' },
+                              { id: 'fal-ai/minimax/video-01-live/image-to-video', label: 'MiniMax Live (Balanced)' },
+                              { id: 'fal-ai/minimax/hailuo-02/standard/image-to-video', label: 'MiniMax Hailuo 02 (Balanced)' },
+                              { id: 'bytedance/seedance-2.5/image-to-video', label: 'SeaDance 2.5 (Premium Native 30s)' },
+                              { id: 'fal-ai/kling-video/v3/pro/image-to-video', label: 'Kling 3.0 Pro (Premium 1080p)' }
                             ].map(subOpt => (
                               <button
                                 key={subOpt.id}
@@ -948,6 +988,33 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Live Test Callout Banner */}
+              <div className="p-4 bg-gradient-to-r from-purple-950/30 via-[#101018] to-blue-950/30 border border-purple-800/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-300">
+                    <Zap size={18} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-white flex items-center gap-2">
+                      Fal.ai Live Render Studio Test
+                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-900/60 text-purple-300 border border-purple-700/50 font-mono">
+                        REAL RENDER
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      Ingin memastikan render gambar 4K atau klip video nyata berjalan normal? Uji langsung dengan custom API key dan amati hasil durasi render.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveTab('livetest')}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all shrink-0 cursor-pointer shadow-lg shadow-purple-900/30 flex items-center gap-2"
+                >
+                  <Play size={13} className="fill-white" />
+                  Buka Live Test Studio
+                </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1020,6 +1087,11 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                 ))}
               </div>
             </div>
+          )}
+
+          {/* TAB: FAL.AI LIVE TEST STUDIO */}
+          {activeTab === 'livetest' && (
+            <FounderFalLiveTester />
           )}
 
           {/* TAB: API VAULT */}
@@ -1235,30 +1307,42 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                   <div className="relative">
                     <select
                       id="fcc-fal-model-select"
-                      value={inputModel || 'fal-ai/hunyuan-video'}
+                      value={inputModel || 'fal-ai/wan-i2v'}
                       onChange={e => setInputModel(e.target.value)}
                       className="w-full bg-[#141414] border border-[#2a2a2a] focus:border-indigo-500 rounded-xl px-4 py-2.5 text-xs font-medium text-white outline-none transition-colors appearance-none cursor-pointer pr-10"
                     >
-                      <option value="fal-ai/wan-v2.1" className="bg-[#1a1a1a] text-white py-2">
-                        Wan 2.1 (Sangat efisien & hemat)
+                      <option value="fal-ai/wan-i2v" className="bg-[#1a1a1a] text-white py-2">
+                        fal-ai/wan-i2v (Wan 2.1 Standard 720p - Budget)
                       </option>
-                      <option value="fal-ai/seedance-2.5" className="bg-[#1a1a1a] text-white py-2">
-                        Seedance 2.5 (Audio & sinematik)
+                      <option value="bytedance/seedance-2.0/fast/image-to-video" className="bg-[#1a1a1a] text-white py-2">
+                        bytedance/seedance-2.0/fast/image-to-video (SeaDance 2.0 Fast - Budget)
                       </option>
-                      <option value="fal-ai/seedance-2.0" className="bg-[#1a1a1a] text-white py-2">
-                        Seedance 2.0 (Cepat & stabil)
+                      <option value="fal-ai/hunyuan-video-image-to-video" className="bg-[#1a1a1a] text-white py-2">
+                        fal-ai/hunyuan-video-image-to-video (Tencent Hunyuan 720p - Budget)
                       </option>
-                      <option value="fal-ai/sora-3" className="bg-[#1a1a1a] text-white py-2">
-                        Sora 3 (Realistis & natural)
+                      <option value="bytedance/seedance-2.0/image-to-video" className="bg-[#1a1a1a] text-white py-2">
+                        bytedance/seedance-2.0/image-to-video (SeaDance 2.0 Standard 720p - Balanced)
                       </option>
-                      <option value="fal-ai/hunyuan-video" className="bg-[#1a1a1a] text-white py-2">
-                        Hunyuan Video (Default)
+                      <option value="fal-ai/kling-video/v2.1/standard/image-to-video" className="bg-[#1a1a1a] text-white py-2">
+                        fal-ai/kling-video/v2.1/standard/image-to-video (Kling 2.1 Standard 720p - Balanced)
                       </option>
-                      <option value="fal-ai/kling-1.5" className="bg-[#1a1a1a] text-white py-2">
-                        Kling 1.5 (Kreatif)
+                      <option value="fal-ai/kling-video/o3/standard/image-to-video" className="bg-[#1a1a1a] text-white py-2">
+                        fal-ai/kling-video/o3/standard/image-to-video (Kling O3 Standard 720p - Balanced)
                       </option>
-                      <option value="fal-ai/minimax-h3" className="bg-[#1a1a1a] text-white py-2">
-                        MiniMax H3 (Karakter presisi)
+                      <option value="fal-ai/minimax/video-01/image-to-video" className="bg-[#1a1a1a] text-white py-2">
+                        fal-ai/minimax/video-01/image-to-video (MiniMax Video 01 720p - Balanced)
+                      </option>
+                      <option value="fal-ai/minimax/video-01-live/image-to-video" className="bg-[#1a1a1a] text-white py-2">
+                        fal-ai/minimax/video-01-live/image-to-video (MiniMax Live - Balanced)
+                      </option>
+                      <option value="fal-ai/minimax/hailuo-02/standard/image-to-video" className="bg-[#1a1a1a] text-white py-2">
+                        fal-ai/minimax/hailuo-02/standard/image-to-video (MiniMax Hailuo 02 720p - Balanced)
+                      </option>
+                      <option value="bytedance/seedance-2.5/image-to-video" className="bg-[#1a1a1a] text-white py-2">
+                        bytedance/seedance-2.5/image-to-video (SeaDance 2.5 Native 30s - Premium)
+                      </option>
+                      <option value="fal-ai/kling-video/v3/pro/image-to-video" className="bg-[#1a1a1a] text-white py-2">
+                        fal-ai/kling-video/v3/pro/image-to-video (Kling 3.0 Pro 1080p - Premium)
                       </option>
                     </select>
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">

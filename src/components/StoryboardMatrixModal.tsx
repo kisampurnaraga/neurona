@@ -58,7 +58,7 @@ interface StoryboardMatrixModalProps {
   onResyncScene?: (action: 'ADD' | 'REMOVE', targetIndex: number) => Promise<void>;
 }
 
-export type ImageModelId = 'chatgpt-image-2' | 'gemini-imagen-3' | 'flux-diffusion';
+export type ImageModelId = 'standard' | 'precision' | 'draft' | 'chatgpt-image-2' | 'gemini-imagen-3' | 'flux-diffusion';
 
 export interface ImageModelOption {
   id: ImageModelId;
@@ -72,31 +72,31 @@ export interface ImageModelOption {
 
 export const IMAGE_MODEL_OPTIONS: ImageModelOption[] = [
   {
-    id: 'chatgpt-image-2',
-    name: 'ChatGPT Image 2 (DALL-E 3)',
-    shortName: 'ChatGPT Image 2',
+    id: 'standard',
+    name: 'Standar (Nano Banana 2 & Edit)',
+    shortName: 'Standar (15 CR)',
+    costPerImage: 15,
+    badge: '15 Kredit',
+    badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+    desc: 'Konsistensi karakter memadai untuk Animasi & Edukasi'
+  },
+  {
+    id: 'precision',
+    name: 'Presisi Tinggi (Nano Banana Pro Edit)',
+    shortName: 'Presisi Pro (25 CR)',
+    costPerImage: 25,
+    badge: '25 Kredit',
+    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+    desc: 'Wajib untuk Affiliate & produk/wajah 100% identik'
+  },
+  {
+    id: 'draft',
+    name: 'Hemat / Draft (FLUX.1 Schnell)',
+    shortName: 'Draft (5 CR)',
     costPerImage: 5,
     badge: '5 Kredit',
-    badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-    desc: 'Kualitas komersial tertinggi & detail tekstur presisi'
-  },
-  {
-    id: 'gemini-imagen-3',
-    name: 'Google Imagen 3 (Gemini)',
-    shortName: 'Gemini Imagen 3',
-    costPerImage: 3,
-    badge: '3 Kredit',
-    badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
-    desc: 'Ultra cepat, fotorealistis & pencahayaan natural'
-  },
-  {
-    id: 'flux-diffusion',
-    name: 'Flux AI Ultra HD',
-    shortName: 'Flux AI',
-    costPerImage: 2,
-    badge: '2 Kredit',
-    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-    desc: 'Pilihan hemat, tajam & konsistensi warna stabil'
+    badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+    desc: 'Eksplorasi gaya visual cepat & preview storyboard kilat'
   }
 ];
 
@@ -109,16 +109,19 @@ export interface VideoModelOption {
 }
 
 export const VIDEO_MODEL_OPTIONS: VideoModelOption[] = [
-  { id: 'fal-wan21', name: 'Wan 2.1', shortName: 'Wan 2.1', desc: 'Sangat efisien & hemat', costPerVideo: 5 },
-  { id: 'fal-seedance25', name: 'Seedance 2.5', shortName: 'Seedance 2.5', desc: 'Audio & sinematik', costPerVideo: 15 },
-  { id: 'fal-seedance20', name: 'Seedance 2.0', shortName: 'Seedance 2.0', desc: 'Cepat & stabil', costPerVideo: 10 },
-  { id: 'fal-sora3', name: 'Sora 3', shortName: 'Sora 3', desc: 'Realistis & natural', costPerVideo: 20 },
-  { id: 'fal-sora2', name: 'Sora 2', shortName: 'Sora 2', desc: 'Generasi sebelumnya', costPerVideo: 15 },
-  { id: 'fal-kling15', name: 'Kling 1.5', shortName: 'Kling 1.5', desc: 'Kreatif', costPerVideo: 15 },
-  { id: 'fal-minimax', name: 'MiniMax H3', shortName: 'MiniMax H3', desc: 'Karakter presisi', costPerVideo: 15 },
-  { id: 'byteplus', name: 'PixelDance', shortName: 'PixelDance', desc: 'Komersial', costPerVideo: 15 },
-  { id: 'veo', name: 'Google Veo 3.1', shortName: 'Veo 3.1', desc: 'Ultra HD', costPerVideo: 15 },
-  { id: 'runway', name: 'Runway Gen-3', shortName: 'Runway Gen-3', desc: 'Sinematik', costPerVideo: 15 }
+  { id: 'fal-ai/wan-i2v', name: 'Wan 2.1 (Budget - 720p)', shortName: 'Wan 2.1', desc: 'Sangat efisien & hemat', costPerVideo: 10 },
+  { id: 'bytedance/seedance-2.0/fast/image-to-video', name: 'SeaDance 2.0 Fast (Budget)', shortName: 'SeaDance 2.0 Fast', desc: 'Render kilat & murah', costPerVideo: 10 },
+  { id: 'fal-ai/hunyuan-video-image-to-video', name: 'Hunyuan Video (Budget)', shortName: 'Hunyuan Video', desc: 'Stabil & efisien', costPerVideo: 10 },
+  { id: 'bytedance/seedance-2.0/image-to-video', name: 'SeaDance 2.0 Standard (Balanced)', shortName: 'SeaDance 2.0 Std', desc: 'Kualitas seimbang 720p', costPerVideo: 15 },
+  { id: 'fal-ai/kling-video/v2.1/standard/image-to-video', name: 'Kling 2.1 Standard (Balanced)', shortName: 'Kling 2.1', desc: 'Sinematik & kreatif', costPerVideo: 15 },
+  { id: 'fal-ai/kling-video/o3/standard/image-to-video', name: 'Kling O3 Standard (Balanced)', shortName: 'Kling O3', desc: 'Pencahayaan presisi', costPerVideo: 15 },
+  { id: 'fal-ai/minimax/video-01/image-to-video', name: 'MiniMax Video 01 (Balanced)', shortName: 'MiniMax Video 01', desc: 'Konsistensi karakter tinggi', costPerVideo: 15 },
+  { id: 'fal-ai/minimax/video-01-live/image-to-video', name: 'MiniMax Video 01 Live (Balanced)', shortName: 'MiniMax Live', desc: 'Dinamika gerak natural', costPerVideo: 15 },
+  { id: 'fal-ai/minimax/hailuo-02/standard/image-to-video', name: 'MiniMax Hailuo 02 (Balanced)', shortName: 'Hailuo 02', desc: 'Gerakan ekspresif', costPerVideo: 15 },
+  { id: 'bytedance/seedance-2.5/image-to-video', name: 'SeaDance 2.5 (Premium - Native 30s)', shortName: 'SeaDance 2.5', desc: 'Native 30s, audio & sinematik', costPerVideo: 20 },
+  { id: 'fal-ai/kling-video/v3/pro/image-to-video', name: 'Kling 3.0 Pro 1080p (Premium)', shortName: 'Kling 3.0 Pro', desc: 'Resolusi 1080p ultra jernih', costPerVideo: 25 },
+  { id: 'veo', name: 'Google Veo 3.1', shortName: 'Veo 3.1', desc: 'Ultra HD fotorealistik', costPerVideo: 15 },
+  { id: 'byteplus', name: 'BytePlus PixelDance', shortName: 'PixelDance', desc: 'Komersial dinamis', costPerVideo: 15 }
 ];
 
 export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
@@ -1192,7 +1195,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                             'bg-slate-900 text-slate-400 border-slate-800'
                           }`}>
                             {scene.videoStatus === 'FAILED' ? <AlertCircle size={10} className="text-rose-400" /> : <Film size={10} />}
-                            <span>Video: {scene.videoStatus === 'FAILED' ? 'GAGAL (COBA LAGI)' : isVideoGenerating ? 'RENDERING...' : (scene.videoStatus || 'PENDING')}</span>
+                            <span>Video: {scene.videoStatus === 'FAILED' ? 'GAGAL (COBA LAGI)' : isVideoGenerating ? (scene.videoProgress ? `RENDERING... (${scene.videoProgress})` : 'RENDERING...') : (scene.videoStatus || 'PENDING')}</span>
                           </span>
                         </div>
                       </div>

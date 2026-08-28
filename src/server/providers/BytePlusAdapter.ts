@@ -14,7 +14,7 @@ export class BytePlusAdapter implements VideoGenerationProvider {
     return config.status === 'ERROR' ? 'ERROR' : 'READY';
   }
 
-  async generateScene(scene: Scene, context: string): Promise<string> {
+  async generateScene(scene: Scene, context: string, onProgress?: (msg: string) => void): Promise<string> {
     const config = FounderService.getBytePlusConfig();
     const apiKey = config.apiKey || process.env.BYTEPLUS_API_KEY;
     const endpoint = config.endpoint || process.env.BYTEPLUS_BASE_URL || 'https://ark.ap-southeast-1.byteplusapi.com/api/v3';

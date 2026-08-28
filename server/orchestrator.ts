@@ -20,6 +20,8 @@ import { getVideoProvider } from "../src/server/providers";
 import { LLMService } from "./llmService";
 import { ImageGenerationService } from "./imageService";
 import { keyRotator } from "./keyRotator";
+import { CreditService } from "./creditService";
+import { getFalImageModelForStudio } from "./falModelConfig";
 
 export const projectEvents = new EventEmitter();
 export const projects = new Map<string, ProductionProject>();
@@ -1076,23 +1078,50 @@ export class ProductionOrchestrator {
   }
 
   /**
-   * Generates a single Scene's consistent character keyframe image (Cost: based on model)
+   * Generates a single Scene's consistent character keyframe image (Cost: based on model & resolution)
    */
-  static async generateSceneImage(id: string, sceneId: string, imageEngine?: string) {
+  static async generateSceneImage(id: string, sceneId: string, imageEngine?: string, resolution: string = '1K') {
     const project = projects.get(id);
     if (!project || !project.storyboard) return;
 
     const sceneIdx = project.storyboard.scenes.findIndex(s => s.id === sceneId);
-    if (sceneIdx === -1) return;
+    if (sceneIdx === -1) { require('fs').appendFileSync('outputs/debug.log', 'Scene not found!\n'); return; } else { require('fs').appendFileSync('outputs/debug.log', 'Scene found at ' + sceneIdx + '\n'); }
 
     const scene = project.storyboard.scenes[sceneIdx];
     scene.imageStatus = 'GENERATING';
-    const engineLabel = imageEngine === 'gemini-imagen-3' ? 'Google Imagen 3' : (imageEngine === 'flux-diffusion' ? 'Flux AI' : 'ChatGPT Image 2');
-    appendLog(project, 'SINTA', `GENERATING KEYFRAME IMAGE [Adegan ${sceneIdx + 1}] (${engineLabel}) -> Karakter: ${project.characterProfile?.name || 'Utama'}`, 'INFO');
+
+    // 1. Determine Model & Calculate Credit Cost
+    const modelDef = getFalImageModelForStudio(project.videoType, {
+      isSubsequentScene: sceneIdx > 0,
+      hasReferenceImages: !!(project.characterProfile?.referenceImageUrl || (project as any).masterCharacterImageUrl || (project as any).masterProductImageUrl || project.affiliateConfig?.productImages?.[0]),
+      tier: (imageEngine === 'draft' || imageEngine === 'precision' || imageEngine === 'standard') ? imageEngine : undefined,
+      forceModelId: imageEngine?.startsWith('fal-ai/') ? imageEngine : undefined
+    });
+
+    const isFounderBypass = (project as any).isFounderBypass || (project.userId === 'founder' || project.userId === 'admin');
+    const creditCalc = CreditService.calculateImageCreditCost(modelDef.id, { resolution, isFounderBypass });
+
+    appendLog(project, 'SINTA', `MEMULAI GENERATE KEYFRAME ADEGAN ${sceneIdx + 1} [${modelDef.name}] (${creditCalc.credits} Kredit, Res: ${resolution})...`, 'INFO');
     projectEvents.emit(`update:${id}`, project);
+
+    // 2. Hold Credits if user is authenticated
+    let holdSuccess = true;
+    if (project.userId && creditCalc.credits > 0) {
+      const holdRes = await CreditService.holdCredits(project.userId, creditCalc.credits, `Keyframe Scene ${sceneIdx + 1} (${modelDef.name})`);
+      if (!holdRes.success) {
+        holdSuccess = false;
+        scene.imageStatus = 'FAILED';
+        appendLog(project, 'ERROR', `Gagal generate keyframe: ${holdRes.message || 'Kredit tidak mencukupi'}. Butuh ${creditCalc.credits} kredit.`, 'ERROR');
+        projectEvents.emit(`update:${id}`, project);
+        return;
+      }
+    }
 
     try {
       const artStyle = project.animationConfig?.artStyle || project.educationalConfig?.visualStyle;
+      const masterCharUrl = project.masterCharacterImageUrl || project.characterProfile?.referenceImageUrl;
+      const masterProdUrl = project.masterProductImageUrl || project.affiliateConfig?.productImages?.[0] || (project.affiliateConfig as any)?.productImage;
+
       const imageUrl = await ImageGenerationService.generateKeyframeImage({
         scene,
         sceneIndex: sceneIdx,
@@ -1103,7 +1132,14 @@ export class ProductionOrchestrator {
         animationConfig: project.animationConfig,
         educationalConfig: project.educationalConfig,
         engine: imageEngine,
-        forceRegenerate: true
+        resolution,
+        masterCharacterImageUrl: masterCharUrl,
+        masterProductImageUrl: masterProdUrl,
+        forceRegenerate: true,
+        onLog: (msg, level) => {
+          appendLog(project, 'SINTA', msg, level || 'INFO');
+          projectEvents.emit(`update:${id}`, project);
+        }
       });
 
       scene.imageUrl = imageUrl;
@@ -1111,11 +1147,26 @@ export class ProductionOrchestrator {
         scene.assetUrl = imageUrl;
       }
       scene.imageStatus = 'COMPLETED';
+
+      // Lock as master reference if this is the first scene with a generated image
+      if (sceneIdx === 0 || !project.masterCharacterImageUrl) {
+        project.masterCharacterImageUrl = imageUrl;
+        if (project.characterProfile && !project.characterProfile.referenceImageUrl) {
+          project.characterProfile.referenceImageUrl = imageUrl;
+        }
+      }
+
+      saveProjects();
       appendLog(project, 'SINTA', `KEYFRAME ADEGAN ${sceneIdx + 1} SELESAI -> Konsistensi visual terkunci`, 'SUCCESS');
       projectEvents.emit(`update:${id}`, project);
     } catch (e: any) {
       scene.imageStatus = 'FAILED';
+      // Refund Credits on error
+      if (project.userId && creditCalc.credits > 0 && holdSuccess) {
+        await CreditService.refundCredits(project.userId, creditCalc.credits, `Refund: Gagal render keyframe scene ${sceneIdx + 1}`);
+      }
       appendLog(project, 'ERROR', `Gagal generate keyframe adegan ${sceneIdx + 1}: ${e.message}`, 'ERROR');
+      saveProjects();
       projectEvents.emit(`update:${id}`, project);
     }
   }
@@ -1123,7 +1174,7 @@ export class ProductionOrchestrator {
   /**
    * Generates consistent character keyframe images for all scenes
    */
-  static async generateAllSceneImages(id: string, imageEngine?: string) {
+  static async generateAllSceneImages(id: string, imageEngine?: string, resolution: string = '1K') {
     const project = projects.get(id);
     if (!project || !project.storyboard) return;
 
@@ -1134,8 +1185,7 @@ export class ProductionOrchestrator {
     project.activeAgent = 'Storyboard Director';
     project.agentStatus['Storyboard Director'] = 'WORKING';
 
-    const engineLabel = imageEngine === 'gemini-imagen-3' ? 'Google Imagen 3' : (imageEngine === 'flux-diffusion' ? 'Flux AI' : 'ChatGPT Image 2');
-    appendLog(project, 'PROTOCOL', `USER MENYETUJUI GENERATE KEYFRAME KARAKTER KONSISTEN (${engineLabel})`, 'SUCCESS');
+    appendLog(project, 'PROTOCOL', `USER MENYETUJUI GENERATE KEYFRAME SEMUA ADEGAN (Res: ${resolution})`, 'SUCCESS');
     projectEvents.emit(`update:${id}`, project);
 
     const total = project.storyboard.scenes.length;
@@ -1147,28 +1197,78 @@ export class ProductionOrchestrator {
       project.currentPhaseName = `Generating Keyframe ${i + 1}/${total} (${project.characterProfile?.name || 'Karakter'})`;
       projectEvents.emit(`update:${id}`, project);
 
-      const imageUrl = await ImageGenerationService.generateKeyframeImage({
-        scene: sc,
-        sceneIndex: i,
-        videoType: project.videoType,
-        characterProfile: project.characterProfile,
-        artStyle,
-        affiliateConfig: project.affiliateConfig,
-        animationConfig: project.animationConfig,
-        educationalConfig: project.educationalConfig,
-        engine: imageEngine,
-        forceRegenerate: true
+      const modelDef = getFalImageModelForStudio(project.videoType, {
+        isSubsequentScene: i > 0,
+        hasReferenceImages: !!(project.characterProfile?.referenceImageUrl || (project as any).masterCharacterImageUrl || (project as any).masterProductImageUrl || project.affiliateConfig?.productImages?.[0]),
+        tier: (imageEngine === 'draft' || imageEngine === 'precision' || imageEngine === 'standard') ? imageEngine : undefined,
+        forceModelId: imageEngine?.startsWith('fal-ai/') ? imageEngine : undefined
       });
 
-      sc.imageUrl = imageUrl;
-      if (!sc.assetUrl) {
-        sc.assetUrl = imageUrl;
+      const isFounderBypass = (project as any).isFounderBypass || (project.userId === 'founder' || project.userId === 'admin');
+      const creditCalc = CreditService.calculateImageCreditCost(modelDef.id, { resolution, isFounderBypass });
+
+      let holdSuccess = true;
+      if (project.userId && creditCalc.credits > 0) {
+        const holdRes = await CreditService.holdCredits(project.userId, creditCalc.credits, `Keyframe Scene ${i + 1} (${modelDef.name})`);
+        if (!holdRes.success) {
+          sc.imageStatus = 'FAILED';
+          appendLog(project, 'ERROR', `Gagal generate keyframe adegan ${i + 1}: ${holdRes.message || 'Kredit tidak mencukupi'}. Butuh ${creditCalc.credits} kredit.`, 'ERROR');
+          projectEvents.emit(`update:${id}`, project);
+          continue;
+        }
       }
-      sc.imageStatus = 'COMPLETED';
-      appendLog(project, 'SINTA', `Keyframe Adegan ${i + 1}/${total} siap -> Visual terpasang`, 'SUCCESS');
-      projectEvents.emit(`update:${id}`, project);
+
+      try {
+        const masterCharUrl = project.masterCharacterImageUrl || project.characterProfile?.referenceImageUrl;
+        const masterProdUrl = project.masterProductImageUrl || project.affiliateConfig?.productImages?.[0] || (project.affiliateConfig as any)?.productImage;
+
+        const imageUrl = await ImageGenerationService.generateKeyframeImage({
+          scene: sc,
+          sceneIndex: i,
+          videoType: project.videoType,
+          characterProfile: project.characterProfile,
+          artStyle,
+          affiliateConfig: project.affiliateConfig,
+          animationConfig: project.animationConfig,
+          educationalConfig: project.educationalConfig,
+          engine: imageEngine,
+          resolution,
+          masterCharacterImageUrl: masterCharUrl,
+          masterProductImageUrl: masterProdUrl,
+          forceRegenerate: true,
+          onLog: (msg, level) => {
+            appendLog(project, 'SINTA', msg, level || 'INFO');
+            projectEvents.emit(`update:${id}`, project);
+          }
+        });
+
+        sc.imageUrl = imageUrl;
+        if (!sc.assetUrl) {
+          sc.assetUrl = imageUrl;
+        }
+        sc.imageStatus = 'COMPLETED';
+
+        // Anchor master reference from Scene 0 or first successful image
+        if (i === 0 || !project.masterCharacterImageUrl) {
+          project.masterCharacterImageUrl = imageUrl;
+          if (project.characterProfile && !project.characterProfile.referenceImageUrl) {
+            project.characterProfile.referenceImageUrl = imageUrl;
+          }
+        }
+
+        appendLog(project, 'SINTA', `Keyframe Adegan ${i + 1}/${total} siap -> Visual terpasang`, 'SUCCESS');
+        projectEvents.emit(`update:${id}`, project);
+      } catch (e: any) {
+        sc.imageStatus = 'FAILED';
+        if (project.userId && creditCalc.credits > 0 && holdSuccess) {
+          await CreditService.refundCredits(project.userId, creditCalc.credits, `Refund: Gagal render keyframe scene ${i + 1}`);
+        }
+        appendLog(project, 'ERROR', `Gagal generate keyframe adegan ${i + 1}: ${e.message}`, 'ERROR');
+        projectEvents.emit(`update:${id}`, project);
+      }
     }
 
+    saveProjects();
     project.overallProgress = 65;
     project.currentPhaseName = 'Keyframe Karakter Konsisten Selesai. Siap Lanjut ke Video!';
     project.agentStatus['Storyboard Director'] = 'COMPLETE';
@@ -1180,7 +1280,9 @@ export class ProductionOrchestrator {
    * Generates video for a single scene (Cost: 15 Credits)
    */
   static async generateSceneVideo(id: string, sceneId: string) {
+    require('fs').appendFileSync('outputs/debug.log', '[generateSceneVideo] called with id: ' + id + ' sceneId: ' + sceneId + '\n');
     const project = projects.get(id);
+    require('fs').appendFileSync('outputs/debug.log', '[generateSceneVideo] project exists: ' + !!project + ' storyboard exists: ' + !!project?.storyboard + '\n');
     if (!project || !project.storyboard) return;
 
     const sceneIdx = project.storyboard.scenes.findIndex(s => s.id === sceneId);
@@ -1188,6 +1290,7 @@ export class ProductionOrchestrator {
 
     const scene = project.storyboard.scenes[sceneIdx];
     
+    require('fs').appendFileSync('outputs/debug.log', 'Setting videoStatus to GENERATING\n');
     scene.videoStatus = 'GENERATING';
     scene.status = 'GENERATING';
     const provider = getVideoProvider(project.videoModel);
@@ -1216,7 +1319,10 @@ export class ProductionOrchestrator {
         }
       }
 
-      const generatedUrl = await provider.generateScene(scene as any, (project.brief || '') + ' TYPE:' + project.videoType);
+      const generatedUrl = await provider.generateScene(scene as any, (project.brief || '') + ' TYPE:' + project.videoType, (progressStatus) => {
+         scene.videoProgress = progressStatus;
+         projectEvents.emit(`update:${id}`, project);
+      });
       scene.videoUrl = generatedUrl;
       scene.videoStatus = 'COMPLETED';
       scene.status = 'COMPLETED';
@@ -1235,6 +1341,7 @@ export class ProductionOrchestrator {
       scene.videoStatus = 'FAILED';
       scene.status = 'FAILED';
       appendLog(project, 'ERROR', `Gagal render video adegan ${sceneIdx + 1}: ${e.message}`, 'ERROR');
+      saveProjects();
       projectEvents.emit(`update:${id}`, project);
     }
   }
@@ -1342,7 +1449,10 @@ export class ProductionOrchestrator {
                   }
                 }
                 
-                const generatedUrl = await provider.generateScene(scene as any, (project.brief || '') + ' TYPE:' + project.videoType);
+                const generatedUrl = await provider.generateScene(scene as any, (project.brief || '') + ' TYPE:' + project.videoType, (progressStatus) => {
+                  scene.videoProgress = progressStatus;
+                  projectEvents.emit(`update:${id}`, project);
+                });
                 scene.videoUrl = generatedUrl;
                 scene.status = 'COMPLETED';
                 scene.videoStatus = 'COMPLETED';

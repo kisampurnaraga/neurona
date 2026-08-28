@@ -1631,6 +1631,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
                     voiceoverText={currentScene?.voiceOver}
                     status={project?.status}
                     activeAgent={project?.activeAgent || 'GATOTKACA SORA'}
+                    videoModel={project?.videoModel}
                     progressPercentage={progressPercentage}
                     currentPhaseName={project?.currentPhaseName}
                     scenes={project?.storyboard?.scenes}

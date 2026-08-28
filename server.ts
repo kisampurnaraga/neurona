@@ -427,7 +427,8 @@ createdAt: new Date().toISOString()
 
   app.get("/api/providers/status", async (req, res) => {
     try {
-      const provider = getVideoProvider();
+      const model = req.query.model as string | undefined;
+      const provider = getVideoProvider(model);
       const status = await provider.getStatus();
       res.json({ provider: provider.name, isMock: provider.isMock, status });
     } catch (e: any) {
@@ -693,6 +694,140 @@ createdAt: new Date().toISOString()
      }
   });
 
+  // Fal Model Catalog Endpoint (Public / Client & Founder accessible)
+  app.get('/api/fal/models', async (req, res) => {
+    try {
+      const { FAL_MODELS, FAL_TIER_META, FAL_TIER_DEFAULTS } = await import('./server/falModelConfig');
+      const { CreditService } = await import('./server/creditService');
+      const activeFalConfig = FounderService.getFalConfig();
+      const pricing = CreditService.getPricingConfig();
+
+      const modelsWithCalculatedCost = FAL_MODELS.map(m => {
+        const costInfo = CreditService.calculateCreditCost(m.id, { duration: m.defaultDuration });
+        return {
+          ...m,
+          calculatedCost: costInfo
+        };
+      });
+
+      res.json({
+        success: true,
+        models: modelsWithCalculatedCost,
+        tiers: FAL_TIER_META,
+        tierDefaults: FAL_TIER_DEFAULTS,
+        activeModel: activeFalConfig.model || FAL_TIER_DEFAULTS.balanced,
+        pricing
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Fal Image Models Endpoint (T2I & Image Edit)
+  app.get('/api/fal/image-models', async (req, res) => {
+    try {
+      const { FAL_IMAGE_MODELS, IMAGE_MODEL_TIERS } = await import('./server/falModelConfig');
+      const { CreditService } = await import('./server/creditService');
+      const pricing = CreditService.getPricingConfig();
+
+      const modelsWithCalculatedCost = FAL_IMAGE_MODELS.map(m => {
+        const cost05K = CreditService.calculateImageCreditCost(m.id, { resolution: '0.5K' });
+        const cost1K = CreditService.calculateImageCreditCost(m.id, { resolution: '1K' });
+        const cost2K = CreditService.calculateImageCreditCost(m.id, { resolution: '2K' });
+        const cost4K = CreditService.calculateImageCreditCost(m.id, { resolution: '4K' });
+        return {
+          ...m,
+          calculatedCost: {
+            '0.5K': cost05K,
+            '1K': cost1K,
+            '2K': cost2K,
+            '4K': cost4K
+          }
+        };
+      });
+
+      res.json({
+        success: true,
+        models: modelsWithCalculatedCost,
+        tiers: IMAGE_MODEL_TIERS,
+        pricing
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // FCC Pricing Configuration
+  app.get('/api/fcc/pricing', (req, res) => {
+    try {
+      const { CreditService } = require('./server/creditService');
+      res.json({ success: true, pricing: CreditService.getPricingConfig() });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/fcc/pricing', (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const { CreditService } = require('./server/creditService');
+      const updated = CreditService.updatePricingConfig(req.body);
+      res.json({ success: true, pricing: updated });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Fal.ai Live Test Runner Endpoint (Real Render Verification with Custom or Stored Key)
+  app.post('/api/fcc/fal-live-test', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') {
+      return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    }
+    try {
+      const { executeFalLiveTest } = await import('./server/falLiveTester');
+      const { apiKey, target, customPrompt } = req.body || {};
+      const results = await executeFalLiveTest({ apiKey, target, customPrompt });
+      res.json(results);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // FCC Fal All-Models Test & Validation Endpoint
+  app.post('/api/fcc/fal-test-models', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const { FAL_MODELS } = await import('./server/falModelConfig');
+      const { keyRotator } = await import('./server/keyRotator');
+      const key = keyRotator.getNextFalKey() || process.env.FAL_KEY || '';
+
+      if (!key) {
+        return res.status(400).json({ success: false, error: 'FAL_KEY tidak terkonfigurasi pada sistem.' });
+      }
+
+      // Check key health format
+      const isColonFormat = key.includes(':');
+      const results = FAL_MODELS.map(m => ({
+        id: m.id,
+        name: m.name,
+        tier: m.tier,
+        endpoint: `https://queue.fal.run/${m.id}`,
+        prefixValid: m.id.startsWith('bytedance/') || m.id.startsWith('fal-ai/'),
+        status: 'READY'
+      }));
+
+      res.json({
+        success: true,
+        keyConfigured: true,
+        keyFormatValid: isColonFormat || key.length > 20,
+        totalModels: results.length,
+        models: results
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post('/api/projects', async (req, res) => {
     try {
       const id = await ProductionOrchestrator.startProduction(req.body);
@@ -722,8 +857,8 @@ createdAt: new Date().toISOString()
 
   app.post('/api/projects/:id/generate-scene-image', async (req, res) => {
     try {
-      const { sceneId, imageEngine } = req.body;
-      await ProductionOrchestrator.generateSceneImage(req.params.id, sceneId, imageEngine);
+      const { sceneId, imageEngine, resolution } = req.body;
+      await ProductionOrchestrator.generateSceneImage(req.params.id, sceneId, imageEngine, resolution || '1K');
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -732,8 +867,8 @@ createdAt: new Date().toISOString()
 
   app.post('/api/projects/:id/generate-all-images', async (req, res) => {
     try {
-      const { imageEngine } = req.body;
-      await ProductionOrchestrator.generateAllSceneImages(req.params.id, imageEngine);
+      const { imageEngine, resolution } = req.body;
+      await ProductionOrchestrator.generateAllSceneImages(req.params.id, imageEngine, resolution || '1K');
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -743,8 +878,22 @@ createdAt: new Date().toISOString()
   app.post('/api/projects/:id/generate-scene-video', async (req, res) => {
     try {
       const { sceneId } = req.body;
-      await ProductionOrchestrator.generateSceneVideo(req.params.id, sceneId);
-      res.json({ success: true });
+      // Do not await to avoid 504 timeouts on the frontend. The video generation takes minutes.
+      // The frontend will poll the project state to see the updated videoUrl.
+      ProductionOrchestrator.generateSceneVideo(req.params.id, sceneId).catch(err => {
+         console.error('[BACKGROUND GENERATE VIDEO ERROR]', err);
+      });
+      res.json({ success: true, message: 'Video generation started in background.' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/admin/diagnostics/video-models', async (req, res) => {
+    try {
+      const { runVideoModelsDiagnostic } = await import('./src/server/diagnostics');
+      const results = await runVideoModelsDiagnostic();
+      res.json({ success: true, results });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

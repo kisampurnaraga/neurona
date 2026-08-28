@@ -1,0 +1,35 @@
+{
+  "customFalConfig": {
+    "apiKey": "invalid_fal_key_12345_intentionally_bad",
+    "model": "fal-ai/wan-i2v",
+    "endpoint": "https://api.fal.ai/v1",
+    "status": "READY",
+    "lastTested": "2026-08-27T23:13:35.210Z"
+  },
+  "customSoraConfig": {
+    "apiKey": "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",
+    "model": "sora-1.0-turbo",
+    "endpoint": "https://api.openai.com/v1/videos",
+    "status": "READY"
+  },
+  "customVeoConfig": {
+    "apiKey": "AQ.Ab8RN6KX2bEpiByCBR9Z-dGFx5oARHj9ehADiaAMAUD4-DPr6Q",
+    "model": "veo-3.1-generate-preview",
+    "endpoint": "https://generativelanguage.googleapis.com/v1beta",
+    "status": "READY"
+  },
+  "customBytePlusConfig": {
+    "apiKey": "ark-5e46e142-36b5-47f3-a7d7-2e2e23d94a28-c13a5",
+    "endpointId": "ep-20241108-neuronna-pixeldance-v1",
+    "model": "dreamina-seedance-2-0-mini-260615",
+    "endpoint": "https://ark.ap-southeast-1.byteplusapi.com/api/v3",
+    "status": "READY"
+  },
+  "flags": {
+    "ambient_clap_activation": true,
+    "voice_output": true,
+    "production_mock_provider": false,
+    "hermes_intelligence": true,
+    "openclaw_execution": true
+  }
+}

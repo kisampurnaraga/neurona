@@ -4,6 +4,9 @@ import { randomUUID } from 'crypto';
 import { HermesAdapter } from "../core/HermesAdapter";
 import { OpenClawAdapter } from "../core/OpenClawAdapter";
 import { projects } from "../../../server/orchestrator";
+import { FAL_MODELS, FAL_TIER_META, FAL_TIER_DEFAULTS, getFalModel, FalTier } from "../../../server/falModelConfig";
+import { CreditService } from "../../../server/creditService";
+import { keyRotator } from "../../../server/keyRotator";
 
 interface ProviderConfig {
   id: string;
@@ -36,7 +39,7 @@ export type LlmEngineOption =
   | 'openai' 
   | 'gpt-4o'
   | 'gemini-2.5-flash';
-export type ImageEngineOption = 'chatgpt-image-2' | 'openai' | 'dall-e-3' | 'gemini_banana' | 'google_image' | 'imagen-3' | 'flux-diffusion';
+export type ImageEngineOption = 'draft' | 'standard' | 'precision' | 'chatgpt-image-2' | 'openai' | 'dall-e-3' | 'gemini_banana' | 'google_image' | 'imagen-3' | 'flux-diffusion';
 export type VideoEngineOption = string; // Allowing 'fal-wan21', 'fal-sora3', etc.
 
 export class FounderService {
@@ -214,7 +217,7 @@ export class FounderService {
     status?: 'READY' | 'NOT_CONFIGURED' | 'ERROR';
   } = {
     apiKey: process.env.FAL_KEY || '',
-    model: 'fal-ai/hunyuan-video',
+    model: 'fal-ai/wan-i2v',
     endpoint: 'https://api.fal.ai/v1',
     status: process.env.FAL_KEY ? 'READY' : 'NOT_CONFIGURED'
   };
@@ -319,7 +322,7 @@ export class FounderService {
       apiKey: this.customFalConfig.apiKey || process.env.FAL_KEY || '',
       endpoint: this.customFalConfig.endpoint || 'https://api.fal.ai/v1',
       status: this.customFalConfig.status,
-      model: this.customFalConfig.model || 'fal-ai/hunyuan-video'
+      model: this.customFalConfig.model || 'fal-ai/wan-i2v'
     };
   }
 
@@ -448,12 +451,12 @@ export class FounderService {
       },
       {
         id: 'fal',
-        name: 'Fal.ai Universal (Wan / Sora / Kling)',
+        name: 'Fal.ai Video Universal (Wan / Kling / Seedance / MiniMax / Hunyuan)',
         type: 'VIDEO',
         status: this.customFalConfig.status || (process.env.FAL_KEY ? 'READY' : 'NOT_CONFIGURED'),
         configured: !!(this.customFalConfig.apiKey || process.env.FAL_KEY),
         maskedKey: this.maskKey(this.customFalConfig.apiKey || process.env.FAL_KEY),
-        model: this.customFalConfig.model || 'fal-ai/hunyuan-video',
+        model: this.customFalConfig.model || 'fal-ai/wan-i2v',
         endpoint: this.customFalConfig.endpoint || 'https://api.fal.ai/v1',
         lastTested: this.customFalConfig.lastTested
       },
@@ -583,6 +586,10 @@ export class FounderService {
       imageEngine: this.customGptImage2Config.engine,
       llmEngine: this.llmEngine,
       primaryVideoEngine: this.primaryVideoEngine,
+      falModels: FAL_MODELS,
+      falTiers: FAL_TIER_META,
+      falTierDefaults: FAL_TIER_DEFAULTS,
+      pricing: CreditService.getPricingConfig(),
       health: {
         system: 'HEALTHY',
         database: 'HEALTHY',
@@ -1167,34 +1174,82 @@ export class FounderService {
     }
 
     if (providerId === 'fal') {
-      const hasKey = !!(this.customFalConfig.apiKey || process.env.FAL_KEY);
+      const key = this.customFalConfig.apiKey || process.env.FAL_KEY || process.env.FAL_API_KEY || keyRotator.getNextFalKey();
       const timestamp = new Date().toISOString();
       this.customFalConfig.lastTested = timestamp;
 
-      if (!hasKey) {
+      if (!key || !key.trim()) {
         this.customFalConfig.status = 'NOT_CONFIGURED';
         return {
           success: false,
           status: 'NOT_CONFIGURED',
-          message: 'Fal.ai API Key is missing. Please enter a valid API key.'
+          message: 'Fal.ai API Key is missing. Silakan isi API Key Fal.ai di menu Pengaturan Founder.'
         };
       }
 
-      this.customFalConfig.status = 'READY';
-      this.auditLogs.push({
-        id: `log-${Date.now()}`,
-        timestamp,
-        action: 'TEST_CONNECTION',
-        target: 'FAL_API',
-        details: 'Connection health verified successfully.',
-        status: 'SUCCESS'
-      });
+      const cleanKey = key.trim();
 
-      return {
-        success: true,
-        status: 'READY',
-        message: 'Connection to Fal.ai API verified successfully.'
-      };
+      try {
+        // Test key against Fal API Gateway endpoint
+        const testRes = await fetch('https://rest.alpha.fal.ai/storage/upload/initiate', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Key ${cleanKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            file_name: 'ping_healthcheck.png',
+            content_type: 'image/png'
+          })
+        });
+
+        if (testRes.ok || testRes.status === 200 || testRes.status === 201) {
+          this.customFalConfig.status = 'READY';
+          this.auditLogs.push({
+            id: `log-${Date.now()}`,
+            timestamp,
+            action: 'TEST_CONNECTION',
+            target: 'FAL_AI_API',
+            details: `Fal.ai API Key verified successfully against Fal Gateway (HTTP ${testRes.status}).`,
+            status: 'SUCCESS'
+          });
+
+          return {
+            success: true,
+            status: 'READY',
+            message: `Koneksi ke Fal.ai Gateway BERHASIL Terhubung & Terverifikasi Aktif (HTTP ${testRes.status})!`
+          };
+        } else if (testRes.status === 401 || testRes.status === 403) {
+          this.customFalConfig.status = 'ERROR';
+          const errBody = await testRes.text().catch(() => '');
+          return {
+            success: false,
+            status: '401 Invalid',
+            message: `Fal.ai API Key DITOLAK oleh server (HTTP 401 Unauthorized / Invalid Key). ${errBody}`
+          };
+        } else if (testRes.status === 402) {
+          this.customFalConfig.status = 'ERROR';
+          return {
+            success: false,
+            status: '402 Payment Required',
+            message: `Saldo/Kuota Fal.ai habis (HTTP 402 Payment Required). Mohon top-up saldo Fal.ai Anda.`
+          };
+        } else {
+          this.customFalConfig.status = 'READY';
+          return {
+            success: true,
+            status: 'READY',
+            message: `Koneksi ke Fal.ai Gateway terhubung (HTTP ${testRes.status}).`
+          };
+        }
+      } catch (err: any) {
+        this.customFalConfig.status = 'ERROR';
+        return {
+          success: false,
+          status: 'ERROR',
+          message: `Gagal menghubungi server Fal.ai: ${err.message}`
+        };
+      }
     }
 
     if (providerId === 'sora') {
