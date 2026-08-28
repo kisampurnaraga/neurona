@@ -133,7 +133,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   useEffect(() => {
     // Check if there is a rendered Veo video in history
     fetch('/api/v1/projects')
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) return null;
+        return res.json().catch(() => null);
+      })
       .then(data => {
         if (data?.success && Array.isArray(data.projects)) {
           const veoProjects = data.projects.filter((p: any) => 
@@ -162,7 +165,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           }
         }
       })
-      .catch(console.error);
+      .catch(err => {
+        console.warn('Projects fetch warning in landing page:', err);
+      });
   }, []);
 
   // Dynamic Payment & WhatsApp configuration from Founder Settings

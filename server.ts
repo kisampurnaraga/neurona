@@ -6,7 +6,8 @@ import { StitcherAgent } from './src/server/core/StitcherAgent';
 
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { ProductionOrchestrator, projectEvents, projects, loadProjects } from "./server/orchestrator";
+import { ProductionOrchestrator, projectEvents, projects, loadProjects, saveProjects } from "./server/orchestrator";
+import { CreditService } from "./server/creditService";
 import { getVideoProvider } from "./src/server/providers";
 import { ConversationalIntentRouter } from "./src/server/core/IntentRouter";
 import { FounderService } from "./src/server/fcc/FounderService";
@@ -17,12 +18,31 @@ import videoStudioRouter from "./server/routes/videoStudio";
 import workerRouter from "./server/routes/workerRoute";
 import founderPaymentRouter from "./server/routes/founderPayment";
 
+// Global safety handlers to prevent process crashing on background unhandled rejections
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED REJECTION]', reason);
+});
+
 async function startServer() {
   // Load existing projects from local db
   loadProjects();
 
   const app = express();
   const PORT = 3000;
+
+  // CORS & Preflight headers for all /api requests
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-role, x-custom-api-key');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
   
   // Increase payload limit to support base64 product images / attachments
   app.use(express.json({ limit: '50mb' }));
@@ -760,7 +780,6 @@ createdAt: new Date().toISOString()
   // FCC Pricing Configuration
   app.get('/api/fcc/pricing', (req, res) => {
     try {
-      const { CreditService } = require('./server/creditService');
       res.json({ success: true, pricing: CreditService.getPricingConfig() });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -770,7 +789,6 @@ createdAt: new Date().toISOString()
   app.post('/api/fcc/pricing', (req, res) => {
     if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
     try {
-      const { CreditService } = require('./server/creditService');
       const updated = CreditService.updatePricingConfig(req.body);
       res.json({ success: true, pricing: updated });
     } catch (e: any) {
@@ -877,10 +895,10 @@ createdAt: new Date().toISOString()
 
   app.post('/api/projects/:id/generate-scene-video', async (req, res) => {
     try {
-      const { sceneId } = req.body;
+      const { sceneId, videoModel } = req.body;
       // Do not await to avoid 504 timeouts on the frontend. The video generation takes minutes.
       // The frontend will poll the project state to see the updated videoUrl.
-      ProductionOrchestrator.generateSceneVideo(req.params.id, sceneId).catch(err => {
+      ProductionOrchestrator.generateSceneVideo(req.params.id, sceneId, videoModel).catch(err => {
          console.error('[BACKGROUND GENERATE VIDEO ERROR]', err);
       });
       res.json({ success: true, message: 'Video generation started in background.' });
@@ -1056,8 +1074,6 @@ createdAt: new Date().toISOString()
   app.delete('/api/gallery/:id', (req, res) => {
     try {
       projects.delete(req.params.id);
-      // Let's import saveProjects from orchestrator if we need, but for now we can just require it
-      const { saveProjects } = require('./server/orchestrator');
       saveProjects();
       res.json({ success: true });
     } catch (e: any) {
@@ -1122,6 +1138,18 @@ createdAt: new Date().toISOString()
 
   app.get('/api/projects/:id/stream', handleSse);
   app.get('/api/projects/:id/events', handleSse);
+
+  // Global API error fallback middleware
+  app.use('/api', (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('[API ERROR HANDLER]', err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(err.status || 500).json({
+      success: false,
+      error: err.message || 'Internal server error occurred'
+    });
+  });
 
   app.use('/outputs', express.static(path.join(process.cwd(), 'outputs')));
 

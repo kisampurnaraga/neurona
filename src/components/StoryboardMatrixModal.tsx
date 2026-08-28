@@ -53,7 +53,7 @@ interface StoryboardMatrixModalProps {
   onOpenTopUp: () => void;
   onGenerateSceneImage?: (sceneId: string, cost: number, imageEngine?: string) => Promise<void>;
   onGenerateAllImages?: (totalCost: number, imageEngine?: string) => Promise<void>;
-  onGenerateSceneVideo?: (sceneId: string, cost: number) => Promise<void>;
+  onGenerateSceneVideo?: (sceneId: string, cost: number, videoModel?: string) => Promise<void>;
   onChooseStoryboardOnly?: () => Promise<void>;
   onResyncScene?: (action: 'ADD' | 'REMOVE', targetIndex: number) => Promise<void>;
 }
@@ -73,30 +73,30 @@ export interface ImageModelOption {
 export const IMAGE_MODEL_OPTIONS: ImageModelOption[] = [
   {
     id: 'standard',
-    name: 'Standar (Nano Banana 2 & Edit)',
-    shortName: 'Standar (15 CR)',
+    name: 'Nano Banana 2 & Edit (Standar - 15 Kredit)',
+    shortName: 'Nano Banana 2 (15 Cr)',
     costPerImage: 15,
     badge: '15 Kredit',
     badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-    desc: 'Konsistensi karakter memadai untuk Animasi & Edukasi'
+    desc: 'fal-ai/nano-banana-2 / edit — Konsistensi karakter memadai untuk Animasi & Edukasi'
   },
   {
     id: 'precision',
-    name: 'Presisi Tinggi (Nano Banana Pro Edit)',
-    shortName: 'Presisi Pro (25 CR)',
+    name: 'Nano Banana Pro Edit (Presisi 4K - 25 Kredit)',
+    shortName: 'Nano Banana Pro 4K (25 Cr)',
     costPerImage: 25,
     badge: '25 Kredit',
     badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-    desc: 'Wajib untuk Affiliate & produk/wajah 100% identik'
+    desc: 'fal-ai/nano-banana-pro / edit — Wajib untuk Affiliate & produk/wajah 100% identik'
   },
   {
     id: 'draft',
-    name: 'Hemat / Draft (FLUX.1 Schnell)',
-    shortName: 'Draft (5 CR)',
+    name: 'FLUX.1 Schnell (Draft Cepat - 5 Kredit)',
+    shortName: 'FLUX.1 Schnell (5 Cr)',
     costPerImage: 5,
     badge: '5 Kredit',
     badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-    desc: 'Eksplorasi gaya visual cepat & preview storyboard kilat'
+    desc: 'fal-ai/flux/schnell — Eksplorasi gaya visual cepat & preview storyboard kilat'
   }
 ];
 
@@ -109,19 +109,19 @@ export interface VideoModelOption {
 }
 
 export const VIDEO_MODEL_OPTIONS: VideoModelOption[] = [
-  { id: 'fal-ai/wan-i2v', name: 'Wan 2.1 (Budget - 720p)', shortName: 'Wan 2.1', desc: 'Sangat efisien & hemat', costPerVideo: 10 },
-  { id: 'bytedance/seedance-2.0/fast/image-to-video', name: 'SeaDance 2.0 Fast (Budget)', shortName: 'SeaDance 2.0 Fast', desc: 'Render kilat & murah', costPerVideo: 10 },
-  { id: 'fal-ai/hunyuan-video-image-to-video', name: 'Hunyuan Video (Budget)', shortName: 'Hunyuan Video', desc: 'Stabil & efisien', costPerVideo: 10 },
-  { id: 'bytedance/seedance-2.0/image-to-video', name: 'SeaDance 2.0 Standard (Balanced)', shortName: 'SeaDance 2.0 Std', desc: 'Kualitas seimbang 720p', costPerVideo: 15 },
-  { id: 'fal-ai/kling-video/v2.1/standard/image-to-video', name: 'Kling 2.1 Standard (Balanced)', shortName: 'Kling 2.1', desc: 'Sinematik & kreatif', costPerVideo: 15 },
-  { id: 'fal-ai/kling-video/o3/standard/image-to-video', name: 'Kling O3 Standard (Balanced)', shortName: 'Kling O3', desc: 'Pencahayaan presisi', costPerVideo: 15 },
-  { id: 'fal-ai/minimax/video-01/image-to-video', name: 'MiniMax Video 01 (Balanced)', shortName: 'MiniMax Video 01', desc: 'Konsistensi karakter tinggi', costPerVideo: 15 },
-  { id: 'fal-ai/minimax/video-01-live/image-to-video', name: 'MiniMax Video 01 Live (Balanced)', shortName: 'MiniMax Live', desc: 'Dinamika gerak natural', costPerVideo: 15 },
-  { id: 'fal-ai/minimax/hailuo-02/standard/image-to-video', name: 'MiniMax Hailuo 02 (Balanced)', shortName: 'Hailuo 02', desc: 'Gerakan ekspresif', costPerVideo: 15 },
-  { id: 'bytedance/seedance-2.5/image-to-video', name: 'SeaDance 2.5 (Premium - Native 30s)', shortName: 'SeaDance 2.5', desc: 'Native 30s, audio & sinematik', costPerVideo: 20 },
-  { id: 'fal-ai/kling-video/v3/pro/image-to-video', name: 'Kling 3.0 Pro 1080p (Premium)', shortName: 'Kling 3.0 Pro', desc: 'Resolusi 1080p ultra jernih', costPerVideo: 25 },
-  { id: 'veo', name: 'Google Veo 3.1', shortName: 'Veo 3.1', desc: 'Ultra HD fotorealistik', costPerVideo: 15 },
-  { id: 'byteplus', name: 'BytePlus PixelDance', shortName: 'PixelDance', desc: 'Komersial dinamis', costPerVideo: 15 }
+  { id: 'fal-ai/wan-i2v', name: 'Wan 2.1 (Budget - 10 Cr)', shortName: 'Wan 2.1 (10 Cr)', desc: 'Wan 2.1 14B I2V 720p — Sangat efisien & stabil', costPerVideo: 10 },
+  { id: 'bytedance/seedance-2.0/fast/image-to-video', name: 'SeaDance 2.0 Fast (Budget - 10 Cr)', shortName: 'SeaDance Fast (10 Cr)', desc: 'ByteDance SeaDance 2.0 Fast — Render kilat', costPerVideo: 10 },
+  { id: 'fal-ai/hunyuan-video-image-to-video', name: 'Hunyuan Video (Budget - 10 Cr)', shortName: 'Hunyuan Video (10 Cr)', desc: 'Tencent Hunyuan Video — Stabil & efisien', costPerVideo: 10 },
+  { id: 'bytedance/seedance-2.0/image-to-video', name: 'SeaDance 2.0 Standard (Balanced - 15 Cr)', shortName: 'SeaDance 2.0 Std (15 Cr)', desc: 'ByteDance SeaDance 2.0 Standard — Kualitas 720p', costPerVideo: 15 },
+  { id: 'fal-ai/kling-video/v2.1/standard/image-to-video', name: 'Kling 2.1 Standard (Balanced - 15 Cr)', shortName: 'Kling 2.1 Std (15 Cr)', desc: 'Kling 2.1 Standard I2V — Sinematik & halus', costPerVideo: 15 },
+  { id: 'fal-ai/kling-video/o3/standard/image-to-video', name: 'Kling O3 Standard (Balanced - 15 Cr)', shortName: 'Kling O3 Std (15 Cr)', desc: 'Kling O3 Standard — Pencahayaan presisi', costPerVideo: 15 },
+  { id: 'fal-ai/minimax/video-01/image-to-video', name: 'MiniMax Video 01 (Balanced - 15 Cr)', shortName: 'MiniMax Video 01 (15 Cr)', desc: 'MiniMax Video 01 — Konsistensi karakter tinggi', costPerVideo: 15 },
+  { id: 'fal-ai/minimax/video-01-live/image-to-video', name: 'MiniMax Video 01 Live (Balanced - 15 Cr)', shortName: 'MiniMax Live (15 Cr)', desc: 'MiniMax Video 01 Live — Dinamika gerak natural', costPerVideo: 15 },
+  { id: 'fal-ai/minimax/hailuo-02/standard/image-to-video', name: 'Hailuo 02 Standard (Balanced - 15 Cr)', shortName: 'Hailuo 02 (15 Cr)', desc: 'MiniMax Hailuo 02 — Gerakan ekspresif', costPerVideo: 15 },
+  { id: 'bytedance/seedance-2.5/image-to-video', name: 'SeaDance 2.5 (Premium Native 30s - 20 Cr)', shortName: 'SeaDance 2.5 (20 Cr)', desc: 'ByteDance SeaDance 2.5 — Native 30s sinematik', costPerVideo: 20 },
+  { id: 'fal-ai/kling-video/v3/pro/image-to-video', name: 'Kling 3.0 Pro 1080p (Premium - 25 Cr)', shortName: 'Kling 3.0 Pro (25 Cr)', desc: 'Kling 3.0 Pro 1080p — Resolusi ultra jernih', costPerVideo: 25 },
+  { id: 'veo', name: 'Google Veo 3.1 (15 Cr)', shortName: 'Google Veo 3.1 (15 Cr)', desc: 'Google DeepMind Veo 3.1 — Ultra HD fotorealistik', costPerVideo: 15 },
+  { id: 'byteplus', name: 'BytePlus PixelDance (15 Cr)', shortName: 'BytePlus PixelDance (15 Cr)', desc: 'BytePlus PixelDance — Komersial dinamis', costPerVideo: 15 }
 ];
 
 export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
@@ -138,10 +138,15 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   onResyncScene
 }) => {
   const [activeTab, setActiveTab] = useState<'SCENES' | 'TIERS'>('SCENES');
-  const [selectedImageEngine, setSelectedImageEngine] = useState<ImageModelId>('chatgpt-image-2');
+  const [selectedImageEngine, setSelectedImageEngine] = useState<ImageModelId>(() => {
+    const saved = localStorage.getItem('neurona_image_model') as ImageModelId;
+    return (saved === 'standard' || saved === 'precision' || saved === 'draft') ? saved : 'standard';
+  });
   const [selectedVideoEngine, setSelectedVideoEngine] = useState<string>(
     () => localStorage.getItem('neurona_video_model') || 'byteplus'
   );
+  const [sceneImageModels, setSceneImageModels] = useState<Record<string, ImageModelId>>({});
+  const [sceneVideoModels, setSceneVideoModels] = useState<Record<string, string>>({});
   const [copiedSceneId, setCopiedSceneId] = useState<string | null>(null);
   const [copiedType, setCopiedType] = useState<'T2I' | 'I2V' | 'VOICEOVER' | 'CHARACTER' | 'ALL_PROMPTS' | 'ALL_SCRIPT' | null>(null);
   const [playingVoiceIndex, setPlayingVoiceIndex] = useState<number | null>(null);
@@ -390,7 +395,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
   if (!isOpen || !project) return null;
 
-  const scenes = project.storyboard?.scenes || [];
+  const scenes = project.storyboard?.scenes || (project as any).scenes || (project as any).script?.scenes || [];
   const charProfile = project.characterProfile || project.storyboard?.characterProfile;
   
   const currentEngineOption = IMAGE_MODEL_OPTIONS.find(m => m.id === selectedImageEngine) || IMAGE_MODEL_OPTIONS[0];
@@ -483,7 +488,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   };
 
   const handleGenerateSingleImage = async (sceneId: string, cost?: number, engine?: ImageModelId) => {
-    const chosenEngine = engine || selectedImageEngine;
+    const chosenEngine = engine || sceneImageModels[sceneId] || selectedImageEngine;
     const modelOpt = IMAGE_MODEL_OPTIONS.find(m => m.id === chosenEngine) || currentEngineOption;
     const appliedCost = cost ?? modelOpt.costPerImage;
 
@@ -501,19 +506,23 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     }
   };
 
-  const handleGenerateSingleVideo = async (sceneId: string, cost: number) => {
-    if (currentCredits < cost) {
+  const handleGenerateSingleVideo = async (sceneId: string, cost?: number, videoModel?: string) => {
+    const chosenVideoModel = videoModel || sceneVideoModels[sceneId] || selectedVideoEngine;
+    const modelOpt = VIDEO_MODEL_OPTIONS.find(m => m.id === chosenVideoModel) || currentVideoEngineOption;
+    const appliedCost = cost ?? modelOpt.costPerVideo;
+
+    if (currentCredits < appliedCost) {
       neuronaVoice.playChime('ALERT');
-      neuronaVoice.speak(`Saldo kredit tidak mencukupi. Diperlukan ${cost} kredit untuk merender video adegan.`);
+      neuronaVoice.speak(`Saldo kredit tidak mencukupi. Diperlukan ${appliedCost} kredit untuk merender video adegan.`);
       onOpenTopUp();
       return;
     }
     neuronaVoice.playChime('SUCCESS');
-    neuronaVoice.speak(`Memproses rendering video adegan.`);
+    neuronaVoice.speak(`Memproses rendering video adegan dengan model ${modelOpt.shortName}.`);
     setIsProcessingAction(`video-${sceneId}`);
     try {
       if (onGenerateSceneVideo) {
-        await onGenerateSceneVideo(sceneId, cost);
+        await onGenerateSceneVideo(sceneId, appliedCost, chosenVideoModel);
       }
     } finally {
       setIsProcessingAction(null);
@@ -731,13 +740,17 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   </div>
                   <select
                     value={selectedImageEngine}
-                    onChange={(e) => setSelectedImageEngine(e.target.value as ImageModelId)}
+                    onChange={(e) => {
+                      const val = e.target.value as ImageModelId;
+                      setSelectedImageEngine(val);
+                      localStorage.setItem('neurona_image_model', val);
+                    }}
                     className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
                     style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right .5rem center', backgroundSize: '.65em auto' }}
                   >
                     {IMAGE_MODEL_OPTIONS.map((opt) => (
                       <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
-                        {opt.shortName} ({opt.costPerImage}K)
+                        {opt.name}
                       </option>
                     ))}
                   </select>
@@ -759,7 +772,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   >
                     {VIDEO_MODEL_OPTIONS.map((opt) => (
                       <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
-                        {opt.shortName}
+                        {opt.name}
                       </option>
                     ))}
                   </select>
@@ -768,7 +781,17 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
               {/* Dynamic Generate All Images Button */}
               <button
-                onClick={() => handleGenerateAllImages(selectedImageEngine)}
+                onClick={() => {
+                  if (scenes.length === 0) {
+                    if (onResyncScene) {
+                      onResyncScene('ADD', 0);
+                    } else {
+                      handleGenerateAllImages(selectedImageEngine);
+                    }
+                    return;
+                  }
+                  handleGenerateAllImages(selectedImageEngine);
+                }}
                 disabled={isProcessingAction === 'all-images'}
                 className="py-1.5 px-3 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-[11px] shadow-lg shadow-purple-500/20 flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
               >
@@ -776,6 +799,11 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   <>
                     <Loader2 size={12} className="animate-spin" />
                     <span>Sedang Generate ({completedImagesCount}/{scenes.length})...</span>
+                  </>
+                ) : scenes.length === 0 ? (
+                  <>
+                    <Plus size={12} />
+                    <span>Buat 5 Adegan Dulu</span>
                   </>
                 ) : (
                   <>
@@ -1452,67 +1480,121 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                             );
                           })()}
 
-                          {/* Action Buttons per Scene - Enforce Sequential Generation */}
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                            {/* 1. Generate Image Button with current engine model */}
-                            <button
-                              onClick={() => handleGenerateSingleImage(scene.id, singleImageCost, selectedImageEngine)}
-                              disabled={isImageGenerating}
-                              className={`py-1.5 px-2 rounded-lg text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50 ${
-                                !hasImage 
-                                  ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-600/30' 
-                                  : 'bg-purple-950/80 hover:bg-purple-900 border border-purple-500/40 text-purple-200'
-                              }`}
-                              title={`Generate dengan ${currentEngineOption.shortName}`}
-                            >
-                              {isImageGenerating ? (
-                                <>
-                                  <Loader2 size={11} className="animate-spin" />
-                                  <span>Memproses...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Palette size={11} />
-                                  <span>{hasImage ? `Regenerate (${singleImageCost} K)` : `1. Buat Gambar (${singleImageCost} K)`}</span>
-                                </>
-                              )}
-                            </button>
+                          {/* Per-Scene AI Model Selector Bar */}
+                          {(() => {
+                            const curImgEngine = sceneImageModels[scene.id] || selectedImageEngine;
+                            const curVidEngine = sceneVideoModels[scene.id] || selectedVideoEngine;
+                            const curImgOpt = IMAGE_MODEL_OPTIONS.find(m => m.id === curImgEngine) || currentEngineOption;
+                            const curVidOpt = VIDEO_MODEL_OPTIONS.find(m => m.id === curVidEngine) || currentVideoEngineOption;
+                            const perSceneImageCost = curImgOpt.costPerImage;
+                            const perSceneVideoCost = curVidOpt.costPerVideo;
 
-                            {/* 2. Generate Video Button - Disabled until image is ready */}
-                            <button
-                              onClick={() => {
-                                if (!hasImage) {
-                                  handleGenerateSingleImage(scene.id, singleImageCost, selectedImageEngine);
-                                  return;
-                                }
-                                handleGenerateSingleVideo(scene.id, singleVideoCost);
-                              }}
-                              disabled={isVideoGenerating || isImageGenerating}
-                              title={!hasImage ? "Harap generate gambar terlebih dahulu" : "Render Video dari Gambar"}
-                              className={`py-1.5 px-2 rounded-lg text-[10px] font-bold shadow transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50 ${
-                                hasImage
-                                  ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 shadow-emerald-500/20'
-                                  : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-700/60'
-                              }`}
-                            >
-                              {isVideoGenerating ? (
-                                <>
-                                  <Loader2 size={11} className="animate-spin" />
-                                  <span>Rendering Video...</span>
-                                </>
-                              ) : hasImage ? (
-                                <>
-                                  <Play size={11} fill="currentColor" />
-                                  <span>2. Render Video ({singleVideoCost} K)</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Play size={11} className="opacity-40" />
-                                  <span>2. Video (Perlu Gambar)</span>
-                                </>
-                              )}
-                            </button>
-                          </div>
+                            return (
+                              <>
+                                <div className="flex flex-wrap items-center justify-between bg-slate-950/80 border border-slate-800 rounded-lg p-1.5 gap-2 text-[10px] mt-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <Palette size={11} className="text-purple-400 shrink-0" />
+                                    <span className="text-slate-400 font-medium">Gambar:</span>
+                                    <select
+                                      value={curImgEngine}
+                                      onChange={(e) => {
+                                        const val = e.target.value as ImageModelId;
+                                        setSceneImageModels(prev => ({ ...prev, [scene.id]: val }));
+                                      }}
+                                      className="bg-slate-900 border border-purple-500/30 font-bold text-purple-200 rounded px-1.5 py-0.5 outline-none cursor-pointer text-[10px]"
+                                    >
+                                      {IMAGE_MODEL_OPTIONS.map(opt => (
+                                        <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                          {opt.shortName}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5">
+                                    <Film size={11} className="text-amber-400 shrink-0" />
+                                    <span className="text-slate-400 font-medium">Video:</span>
+                                    <select
+                                      value={curVidEngine}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setSceneVideoModels(prev => ({ ...prev, [scene.id]: val }));
+                                      }}
+                                      className="bg-slate-900 border border-amber-500/30 font-bold text-amber-200 rounded px-1.5 py-0.5 outline-none cursor-pointer text-[10px] max-w-[130px] truncate"
+                                    >
+                                      {VIDEO_MODEL_OPTIONS.map(opt => (
+                                        <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                          {opt.shortName}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+
+                                {/* Action Buttons per Scene */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                                  {/* 1. Generate Image Button */}
+                                  <button
+                                    onClick={() => handleGenerateSingleImage(scene.id, perSceneImageCost, curImgEngine)}
+                                    disabled={isImageGenerating}
+                                    className={`py-1.5 px-2 rounded-lg text-[10px] font-bold transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50 ${
+                                      !hasImage 
+                                        ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-600/30' 
+                                        : 'bg-purple-950/80 hover:bg-purple-900 border border-purple-500/40 text-purple-200'
+                                    }`}
+                                    title={`Generate dengan ${curImgOpt.shortName}`}
+                                  >
+                                    {isImageGenerating ? (
+                                      <>
+                                        <Loader2 size={11} className="animate-spin" />
+                                        <span>Memproses...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Palette size={11} />
+                                        <span>{hasImage ? `Regenerate (${perSceneImageCost} K)` : `1. Buat Gambar (${perSceneImageCost} K)`}</span>
+                                      </>
+                                    )}
+                                  </button>
+
+                                  {/* 2. Generate Video Button */}
+                                  <button
+                                    onClick={() => {
+                                      if (!hasImage) {
+                                        handleGenerateSingleImage(scene.id, perSceneImageCost, curImgEngine);
+                                        return;
+                                      }
+                                      handleGenerateSingleVideo(scene.id, perSceneVideoCost, curVidEngine);
+                                    }}
+                                    disabled={isVideoGenerating || isImageGenerating}
+                                    title={!hasImage ? "Harap generate gambar terlebih dahulu" : `Render Video dengan ${curVidOpt.shortName}`}
+                                    className={`py-1.5 px-2 rounded-lg text-[10px] font-bold shadow transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50 ${
+                                      hasImage
+                                        ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 shadow-emerald-500/20'
+                                        : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-700/60'
+                                    }`}
+                                  >
+                                    {isVideoGenerating ? (
+                                      <>
+                                        <Loader2 size={11} className="animate-spin" />
+                                        <span>Rendering Video...</span>
+                                      </>
+                                    ) : hasImage ? (
+                                      <>
+                                        <Play size={11} fill="currentColor" />
+                                        <span>2. Render Video ({perSceneVideoCost} K)</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Play size={11} className="opacity-40" />
+                                        <span>2. Video (Perlu Gambar)</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              </>
+                            );
+                          })()}
                           
                           {/* Manual Asset Upload Buttons */}
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
@@ -1682,8 +1764,29 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   );
                 })
               ) : (
-                <div className="text-center py-12 text-slate-500 text-xs">
-                  Belum ada storyboard yang dirancang. Mulai dengan memberikan brief di NEURONA Core.
+                <div className="text-center py-12 px-6 rounded-2xl bg-slate-900/60 border border-purple-500/20 flex flex-col items-center justify-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold">
+                    <Layers size={24} />
+                  </div>
+                  <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                    Naskah Adegan Storyboard Belum Dibuat
+                  </h4>
+                  <p className="text-xs text-slate-400 max-w-md text-center">
+                    Proyek ini belum memiliki breakdown 5 adegan visual. Klik tombol di bawah untuk membuat naskah, hook viral, prompt visual & mengunci karakter secara instan.
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (onResyncScene) {
+                        onResyncScene('ADD', 0);
+                      } else {
+                        handleGenerateAllImages(selectedImageEngine);
+                      }
+                    }}
+                    className="mt-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-purple-500/30 flex items-center gap-2 transition cursor-pointer"
+                  >
+                    <Plus size={14} />
+                    <span>Buat 5 Adegan Storyboard Sekarang</span>
+                  </button>
                 </div>
               )}
             </div>

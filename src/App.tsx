@@ -505,9 +505,16 @@ export default function App() {
 
   useEffect(() => {
     fetch('/api/providers/status')
-      .then(r => r.json())
-      .then(setProviderInfo)
-      .catch(console.error);
+      .then(r => {
+        if (!r.ok) return null;
+        return r.json().catch(() => null);
+      })
+      .then(data => {
+        if (data) setProviderInfo(data);
+      })
+      .catch(err => {
+        console.warn('Providers status fetch issue:', err);
+      });
   }, []);
 
   const handleDownloadAsset = (url: string, filename: string) => {
@@ -704,7 +711,7 @@ export default function App() {
     }
   };
 
-  const handleGenerateSceneVideo = async (sceneId: string, cost: number = 15) => {
+  const handleGenerateSceneVideo = async (sceneId: string, cost: number = 15, videoModel?: string) => {
     if (!projectId) return;
     if (userCredits < cost) {
       neuronaVoice.playChime('ALERT');
@@ -726,7 +733,7 @@ export default function App() {
       await fetch(`/api/projects/${projectId}/generate-scene-video`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sceneId })
+        body: JSON.stringify({ sceneId, videoModel })
       });
     } catch (e) {
       console.error(e);

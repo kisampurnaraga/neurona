@@ -19,7 +19,7 @@ export class VeoAdapter implements VideoGenerationProvider {
   async generateScene(scene: Scene, context: string, onProgress?: (msg: string) => void): Promise<string> {
     const apiKey = FounderService.getVeoConfig().apiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      throw new Error("GEMINI_API_KEY tidak terdeteksi. Silakan atur GEMINI_API_KEY untuk menggunakan Google Veo.");
+      throw new Error("GEMINI_API_KEY tidak terdeteksi. Silakan atur GEMINI_API_KEY di Settings > Secrets untuk menggunakan Google Veo.");
     }
 
     const ai = new GoogleGenAI({
@@ -46,6 +46,7 @@ export class VeoAdapter implements VideoGenerationProvider {
     
     console.log(`[Google Veo 3.1] Menghubungi API Google Veo untuk Adegan ${scene.id || 'Scene'}...`);
     console.log(`[Google Veo 3.1] Prompt: "${promptText.substring(0, 150)}..." | AspectRatio: ${aspectRatio}`);
+    onProgress?.(`Menghubungkan ke engine Google Veo 3.1 (${aspectRatio})...`);
 
     // Check if starting image exists (Base64 or URL)
     let imageData: { imageBytes: string; mimeType: string } | undefined = undefined;
@@ -88,72 +89,40 @@ export class VeoAdapter implements VideoGenerationProvider {
     const modelName = FounderService.getVeoModel() || process.env.VEO_MODEL || 'veo-3.1-generate-preview';
 
     try {
-      console.log(`[Google Veo 3.1] Mengirim payload ke model '${modelName}' (Image-to-Video mode: ${imageData ? 'YES' : 'Text-to-Video'}) via REST...`);
-      
-      const instances: any[] = [
-        {
-          prompt: promptText
-        }
-      ];
+      console.log(`[Google Veo 3.1] Mengirim payload ke model '${modelName}' (Image-to-Video mode: ${imageData ? 'YES' : 'Text-to-Video'})...`);
+      onProgress?.(`Mengirim permintaan render video ke Google DeepMind (${modelName})...`);
 
-      if (imageData) {
-        instances[0].image = {
-          bytesBase64Encoded: imageData.imageBytes,
-          mimeType: imageData.mimeType
-        };
-      }
-
-      const payload = {
-        instances,
-        parameters: {
-          sampleCount: 1,
-          aspectRatio: aspectRatio,
-          resolution: '720p',
-          personGeneration: 'allow_adult'
-        }
-      };
-
-      const modelPath = modelName.startsWith('models/') ? modelName : `models/${modelName}`;
-      const generateUrl = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:predictLongRunning?key=${apiKey}`;
-      
-      let response: any;
-      let initSuccess = false;
-      const initMaxAttempts = 12; // Wait up to 3 minutes total (12 * 15 seconds)
-      let lastInitErrorMsg = '';
-
-      for (let initAttempt = 1; initAttempt <= initMaxAttempts; initAttempt++) {
-        console.log(`[Google Veo 3.1] Mengirim payload - Attempt ${initAttempt}/${initMaxAttempts}...`);
-        
-        response = await fetch(generateUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'aistudio-build'
-          },
-          body: JSON.stringify(payload)
+      let operation: any;
+      try {
+        operation = await ai.models.generateVideos({
+          model: modelName,
+          prompt: promptText,
+          image: imageData ? {
+            imageBytes: imageData.imageBytes,
+            mimeType: imageData.mimeType,
+          } : undefined,
+          config: {
+            numberOfVideos: 1,
+            resolution: '720p',
+            aspectRatio: aspectRatio,
+          }
         });
-
-        if (response.ok) {
-          initSuccess = true;
-          break;
+      } catch (sdkErr: any) {
+        const sdkMsg = sdkErr?.message || String(sdkErr);
+        console.error('[Google Veo 3.1] SDK Call Error:', sdkMsg);
+        
+        // Handle 401 Unauthorized specifically
+        if (sdkMsg.includes('401') || sdkMsg.includes('Unauthorized') || sdkMsg.includes('API_KEY_INVALID') || sdkMsg.includes('API key not valid')) {
+          throw new Error(`[Google Veo 3.1] Autentikasi Gagal (401 Unauthorized / Invalid API Key). Pastikan GEMINI_API_KEY yang valid telah diatur di Settings > Secrets dan memiliki akses ke model Google Ve.`);
+        }
+        
+        // Handle 429 Resource Exhausted / Quota
+        if (sdkMsg.includes('429') || sdkMsg.includes('RESOURCE_EXHAUSTED') || sdkMsg.includes('Quota exceeded')) {
+          throw new Error(`[Google Veo 3.1] Kuota atau kapasitas render Google Veo sedang padat (429 RESOURCE_EXHAUSTED). Silakan coba beberapa saat lagi atau periksa saldo billing Google AI Studio.`);
         }
 
-        const errorText = await response.text();
-        lastInitErrorMsg = errorText;
-
-        if (response.status === 429) {
-          console.log(`[Google Veo 3.1] Kapasitas render sedang padat (429). Proses render lain terdeteksi aktif. Mengaktifkan Mode Sabar: Menunggu 15 detik sebelum mencoba lagi...`);
-          await new Promise((resolve) => setTimeout(resolve, 15000));
-        } else {
-          throw new Error(`Google Veo API Error: ${response.status} ${response.statusText} - ${errorText}`);
-        }
+        throw sdkErr;
       }
-
-      if (!initSuccess || !response || !response.ok) {
-        throw new Error(`Kapasitas render video Anda sedang padat (429: Too Many Requests / Quota Exceeded) setelah beberapa kali mencoba. Batas kuota model Veo 3.1 dari Google AI Studio dibatasi secara konkuren. Silakan tunggu sampai render sebelumnya selesai Bos! Detail: ${lastInitErrorMsg}`);
-      }
-
-      const operation = await response.json() as { name: string };
 
       if (!operation || !operation.name) {
         throw new Error("Gagal memulai task Google Veo: Operation name tidak ditemukan dari response API.");
@@ -161,30 +130,24 @@ export class VeoAdapter implements VideoGenerationProvider {
 
       const operationName = operation.name;
       console.log(`[Google Veo 3.1] Task berhasil dibuat: ${operationName}. Menunggu proses render video Google Cloud...`);
+      onProgress?.(`Proses render AI sedang berlangsung di Google Cloud...`);
 
-      // Polling loop for video generation (up to 3-4 minutes)
-      const maxAttempts = 60;
+      // Polling loop for video generation (up to 4 minutes)
+      const maxAttempts = 48; // 48 * 5s = 240 seconds
       let completedOperation: any = null;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 5000));
 
         try {
-          const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${operationName}?key=${apiKey}`;
-          const pollRes = await fetch(pollUrl, {
-            headers: {
-              'User-Agent': 'aistudio-build'
-            }
-          });
-
-          if (!pollRes.ok) {
-            const errorText = await pollRes.text();
-            throw new Error(`Polling Error: ${pollRes.status} - ${errorText}`);
-          }
-
-          const updated = await pollRes.json() as any;
+          const op = new GenerateVideosOperation();
+          op.name = operationName;
+          const updated = await ai.operations.getVideosOperation({ operation: op });
 
           console.log(`[Google Veo 3.1] Polling [${attempt}/${maxAttempts}] - Status done: ${updated.done}`);
+          if (attempt % 3 === 0) {
+            onProgress?.(`Merender frame video Veo (${attempt * 5}s)...`);
+          }
 
           if (updated.done) {
             if (updated.error) {
@@ -207,7 +170,8 @@ export class VeoAdapter implements VideoGenerationProvider {
         throw new Error("Video URI tidak ditemukan pada response akhir Google Veo.");
       }
 
-      console.log(`[Google Veo 3.1] Video selesai diproses di Google Cloud! Mengunduh video dari URI: ${videoUri.substring(0, 80)}...`);
+      console.log(`[Google Veo 3.1] Video selesai diproses di Google Cloud! Mengunduh video dari URI...`);
+      onProgress?.(`Mengunduh hasil video MP4...`);
 
       // Download the video stream with authorization header
       const videoRes = await fetch(videoUri, {
@@ -242,7 +206,11 @@ export class VeoAdapter implements VideoGenerationProvider {
       ) {
         throw new Error(`[Google Veo 3.1] Kredit / Kuota API Google Gemini Anda telah habis (429 RESOURCE_EXHAUSTED). Silakan lakukan top-up prepayment billing di Google AI Studio (https://ai.studio/projects) atau periksa GEMINI_API_KEY di menu Settings.`);
       }
+      if (errMsg.includes('401') || errMsg.includes('Unauthorized') || errMsg.includes('API_KEY_INVALID')) {
+        throw new Error(`[Google Veo 3.1] Kunci API Google Gemini (GEMINI_API_KEY) tidak valid atau tidak memiliki akses (401 Unauthorized). Silakan periksa GEMINI_API_KEY di menu Settings > Secrets.`);
+      }
       throw new Error(`Google Veo Generation Failed: ${errMsg}`);
     }
   }
 }
+

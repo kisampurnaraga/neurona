@@ -51,15 +51,21 @@ export class FounderService {
         const data = JSON.parse(fs.readFileSync(this.CONFIG_FILE, 'utf8'));
         if (data.customFalConfig) this.customFalConfig = { ...this.customFalConfig, ...data.customFalConfig };
         if (data.customSoraConfig) this.customSoraConfig = { ...this.customSoraConfig, ...data.customSoraConfig };
-        if (data.customVeoConfig) this.customVeoConfig = { ...this.customVeoConfig, ...data.customVeoConfig };
+        if (data.customVeoConfig) {
+          this.customVeoConfig = { ...this.customVeoConfig, ...data.customVeoConfig };
+          // If the loaded key is invalid format or if process.env.GEMINI_API_KEY already exists from environment, don't overwrite
+          if (this.customVeoConfig.apiKey && this.customVeoConfig.apiKey.startsWith('AQ.')) {
+            this.customVeoConfig.apiKey = '';
+          }
+        }
         if (data.customBytePlusConfig) this.customBytePlusConfig = { ...this.customBytePlusConfig, ...data.customBytePlusConfig };
         if (data.flags) this.flags = { ...this.flags, ...data.flags };
         
-        // Update process.env based on loaded config
-        if (this.customFalConfig.apiKey) process.env.FAL_KEY = this.customFalConfig.apiKey;
-        if (this.customSoraConfig.apiKey) process.env.SORA_API_KEY = this.customSoraConfig.apiKey;
-        if (this.customVeoConfig.apiKey) process.env.GEMINI_API_KEY = this.customVeoConfig.apiKey;
-        if (this.customBytePlusConfig.apiKey) process.env.BYTEPLUS_API_KEY = this.customBytePlusConfig.apiKey;
+        // Update process.env based on loaded config only if env is not already populated by system
+        if (this.customFalConfig.apiKey && !process.env.FAL_KEY) process.env.FAL_KEY = this.customFalConfig.apiKey;
+        if (this.customSoraConfig.apiKey && !process.env.SORA_API_KEY) process.env.SORA_API_KEY = this.customSoraConfig.apiKey;
+        if (this.customVeoConfig.apiKey && !process.env.GEMINI_API_KEY) process.env.GEMINI_API_KEY = this.customVeoConfig.apiKey;
+        if (this.customBytePlusConfig.apiKey && !process.env.BYTEPLUS_API_KEY) process.env.BYTEPLUS_API_KEY = this.customBytePlusConfig.apiKey;
       }
     } catch (e) {
       console.error('Failed to load neurona config:', e);
@@ -296,20 +302,22 @@ export class FounderService {
   }
 
   static getGeminiBananaConfig() {
+    const key = process.env.GEMINI_API_KEY || process.env.GEMINI_MANUAL_API_KEY || (this.customGeminiBananaConfig.apiKey?.startsWith('AQ.') ? '' : this.customGeminiBananaConfig.apiKey) || '';
     return {
-      apiKey: this.customGeminiBananaConfig.apiKey || process.env.GEMINI_MANUAL_API_KEY || process.env.GEMINI_API_KEY || '',
+      apiKey: key,
       model: this.customGeminiBananaConfig.model || 'gemini-3.1-flash-image',
       endpoint: this.customGeminiBananaConfig.endpoint || 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateImages',
-      status: this.customGeminiBananaConfig.status
+      status: key ? 'READY' : 'NOT_CONFIGURED'
     };
   }
 
   static getVeoConfig() {
+    const key = process.env.GEMINI_API_KEY || process.env.GEMINI_MANUAL_API_KEY || (this.customVeoConfig.apiKey?.startsWith('AQ.') ? '' : this.customVeoConfig.apiKey) || '';
     return {
-      apiKey: this.customVeoConfig.apiKey || process.env.GEMINI_MANUAL_API_KEY || process.env.GEMINI_API_KEY || '',
+      apiKey: key,
       model: this.customVeoConfig.model || process.env.VEO_MODEL || 'veo-3.1-generate-preview',
       endpoint: this.customVeoConfig.endpoint || 'https://generativelanguage.googleapis.com/v1beta',
-      status: (this.customVeoConfig.apiKey || process.env.GEMINI_MANUAL_API_KEY || process.env.GEMINI_API_KEY) ? 'READY' : 'NOT_CONFIGURED'
+      status: key ? 'READY' : 'NOT_CONFIGURED'
     };
   }
 

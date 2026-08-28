@@ -1054,13 +1054,14 @@ export class ImageGenerationService {
                 keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP ${res.status}: ${parsedErr}`));
               }
 
-              throw new Error(`[FAL.AI SYNC ERROR ${res.status}] ${parsedErr}`);
+              console.warn(`[Fal.ai Engine Sync ${res.status}] ${parsedErr}. Proceeding to next failover engine.`);
+              return null;
             }
           }
         } catch (falErr: any) {
           console.error(`[Fal.ai Engine] Error running model ${modelPath}:`, falErr?.message || falErr);
           keyRotator.reportKeyError('fal', falApiKey, falErr);
-          throw falErr;
+          return null;
         }
       }
 
@@ -1226,6 +1227,34 @@ export class ImageGenerationService {
       return null;
     };
 
+    // -----------------------------------------------------------------------
+    // Engine 4: High-Quality Ultra-Reliable Flux Pollinations AI Engine (Failover / Guarantee)
+    // -----------------------------------------------------------------------
+    const runPollinationsImage = async (): Promise<string | null> => {
+      try {
+        console.log(`[Pollinations AI Flux Engine] Synthesizing keyframe for Scene ${sceneIndex + 1}...`);
+        const seed = Math.floor(Math.random() * 900000) + 100000;
+        let width = 1280;
+        let height = 720;
+        if (cleanAspect === '9:16') {
+          width = 720;
+          height = 1280;
+        } else if (cleanAspect === '1:1') {
+          width = 1024;
+          height = 1024;
+        }
+        const polUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(finalPrompt)}?width=${width}&height=${height}&seed=${seed}&model=flux&nologo=true`;
+        const res = await fetch(polUrl);
+        if (res.ok) {
+          console.log(`[Pollinations AI Flux Engine] Successfully generated image for Scene ${sceneIndex + 1}!`);
+          return polUrl;
+        }
+      } catch (polErr: any) {
+        console.error(`[Pollinations AI Flux Engine] Error:`, polErr?.message || polErr);
+      }
+      return null;
+    };
+
     const throwApiError = () => {
       console.log(`[Image Synthesis Engine] All configured API models failed or API key exhausted.`);
       throw new Error("Token API habis atau error dari penyedia layanan AI (Fal.ai / Gemini / OpenAI). Silakan periksa atau isi kembali FAL_KEY / GEMINI_API_KEY / OPENAI_API_KEY Anda di Rotator Pool untuk melanjutkan.");
@@ -1239,6 +1268,8 @@ export class ImageGenerationService {
       if (bananaResult) return bananaResult;
       const gptResult = await runGptImage2();
       if (gptResult) return gptResult;
+      const polResult = await runPollinationsImage();
+      if (polResult) return polResult;
       return throwApiError();
     } else if (preferredEngine === 'chatgpt-image-2') {
       const gptResult = await runGptImage2();
@@ -1247,6 +1278,8 @@ export class ImageGenerationService {
       if (falResult) return falResult;
       const bananaResult = await runGeminiBanana();
       if (bananaResult) return bananaResult;
+      const polResult = await runPollinationsImage();
+      if (polResult) return polResult;
       return throwApiError();
     } else if (preferredEngine === 'gemini-imagen-3' || preferredEngine === 'gemini-banana') {
       const bananaResult = await runGeminiBanana();
@@ -1255,6 +1288,8 @@ export class ImageGenerationService {
       if (falResult) return falResult;
       const gptResult = await runGptImage2();
       if (gptResult) return gptResult;
+      const polResult = await runPollinationsImage();
+      if (polResult) return polResult;
       return throwApiError();
     } else {
       const falResult = await runFalImage();
@@ -1263,6 +1298,8 @@ export class ImageGenerationService {
       if (bananaResult) return bananaResult;
       const gptResult = await runGptImage2();
       if (gptResult) return gptResult;
+      const polResult = await runPollinationsImage();
+      if (polResult) return polResult;
       return throwApiError();
     }
   }

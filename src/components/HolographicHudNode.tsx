@@ -323,7 +323,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
     }
   };
 
-  const handleGenerateSceneVideo = async (sceneId: string, cost: number = 15) => {
+  const handleGenerateSceneVideo = async (sceneId: string, cost: number = 15, videoModel?: string) => {
     if (!project) return;
     if (userCredits < cost) {
       neuronaVoice.playChime('ALERT');
@@ -345,7 +345,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
       await fetch(`/api/projects/${project.id}/generate-scene-video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sceneId })
+        body: JSON.stringify({ sceneId, videoModel })
       });
     } catch (e) {
       console.error(e);

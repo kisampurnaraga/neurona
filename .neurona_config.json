@@ -1,10 +1,10 @@
 {
   "customFalConfig": {
-    "apiKey": "invalid_fal_key_12345_intentionally_bad",
+    "apiKey": "ae33e14b-35d1-4027-b539-f51cff1cd9fa:0629135e7d04161f9487b8e34522d6d2",
     "model": "fal-ai/wan-i2v",
     "endpoint": "https://api.fal.ai/v1",
     "status": "READY",
-    "lastTested": "2026-08-27T23:13:35.210Z"
+    "lastTested": "2026-08-28T00:58:04.007Z"
   },
   "customSoraConfig": {
     "apiKey": "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",
@@ -13,7 +13,7 @@
     "status": "READY"
   },
   "customVeoConfig": {
-    "apiKey": "AQ.Ab8RN6KX2bEpiByCBR9Z-dGFx5oARHj9ehADiaAMAUD4-DPr6Q",
+    "apiKey": "",
     "model": "veo-3.1-generate-preview",
     "endpoint": "https://generativelanguage.googleapis.com/v1beta",
     "status": "READY"
