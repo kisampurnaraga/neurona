@@ -135,7 +135,7 @@ export const FounderVideoInspector: React.FC = () => {
                           <div className="p-4 border-t border-slate-800 bg-slate-950 grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* Visual Asset */}
                             <div className="flex flex-col gap-2">
-                              <span className="text-xs font-bold text-slate-500 uppercase">Visual Asset (Veo / I2V)</span>
+                              <span className="text-xs font-bold text-slate-500 uppercase">Visual Asset (Fal.ai / I2V)</span>
                               {scene.videoUrl ? (
                                 <video src={scene.videoUrl} controls className="w-full rounded-md border border-slate-700 bg-black" />
                               ) : scene.imageUrl ? (

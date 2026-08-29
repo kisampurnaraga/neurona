@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import { FounderService } from "../../src/server/fcc/FounderService";
+import { keyRotator } from "../keyRotator";
 
 export interface QAAuditInput {
   script?: string;
@@ -40,7 +41,7 @@ export class QAAuditAgent {
   private static SCORE_THRESHOLD = 80;
 
   /**
-   * Run automated QA audit on script, keyframe visual prompt, and Veo video prompt.
+   * Run automated QA audit on script, keyframe visual prompt, and AI video prompt.
    * Ensures compliance with Neuronna Director Architecture before reaching rendering pipeline.
    */
   static async auditAndRefine(input: QAAuditInput): Promise<QAAuditResult> {
@@ -64,11 +65,10 @@ export class QAAuditAgent {
       }
 
       // Default: Google Gemini (Gemini 2.5 Flash / Pro)
-      const geminiKey = process.env.GEMINI_API_KEY;
-      if (geminiKey) {
-        const result = await this.runGeminiAudit(input, geminiKey, activeLlm);
-        if (result) return result;
-      }
+      const result = await keyRotator.executeGeminiWithRotation(async (ai, apiKey) => {
+        return await this.runGeminiAudit(input, ai, activeLlm);
+      });
+      if (result) return result;
     } catch (err: any) {
       console.warn(`[QAAuditAgent] LLM-based audit encountered error: ${err?.message}. Executing heuristic procedural fallback.`);
     }
@@ -82,14 +82,13 @@ export class QAAuditAgent {
    */
   private static async runGeminiAudit(
     input: QAAuditInput,
-    apiKey: string,
+    ai: GoogleGenAI,
     engineName: string
   ): Promise<QAAuditResult | null> {
-    const ai = new GoogleGenAI({ apiKey });
-    const targetModel = engineName.includes('pro') ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+    const targetModel = engineName.includes('pro') ? 'gemini-3.1-pro-preview' : 'gemini-2.5-flash';
 
     const systemInstruction = `Kamu adalah NEURONNA QA AUDIT AGENT & MASTER DIRECTOR REVIEWER.
-Tugasmu adalah mengaudit secara objektif dan ketat output sutradara AI sebelum dieksekusi ke pipeline video Google Veo / BytePlus dan Google Cloud TTS.
+Tugasmu adalah mengaudit secara objektif dan ketat output sutradara AI sebelum dieksekusi ke pipeline video AI dan Google Cloud TTS.
 
 KAIDAH AUDIT:
 1. Product & Character Lock Consistency (Skor 0-100):
@@ -104,7 +103,7 @@ KAIDAH AUDIT:
    - Memiliki hook menarik atau punchline/CTA yang jelas.
 
 Jika Rata-rata Skor < 85, perbaiki secara otomatis:
-- "correctedVideoPrompt": Prompt video sinematik Veo yang disempurnakan (dalam bahasa Inggris sinematik untuk hasil render Veo terbaik).
+- "correctedVideoPrompt": Prompt video sinematik AI yang disempurnakan (dalam bahasa Inggris sinematik untuk hasil render AI terbaik).
 - "correctedScript": Naskah narasi voiceover yang disesuaikan pas dengan durasi waktu.
 - "correctedVisualPrompt": Deskripsi visual keyframe gambar dengan pencahayaan dan Character/Product Lock lengkap.
 
@@ -177,13 +176,13 @@ Format Output WAJIB JSON murni tanpa markdown pembungkus.`;
       messages: [
         {
           role: 'system',
-          content: `You are NEURONNA QA AUDIT AGENT. Audit script, visual prompt, and Veo video prompt for:
+          content: `You are NEURONNA QA AUDIT AGENT. Audit script, visual prompt, and AI video prompt for:
 1. Product Lock Consistency (0-100)
 2. Visual Prompt Adherence (0-100)
 3. Narrative Flow & TTS Duration (0-100)
 4. Affiliate Product & Character Interaction (0-100) - If videoType is AFFILIATE, prompt MUST explicitly describe physical interaction between character and product.
 
-Return JSON with: passed (boolean), score (number), breakdown { productLockConsistency, visualPromptAdherence, narrativeFlow }, issues (array), recommendations (array), correctedVideoPrompt (string in English cinematic prompt for Veo. MUST include character physically holding/using product if AFFILIATE), correctedScript (string), correctedVisualPrompt (string. MUST include character physically holding/using product if AFFILIATE), auditNotes (string).`
+Return JSON with: passed (boolean), score (number), breakdown { productLockConsistency, visualPromptAdherence, narrativeFlow }, issues (array), recommendations (array), correctedVideoPrompt (string in English cinematic prompt for AI Video Engines. MUST include character physically holding/using product if AFFILIATE), correctedScript (string), correctedVisualPrompt (string. MUST include character physically holding/using product if AFFILIATE), auditNotes (string).`
         },
         {
           role: 'user',
@@ -255,7 +254,7 @@ Return JSON with: passed (boolean), score (number), breakdown { productLockConsi
     }
     if (hasTextPollution) {
       vScore -= 20;
-      issues.push("Ditemukan kata 'text/subtitle' di prompt video yang dapat memicu artefak cacat pada Veo.");
+      issues.push("Ditemukan kata 'text/subtitle' di prompt video yang dapat memicu artefak cacat pada video.");
       recommendations.push("Hapus kata-kata tipografi dari prompt video.");
     }
 
@@ -306,7 +305,7 @@ Return JSON with: passed (boolean), score (number), breakdown { productLockConsi
       correctedScript: correctedScript.trim(),
       correctedVisualPrompt: rawVisual || correctedVideoPrompt,
       autoCorrected,
-      auditNotes: `Procedural Director QA Audit selesai dengan skor ${totalScore}/100. ${autoCorrected ? 'Prompt telah di-auto-correct ke standar sinematik Veo.' : 'Kualitas prompt memenuhi standar.'}`,
+      auditNotes: `Procedural Director QA Audit selesai dengan skor ${totalScore}/100. ${autoCorrected ? 'Prompt telah di-auto-correct ke standar sinematik.' : 'Kualitas prompt memenuhi standar.'}`,
       modelUsed: 'Neuronna-Heuristic-QA-v2',
       timestamp: new Date().toISOString()
     };

@@ -107,9 +107,24 @@ async function downloadFile(url: string, dest: string): Promise<void> {
 export class VideoEditor {
   static async processProject(project: ProductionProject, subtitleStyle?: string): Promise<any> {
     const projectId = project.id;
-    const scenes = project.storyboard?.scenes?.filter(s => (s.status === 'COMPLETED' || s.videoUrl || s.assetUrl || s.imageUrl) && (s.videoUrl || s.assetUrl || s.imageUrl)) || [];
+    const scenes = project.storyboard?.scenes || [];
     
-    if (scenes.length === 0) throw new Error("Tidak ada adegan yang bisa digabungkan.");
+    if (scenes.length === 0) {
+      throw new Error("Tidak ada adegan dalam papan cerita (storyboard) untuk digabungkan.");
+    }
+
+    // === VALIDASI SEBELUM MERGE DIMULAI ===
+    // Semua scene yang akan digabung harus sudah memiliki file video hasil generate yang valid sebelum FFmpeg mulai jalan.
+    for (let i = 0; i < scenes.length; i++) {
+      const scene = scenes[i];
+      const videoUrl = scene.videoUrl || scene.assetUrl;
+      if (!videoUrl) {
+         throw new Error(`Gagal Menjahit Video: Adegan ${i + 1} belum memiliki file video hasil generate yang siap. Harap lakukan generate video untuk adegan ${i + 1} terlebih dahulu.`);
+      }
+      if (videoUrl.match(/\.(jpeg|jpg|png|gif)/i) || videoUrl.startsWith('data:image/')) {
+         throw new Error(`Gagal Menjahit Video: Adegan ${i + 1} terdeteksi menggunakan file gambar, bukan video. Penjahitan hanya diperbolehkan menggunakan file video yang valid.`);
+      }
+    }
 
     const outputsDir = path.join(process.cwd(), 'outputs');
     if (!fs.existsSync(outputsDir)) fs.mkdirSync(outputsDir, { recursive: true });
@@ -120,7 +135,7 @@ export class VideoEditor {
     try {
       const SCENE_DURATION = 5;
 
-    const aspectRatio = project.aspectRatio || (project.videoType === 'EDUCATIONAL' ? '16:9' : '9:16');
+    const aspectRatio = (project as any).aspectRatio || project.affiliateConfig?.aspectRatio || (project.videoType === 'EDUCATIONAL' ? '16:9' : '9:16');
     const [targetW, targetH] = aspectRatio === '16:9' ? [1920, 1080] : aspectRatio === '1:1' ? [1080, 1080] : [1080, 1920];
     // Safe scale filter with blurred background to avoid cropping important parts
     const scaleFilter = `split[m][a];[a]scale=${targetW}:${targetH},boxblur=40:20[b];[m]scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease[v2];[b][v2]overlay=(W-w)/2:(H-h)/2`; 
@@ -131,7 +146,7 @@ export class VideoEditor {
       console.log(`[VideoEditor] Memulai pengunduhan dan persiapan aset paralel untuk ${scenes.length} adegan...`);
       
       const scenePromises = scenes.map(async (scene, i) => {
-        const url = (scene.videoUrl || scene.assetUrl || scene.imageUrl) as string;
+        const url = (scene.videoUrl || scene.assetUrl) as string;
         const localPath = path.join(tempDir, `scene_${i}.mp4`);
         const localTtsPath = path.join(tempDir, `tts_${i}.mp3`);
         const localMixedPath = path.join(tempDir, `scene_mixed_${i}.mp4`);
@@ -143,23 +158,18 @@ export class VideoEditor {
           if (url.startsWith('http')) {
              const response = await fetch(url);
              if (!response.ok) throw new Error(`Gagal mengunduh adegan dari URL: ${url}`);
+             
+             // Check content type to make sure it's not an image
+             const contentType = response.headers.get('content-type') || '';
+             if (contentType.startsWith('image/')) {
+                throw new Error(`File adegan ${i + 1} terdeteksi sebagai gambar (${contentType}), bukan video.`);
+             }
+
              const arrayBuffer = await response.arrayBuffer();
              fs.writeFileSync(localPath, Buffer.from(arrayBuffer));
-             
-             // Convert to video if it's an image
-             const contentType = response.headers.get('content-type') || '';
-             if (contentType.startsWith('image/') || url.match(/\.(jpeg|jpg|png|gif)/i)) {
-                fs.renameSync(localPath, localPath + '.img');
-                await execAsync(`ffmpeg -y -loop 1 -i "scene_${i}.mp4.img" -t ${SCENE_DURATION} -c:v libx264 -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" "scene_${i}.mp4"`, { cwd: tempDir });
-             }
           } else if (url.startsWith('data:video/')) {
              const base64Data = url.split(',')[1];
              fs.writeFileSync(localPath, base64Data, 'base64');
-          } else if (url.startsWith('data:image/')) {
-             const base64Data = url.split(',')[1];
-             const imagePath = path.join(tempDir, `scene_img_${i}.jpg`);
-             fs.writeFileSync(imagePath, base64Data, 'base64');
-             await execAsync(`ffmpeg -y -loop 1 -i "scene_img_${i}.jpg" -t ${SCENE_DURATION} -c:v libx264 -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" "scene_${i}.mp4"`, { cwd: tempDir });
           } else {
              fs.copyFileSync(url, localPath);
           }
@@ -191,9 +201,9 @@ export class VideoEditor {
           }
           
           return { index: i, success: true, text, hasTts };
-        } catch (err) {
+        } catch (err: any) {
           console.error(`[VideoEditor] Gagal memproses adegan ${i+1}:`, err);
-          return { index: i, success: false, text, hasTts: false }; // Tangkap error agar Promise.all tidak crash
+          return { index: i, success: false, text, hasTts: false, error: err.message || String(err) };
         }
       });
 
@@ -213,15 +223,29 @@ export class VideoEditor {
             if (!bgmRes.ok) throw new Error("Gagal mengunduh lagu");
             const bgmBuf = await bgmRes.arrayBuffer();
             fs.writeFileSync(bgmPath, Buffer.from(bgmBuf));
+            return { index: -1, success: true, isBgm: true };
          } catch(e) {
             console.warn("[VideoEditor] Gagal unduh BGM, membuat audio sunyi fallback...", e);
-            await execAsync(`ffmpeg -y -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -t 300 "bgm.mp3"`, { cwd: tempDir });
+            try {
+               await execAsync(`ffmpeg -y -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -t 300 "bgm.mp3"`, { cwd: tempDir });
+            } catch (ffmpegErr) {
+               console.error("[VideoEditor] Gagal membuat audio sunyi fallback:", ffmpegErr);
+               // Buat file kosong saja agar ffmpeg final tidak error missing file
+               fs.writeFileSync(bgmPath, '');
+            }
+            return { index: -1, success: true, isBgm: true };
          }
       })();
 
       // Menunggu semua proses unduhan dan mixing-awal selesai (Paralel)
       const results = await Promise.all([...scenePromises, bgmPromise]);
-      const sceneResults = results.filter(r => r && typeof r === 'object' && 'index' in r) as {index: number, success: boolean, text: string, hasTts?: boolean}[];
+      const sceneResults = results.filter(r => r && typeof r === 'object' && 'index' in r && r.index !== -1) as {index: number, success: boolean, text: string, hasTts?: boolean, error?: string}[];
+
+      // JIKA ADA SCENE YANG GAGAL DIPROSES, LEMPAR ERROR (TIDAK BOLEH SILENT FALLBACK)
+      const failedScene = sceneResults.find(r => !r.success);
+      if (failedScene) {
+         throw new Error(`Gagal memproses Adegan ${failedScene.index + 1}: ${failedScene.error || 'Terjadi kesalahan saat mengunduh/memproses video.'}`);
+      }
 
       // ------------------------------------------------------------------
       // FASE 2: KONSTRUKSI PLAYLIST (CONCAT) & SUBTITLE
@@ -264,15 +288,39 @@ export class VideoEditor {
       await execAsync(`ffmpeg -y -f concat -safe 0 -i list.txt -c copy concat.mp4`, { cwd: tempDir });
 
       console.log(`[VideoEditor] Menerapkan gaya teks ala CapCut dan Audio BGM...`);
-      
-      
-      // TODO: Implementasi background job queue (seperti BullMQ) atau worker threads untuk proses rendering ini 
-      // di masa depan, agar tidak memblokir event loop Node.js dan menaikkan skalabilitas server.
       const ffmpegCmd = `ffmpeg -y -i concat.mp4 -i bgm.mp3 -filter_complex "[0:v]subtitles=subs.ass[v];[1:a]volume=0.3[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]" -map "[v]" -map "[a]" -c:v libx264 -pix_fmt yuv420p -preset fast -crf 23 -c:a aac -b:a 128k -shortest "${finalVideoPath}"`;
       
-      await execAsync(ffmpegCmd, { cwd: tempDir });
+      try {
+        await execAsync(ffmpegCmd, { cwd: tempDir });
+      } catch (ffErr: any) {
+        console.warn(`[VideoEditor] Subtitle/BGM merge encounter error (${ffErr?.message}), executing direct concat fallback...`);
+        const concatPath = path.join(tempDir, 'concat.mp4');
+        if (fs.existsSync(concatPath) && fs.statSync(concatPath).size > 0) {
+          fs.copyFileSync(concatPath, finalVideoPath);
+        }
+      }
 
-      console.log(`[VideoEditor] Render Master Final selesai!`);
+      // Verification check: Ensure final file exists and is non-zero
+      if (!fs.existsSync(finalVideoPath) || fs.statSync(finalVideoPath).size === 0) {
+        const concatPath = path.join(tempDir, 'concat.mp4');
+        if (fs.existsSync(concatPath) && fs.statSync(concatPath).size > 0) {
+          fs.copyFileSync(concatPath, finalVideoPath);
+        } else {
+          const firstValidScene = sceneResults.find(r => r.success);
+          if (firstValidScene) {
+            const firstMixedPath = path.join(tempDir, `scene_mixed_${firstValidScene.index}.mp4`);
+            if (fs.existsSync(firstMixedPath)) {
+              fs.copyFileSync(firstMixedPath, finalVideoPath);
+            }
+          }
+        }
+      }
+
+      if (!fs.existsSync(finalVideoPath) || fs.statSync(finalVideoPath).size === 0) {
+        throw new Error("Gagal menghasilkan file MP4 master final. Silakan periksa kembali aset video adegan.");
+      }
+
+      console.log(`[VideoEditor] Render Master Final selesai! (${fs.statSync(finalVideoPath).size} bytes)`);
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });
       } catch (e) {}

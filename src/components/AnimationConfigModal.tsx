@@ -187,7 +187,7 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
   const [voiceTone, setVoiceTone] = useState<AnimationConfig['voiceTone']>('EPIC_HEROIC');
   const [aspectRatio, setAspectRatio] = useState<AnimationConfig['aspectRatio']>('16:9');
   const [sceneCount, setSceneCount] = useState(4);
-  const [imageEngine, setImageEngine] = useState<string>('flux-diffusion');
+  const [imageEngine, setImageEngine] = useState<string>('standard');
 
   // Text-to-Image Character Sheet Generator State
   const [isGeneratingChar, setIsGeneratingChar] = useState(false);
@@ -254,7 +254,7 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
   const handleGenerateCharacterSheet = async () => {
     if (!characterDescription.trim()) return;
     setIsGeneratingChar(true);
-    const engineName = imageEngine === 'gemini-imagen-3' ? 'Google Imagen 3' : imageEngine === 'chatgpt-image-2' ? 'DALL-E 3' : imageEngine === 'midjourney-v6' ? 'Midjourney v6' : 'Flux.1 Ultra AI';
+    const engineName = imageEngine === 'precision' ? 'Nano Banana Pro Edit' : imageEngine === 'draft' ? 'Flux Schnell' : 'Nano Banana 2';
     neuronaVoice.speak(`Membuat lembar referensi karakter menggunakan engine ${engineName}...`);
     try {
       const res = await fetch('/api/generate-character-sheet', {
@@ -500,10 +500,9 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
                     onChange={(e) => setImageEngine(e.target.value)}
                     className="bg-transparent text-xs text-cyan-300 font-semibold outline-none cursor-pointer pr-1"
                   >
-                    <option value="flux-diffusion" className="bg-slate-900 text-slate-200">⚡ Flux.1 Ultra AI (Diffusion 8K)</option>
-                    <option value="gemini-imagen-3" className="bg-slate-900 text-slate-200">🎨 Google Imagen 3 (AI Studio)</option>
-                    <option value="chatgpt-image-2" className="bg-slate-900 text-slate-200">🤖 OpenAI DALL-E 3 (ChatGPT)</option>
-                    <option value="midjourney-v6" className="bg-slate-900 text-slate-200">✨ Midjourney v6 Cinematic</option>
+                    <option value="standard" className="bg-slate-900 text-slate-200">🍌 Nano Banana 2 (Standard - 15 CR)</option>
+                    <option value="draft" className="bg-slate-900 text-slate-200">⚡ FLUX.1 Schnell (Draft - 5 CR)</option>
+                    <option value="precision" className="bg-slate-900 text-slate-200">💎 Nano Banana Pro Edit (Precision - 25 CR)</option>
                   </select>
                 </div>
 

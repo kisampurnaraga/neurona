@@ -25,7 +25,7 @@ export class ConversationalIntentRouter {
     // APPROVAL / CONTINUE
     if (p === 'lanjut' || p === 'lanjutkan' || p === 'oke lanjut' || p === 'gas' || p === 'mulai render' || p === 'eksekusi') {
       if (project?.status === 'AWAITING_APPROVAL') {
-        return { intent: 'APPROVAL', response: 'Siap Bos! Node produksi diaktifkan, rendering visual adegan sedang dieksekusi oleh Sora Video Director.', action: 'APPROVE' };
+        return { intent: 'APPROVAL', response: 'Siap Bos! Node produksi diaktifkan, rendering visual adegan sedang dieksekusi oleh AI Video Director.', action: 'APPROVE' };
       } else {
         return { intent: 'AMBIGUOUS', response: 'Siap, Bos. Mau melanjutkan proses produksi yang mana?' };
       }

@@ -8,6 +8,8 @@ const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/youtube.readonly');
 provider.addScope('https://www.googleapis.com/auth/yt-analytics.readonly');
+provider.addScope('https://www.googleapis.com/auth/youtube.upload');
+provider.addScope('https://www.googleapis.com/auth/youtube');
 
 let cachedAccessToken: string | null = null;
 let isSigningIn = false;

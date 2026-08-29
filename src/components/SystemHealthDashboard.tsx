@@ -46,7 +46,6 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({ on
     if (path.includes('minimax')) return 'Minimax H3';
     if (path.includes('seedance')) return 'ByteDance Seedance 2.5';
     if (path.includes('hunyuan')) return 'Hunyuan Video';
-    if (path.includes('luma')) return 'Luma Dream Machine';
     return path;
   };
 

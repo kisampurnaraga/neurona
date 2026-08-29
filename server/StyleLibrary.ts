@@ -5,7 +5,7 @@ export interface VisualStyle {
   negative_prompt?: string;
 }
 
-export const RunwayStyleLibrary: Record<string, VisualStyle> = {
+export const CinematicStyleLibrary: Record<string, VisualStyle> = {
   cinematic_film: {
     id: 'cinematic_film',
     name: 'Cinematic Realism',
@@ -37,3 +37,5 @@ export const RunwayStyleLibrary: Record<string, VisualStyle> = {
     negative_prompt: 'daylight, natural, rustic, historical, low contrast'
   }
 };
+
+// Backwards compatibility alias

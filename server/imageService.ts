@@ -15,7 +15,7 @@ import {
 } from "./falModelConfig";
 
 export class ImageGenerationService {
-  public static readonly ACTIVE_MODEL = "ChatGPT Image 2 (GPT Image 2) / Google Imagen 3 / Flux AI Diffusion";
+  public static readonly ACTIVE_MODEL = "Fal.ai (Nano Banana 2 / Nano Banana 2 Edit / Nano Banana Pro Edit / Flux Schnell)";
 
   /**
    * Uploads a local file or base64 image data URI to Fal Storage (https://rest.alpha.fal.ai/storage/upload/initiate)
@@ -608,10 +608,10 @@ export class ImageGenerationService {
       const prodName = productName || 'Commercial Product';
       const prodDesc = cleanProductVision || 'red perforated toe box, black leather upper, white midsole';
       const cleanProdDesc = prodDesc.replace(/\(+/g, '').replace(/\)+/g, '').trim();
+      const featuresProduct = scene.featuresProduct !== false && (scene as any)?.productLock !== false;
+      const isBgLocked = scene.backgroundLock !== 'free';
+      const locationStr = scene.location ? ImageGenerationService.translateAndSanitizeToEnglish(scene.location) : '';
 
-      // PRIORITAS 3: Product Consistency Lock explicit anchor
-      promptParts.push("Product Consistency Lock: Keep product packaging, shape, color, and label text exactly identical to the reference product image. Do not alter or reinterpret the product design.");
-      
       // Clean raw LLM text if it already has headers
       let sanitizedText = cleanedRawT2I
         .replace(/^Visual Scene:\s*/gi, '')
@@ -619,21 +619,48 @@ export class ImageGenerationService {
         .replace(/^Photorealistic 35mm commercial photo of hands holding [^,]+,\s*/gi, '')
         .replace(/^Photorealistic 35mm photograph of hands holding [^,]+,\s*/gi, '');
 
-      if (sanitizedText) {
-        // If prompt already contains full action/scene description, respect it directly!
-        if (/^(Photorealistic|Extreme|Full-body|Commercial|Fashion|Dynamic|Lifestyle)/i.test(sanitizedText) || sanitizedText.length > 50) {
-          promptParts.push(sanitizedText);
+      // Multi-angle product reference indicator
+      const hasMultiAngle = Array.isArray(affiliateConfig?.productImages) && affiliateConfig.productImages.length > 1;
+
+      if (featuresProduct) {
+        // PRIORITAS 3: Product Consistency Lock explicit anchor ONLY when scene features product
+        promptParts.push("Product Consistency Lock: Keep product packaging, shape, color, and label text exactly identical to the reference product image. Do not alter or reinterpret the product design.");
+        if (hasMultiAngle) {
+          promptParts.push("Multi-Angle Consistency: Reconstruct exact 3D geometry, logos, and surface textures from all multi-view reference images provided.");
+        }
+
+        if (sanitizedText) {
+          const alreadyHasProd = sanitizedText.toLowerCase().includes(prodName.toLowerCase());
+          const prodSuffix = (!alreadyHasProd && prodName) ? `, featuring ${prodName} (${cleanProdDesc})` : '';
+          
+          if (/^(Photorealistic|Extreme|Full-body|Commercial|Fashion|Dynamic|Lifestyle)/i.test(sanitizedText) || sanitizedText.length > 50) {
+            promptParts.push(`${sanitizedText}${prodSuffix}`);
+          } else {
+            const photoAnchor = `Photorealistic 35mm DSLR photograph of ${sanitizedText}${prodSuffix}`;
+            promptParts.push(photoAnchor);
+          }
         } else {
-          const photoAnchor = `Photorealistic 35mm DSLR photograph of ${sanitizedText}, featuring ${prodName} (${cleanProdDesc})`;
+          const photoAnchor = `Photorealistic 35mm DSLR photograph of real hands holding ${prodName}, ${cleanProdDesc}, held at chest level in clear view, presented by ${charSubjectEn || 'a 27-year-old female model wearing a black high-neck sweatshirt'}, commercial studio product shot, 50mm lens f/2.8, authentic human skin texture with pores, clean dark studio backdrop, cool blue accent edge lighting`;
           promptParts.push(photoAnchor);
+          if (sceneActionEn) {
+            promptParts.push(`showing ${sceneActionEn}`);
+          }
         }
       } else {
-        // Default anchor if no scene text
-        const photoAnchor = `Photorealistic 35mm DSLR photograph of real hands holding ${prodName}, ${cleanProdDesc}, held at chest level in clear view, presented by ${charSubjectEn || 'a 27-year-old female model wearing a black high-neck sweatshirt'}, commercial studio product shot, 50mm lens f/2.8, authentic human skin texture with pores, clean dark studio backdrop, cool blue accent edge lighting`;
-        promptParts.push(photoAnchor);
-        if (sceneActionEn) {
-          promptParts.push(`showing ${sceneActionEn}`);
+        // PRIORITAS 4: Scene does NOT feature product (e.g. pain point, facial emotion, lifestyle context)
+        promptParts.push("Scene Mode: Emotional Hook & Context (No product featured in this shot).");
+        if (sanitizedText) {
+          promptParts.push(`Photorealistic 35mm DSLR portrait of ${charSubjectEn || 'the creator'}, authentic human skin texture with pores, showing ${sanitizedText}`);
+        } else {
+          promptParts.push(`Photorealistic 35mm DSLR lifestyle portrait of ${charSubjectEn || 'the creator'}, authentic human skin texture with pores, expressive face showing ${sceneActionEn || 'candid authentic emotion'}, cinematic commercial lighting`);
         }
+      }
+
+      // PRIORITAS 5: Background Lock Anchor
+      if (isBgLocked) {
+        promptParts.push(`Background Lock: Environment strictly locked to ${locationStr || worldEn || 'the same consistent modern studio interior'}, identical lighting, architecture, and color temperature`);
+      } else {
+        promptParts.push(`Background: ${locationStr || worldEn || 'Dynamic background setting suited to the scene action'}`);
       }
     } else {
       let coreSubjectAction = '';
@@ -732,11 +759,20 @@ export class ImageGenerationService {
     if (videoType === 'AFFILIATE') {
       const prodName = affiliateConfig?.productName || 'Product';
       const prodDesc = affiliateConfig?.productVisualAnalysis ? ImageGenerationService.translateAndSanitizeToEnglish(affiliateConfig.productVisualAnalysis) : 'authentic details';
-      if (!motionEn) {
-        motionEn = `The character is actively interacting with, showing, and holding the ${prodName}, cinematic product showcase, fluid physics, realistic lighting, 4k 60fps`;
-      }
+      const featuresProduct = scene.featuresProduct !== false && (scene as any)?.productLock !== false;
       const charBlock = charAnchor || `${charName} ${charOutfit ? `(${charOutfit})` : ''}`;
-      return `Product Consistency Lock: Keep product packaging, shape, color, and label text exactly identical to the reference product image. Do not alter or reinterpret the product design. ${charBlock} is physically holding, demonstrating and interacting with ${prodName} (${prodDesc}). Action: ${motionEn} ${arTag}`;
+
+      if (featuresProduct) {
+        if (!motionEn) {
+          motionEn = `The character is actively interacting with, showing, and holding the ${prodName}, cinematic product showcase, fluid physics, realistic lighting, 4k 60fps`;
+        }
+        return `Product Consistency Lock: Keep product packaging, shape, color, and label text exactly identical to the reference product image. Do not alter or reinterpret the product design. ${charBlock} is physically holding, demonstrating and interacting with ${prodName} (${prodDesc}). Action: ${motionEn} ${arTag}`;
+      } else {
+        if (!motionEn) {
+          motionEn = `The creator shows candid, authentic facial expressions and gestures in an emotional storytelling moment, fluid physics, natural lighting, 4k 60fps`;
+        }
+        return `Character Locked: ${charBlock}. NO PRODUCT VISIBLE. The character's hands are empty. Do not add, render, or hallucinate any product, object, or item in the scene. Scene Action: ${motionEn} ${arTag}`;
+      }
     }
 
     if (!motionEn) {
@@ -749,7 +785,7 @@ export class ImageGenerationService {
 
   /**
    * Generates a genuine AI keyframe image tailored to the scene's prompt, product context & character.
-   * Supports Fal.ai (Nano Banana 2 / Nano Banana Pro Edit / Flux Schnell), Google Gemini Imagen 3, ChatGPT Image 2.
+   * Supports Fal.ai (Nano Banana 2 / Nano Banana 2 Edit / Nano Banana Pro Edit / Flux Schnell).
    */
   static async generateKeyframeImage(params: {
     scene: Scene;
@@ -765,6 +801,7 @@ export class ImageGenerationService {
     aspectRatio?: string;
     masterCharacterImageUrl?: string;
     masterProductImageUrl?: string;
+    previousSceneImageUrl?: string;
     forceRegenerate?: boolean;
     allowFallbackToFlux?: boolean;
     onLog?: (msg: string, level?: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR') => void;
@@ -783,6 +820,7 @@ export class ImageGenerationService {
       aspectRatio,
       masterCharacterImageUrl,
       masterProductImageUrl,
+      previousSceneImageUrl,
       forceRegenerate,
       allowFallbackToFlux,
       onLog
@@ -817,48 +855,128 @@ export class ImageGenerationService {
     const activeFalKey = keyRotator.getNextFalKey() || process.env.FAL_KEY || process.env.FAL_API_KEY || undefined;
 
     if (videoType === 'AFFILIATE') {
-      // AFFILIATE STUDIO: Product Image (index 0) + User Face Image (index 1)
-      let rawProd = masterProductImageUrl 
-        || (scene.metadata && scene.metadata.productImage) 
-        || (scene.assetUrl && !scene.assetUrl.includes('pollinations') ? scene.assetUrl : undefined);
+      // PRIORITAS 2 & 4: Multi-Angle Product gathering & Conditional Injection
+      const shouldIncludeProduct = scene.featuresProduct !== false && (scene as any)?.productLock !== false;
+      const shouldIncludeFace = (scene as any)?.faceLock !== false;
 
-      // Explicit flag check from LLM
-      if (!rawProd && scene.featuresProduct && (affiliateConfig?.productImages?.[0] || affiliateConfig?.productImage)) {
-        rawProd = affiliateConfig.productImages?.[0] || affiliateConfig.productImage;
+      // 1. Gather all product images (up to 14 references supported by Fal Edit)
+      const rawProductList: string[] = [];
+      if (shouldIncludeProduct) {
+        if (masterProductImageUrl) rawProductList.push(masterProductImageUrl);
+        if (Array.isArray(affiliateConfig?.productImages)) {
+          for (const img of affiliateConfig.productImages) {
+            if (img && !rawProductList.includes(img)) rawProductList.push(img);
+          }
+        } else if (affiliateConfig?.productImage && !rawProductList.includes(affiliateConfig.productImage)) {
+          rawProductList.push(affiliateConfig.productImage);
+        }
+        if (scene.metadata?.productImage && !rawProductList.includes(scene.metadata.productImage)) {
+          rawProductList.push(scene.metadata.productImage);
+        }
+        if (scene.assetUrl && !scene.assetUrl.includes('pollinations') && !rawProductList.includes(scene.assetUrl)) {
+          rawProductList.push(scene.assetUrl);
+        }
       }
 
-      const rawFace = masterCharacterImageUrl 
-        || characterProfile?.referenceImageUrl 
-        || affiliateConfig?.characterImage;
+      // 2. Gather face reference image
+      const rawFace = shouldIncludeFace
+        ? (masterCharacterImageUrl || characterProfile?.referenceImageUrl || affiliateConfig?.characterImage)
+        : null;
 
-      // Upload local/base64 images to Fal Storage if needed
-      const prodUrl = rawProd ? await ImageGenerationService.ensurePublicFalImageUrl(rawProd, activeFalKey) : null;
-      const faceUrl = rawFace ? await ImageGenerationService.ensurePublicFalImageUrl(rawFace, activeFalKey) : null;
+      // 3. Convert / upload product images to Fal storage
+      for (const pImg of rawProductList) {
+        const pUrl = await ImageGenerationService.ensurePublicFalImageUrl(pImg, activeFalKey);
+        if (pUrl && !referenceImageUrls.includes(pUrl) && referenceImageUrls.length < 14) {
+          referenceImageUrls.push(pUrl);
+        }
+      }
 
-      if (prodUrl) referenceImageUrls.push(prodUrl);
-      if (faceUrl && faceUrl !== prodUrl) referenceImageUrls.push(faceUrl);
+      // 4. Convert / upload face image to Fal storage
+      let faceUrl: string | null = null;
+      if (rawFace) {
+        faceUrl = await ImageGenerationService.ensurePublicFalImageUrl(rawFace, activeFalKey);
+        if (faceUrl && !referenceImageUrls.includes(faceUrl) && referenceImageUrls.length < 14) {
+          referenceImageUrls.push(faceUrl);
+        }
+      }
 
-      // PRIORITAS 2: Hard Block if Affiliate has fewer than 2 reference images (Product + Face)
-      if (referenceImageUrls.length < 2) {
-        const missingParts: string[] = [];
-        if (!prodUrl) missingParts.push('Foto Produk');
-        if (!faceUrl) missingParts.push('Foto Model/Wajah Kreator');
-        const errAffiliateMsg = `[Affiliate Studio Validation Failed] Studio Affiliate mewajibkan minimal 2 gambar referensi (${missingParts.join(' & ')} belum tersedia). Mohon upload foto produk dan foto model/karakter terlebih dahulu sebelum melakukan generate keyframe!`;
-        console.error(errAffiliateMsg);
-        if (onLog) onLog(errAffiliateMsg, 'ERROR');
-        throw new Error(errAffiliateMsg);
+      // 5. PRIORITAS 5: Background Lock reference injection
+      const isBgLocked = scene.backgroundLock !== 'free';
+      const rawBg = previousSceneImageUrl || (scene as any)?.previousSceneImageUrl || (scene as any)?.backgroundImageUrl;
+      if (isBgLocked && rawBg && referenceImageUrls.length < 14) {
+        const bgUrl = await ImageGenerationService.ensurePublicFalImageUrl(rawBg, activeFalKey);
+        if (bgUrl && !referenceImageUrls.includes(bgUrl)) {
+          referenceImageUrls.push(bgUrl);
+        }
+      }
+
+      // 6. Validation
+      const hasProduct = referenceImageUrls.some(u => u !== faceUrl);
+      const hasFace = !!faceUrl;
+
+      if (shouldIncludeProduct && !hasProduct) {
+        const errMsg = `[Affiliate Studio Validation] Adegan ${sceneIndex + 1} membutuhkan Foto Produk, namun aset foto produk belum ditemukan. Mohon upload foto produk terlebih dahulu!`;
+        if (onLog) onLog(errMsg, 'ERROR');
+        throw new Error(errMsg);
+      }
+
+      if (shouldIncludeFace && !hasFace) {
+        const errMsg = `[Affiliate Studio Validation] Adegan ${sceneIndex + 1} mengaktifkan Kunci Wajah, namun foto wajah kreator belum ditemukan. Mohon upload foto wajah kreator terlebih dahulu!`;
+        if (onLog) onLog(errMsg, 'ERROR');
+        throw new Error(errMsg);
+      }
+
+      if (referenceImageUrls.length === 0) {
+        const errMsg = `[Affiliate Studio Validation] Tidak ada gambar referensi (produk/wajah) yang tersedia untuk adegan ${sceneIndex + 1}.`;
+        if (onLog) onLog(errMsg, 'ERROR');
+        throw new Error(errMsg);
       }
     } else {
       // ANIMATION & EDUCATIONAL STUDIO:
-      // If subsequent scene (sceneIndex > 0) or master character reference exists
-      const rawChar = masterCharacterImageUrl 
-        || characterProfile?.referenceImageUrl 
-        || (Array.isArray(characterProfile?.referenceImageUrls) && characterProfile.referenceImageUrls[0]);
+      // Support multi-character isolation: if scene specifies character(s), isolate strictly to those characters
+      const sceneChar = (scene as any).characterImageUrl 
+        || (scene as any).characterReferenceUrl 
+        || (scene as any).characterProfile?.referenceImageUrl
+        || scene.metadata?.characterImageUrl
+        || scene.metadata?.characterReferenceUrl;
 
-      if (rawChar) {
-        const charUrl = await ImageGenerationService.ensurePublicFalImageUrl(rawChar, activeFalKey);
-        if (charUrl) {
+      // Check if project has multiple registered characters in animationConfig
+      const registeredChars = (animationConfig as any)?.characters || (animationConfig as any)?.characterProfiles;
+      const sceneCharNames: string[] = (scene as any).characters || ((scene as any).characterName ? [(scene as any).characterName] : []);
+
+      if (Array.isArray(registeredChars) && registeredChars.length > 0 && sceneCharNames.length > 0) {
+        // Multi-character scene filtering: only include references of characters present in this scene
+        for (const charObj of registeredChars) {
+          const isFeatured = sceneCharNames.some(n => 
+            n && charObj.name && (n.toLowerCase().includes(charObj.name.toLowerCase()) || charObj.name.toLowerCase().includes(n.toLowerCase()))
+          );
+          if (isFeatured) {
+            const ref = charObj.referenceImageUrl || charObj.imageUrl || charObj.characterImageUrl;
+            if (ref) {
+              const charUrl = await ImageGenerationService.ensurePublicFalImageUrl(ref, activeFalKey);
+              if (charUrl && !referenceImageUrls.includes(charUrl)) {
+                referenceImageUrls.push(charUrl);
+              }
+            }
+          }
+        }
+      } else if (sceneChar) {
+        // Scene-specific character reference override
+        const charUrl = await ImageGenerationService.ensurePublicFalImageUrl(sceneChar, activeFalKey);
+        if (charUrl && !referenceImageUrls.includes(charUrl)) {
           referenceImageUrls.push(charUrl);
+        }
+      } else {
+        // Default single master character reference
+        const rawChar = masterCharacterImageUrl 
+          || characterProfile?.referenceImageUrl 
+          || (Array.isArray(characterProfile?.referenceImageUrls) && characterProfile.referenceImageUrls[0]);
+
+        if (rawChar) {
+          const charUrl = await ImageGenerationService.ensurePublicFalImageUrl(rawChar, activeFalKey);
+          if (charUrl && !referenceImageUrls.includes(charUrl)) {
+            referenceImageUrls.push(charUrl);
+          }
         }
       }
     }
@@ -922,6 +1040,9 @@ export class ImageGenerationService {
             resolution: resolution as any,
             safetyTolerance: videoType === 'AFFILIATE' ? '6' : '5' // High tolerance for authentic human faces & products
           });
+
+          console.log(`[Fal.ai Payload] Model: ${modelPath}`);
+          console.log(`[Fal.ai Payload] image_urls (${payload?.image_urls?.length || 0} items):`, JSON.stringify(payload?.image_urls || [], null, 2));
 
           const isHighResQueue = resolution === '4K' || resolution === '2K';
           const startTime = Date.now();
@@ -1246,37 +1367,9 @@ export class ImageGenerationService {
       return null;
     };
 
-    // -----------------------------------------------------------------------
-    // Engine 4: High-Quality Ultra-Reliable Flux Pollinations AI Engine (Failover / Guarantee)
-    // -----------------------------------------------------------------------
-    const runPollinationsImage = async (): Promise<string | null> => {
-      try {
-        console.log(`[Pollinations AI Flux Engine] Synthesizing keyframe for Scene ${sceneIndex + 1}...`);
-        const seed = Math.floor(Math.random() * 900000) + 100000;
-        let width = 1280;
-        let height = 720;
-        if (cleanAspect === '9:16') {
-          width = 720;
-          height = 1280;
-        } else if (cleanAspect === '1:1') {
-          width = 1024;
-          height = 1024;
-        }
-        const polUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(finalPrompt)}?width=${width}&height=${height}&seed=${seed}&model=flux&nologo=true`;
-        const res = await fetch(polUrl);
-        if (res.ok) {
-          console.log(`[Pollinations AI Flux Engine] Successfully generated image for Scene ${sceneIndex + 1}!`);
-          return polUrl;
-        }
-      } catch (polErr: any) {
-        console.error(`[Pollinations AI Flux Engine] Error:`, polErr?.message || polErr);
-      }
-      return null;
-    };
-
     const throwApiError = () => {
       console.log(`[Image Synthesis Engine] All configured API models failed or API key exhausted.`);
-      throw new Error("Token API habis atau error dari penyedia layanan AI (Fal.ai / Gemini / OpenAI). Silakan periksa atau isi kembali FAL_KEY / GEMINI_API_KEY / OPENAI_API_KEY Anda di Rotator Pool untuk melanjutkan.");
+      throw new Error("Gagal generate gambar — kuota API sedang bermasalah atau error dari penyedia layanan AI. Silakan coba lagi nanti.");
     };
 
     // Primary & Fallback Engine Execution Flow
@@ -1284,18 +1377,15 @@ export class ImageGenerationService {
       const falResult = await runFalImage();
       if (falResult) return falResult;
 
-      // Check if Fal.ai quota/token was exhausted and user didn't explicitly request Flux or allow fallback
-      const isExplicitDraft = rawEngine === 'draft' || rawEngine === 'flux-diffusion' || rawEngine === 'fal-ai/flux/schnell';
-      if (falQuotaErrorOccurred && !allowFallbackToFlux && !isExplicitDraft) {
-        throw new Error(`[NANO_QUOTA_EXHAUSTED] ${falQuotaErrorMessage || 'Saldo token API Nano Banana Pro (Fal.ai) pada server habis (HTTP 402).'}`);
+      // Check if Fal.ai quota/token was exhausted
+      if (falQuotaErrorOccurred) {
+        throw new Error(`[NANO_QUOTA_EXHAUSTED] ${falQuotaErrorMessage || 'Gagal generate gambar — kuota API (Fal.ai) sedang bermasalah, silakan coba lagi nanti.'}`);
       }
 
       const bananaResult = await runGeminiBanana();
       if (bananaResult) return bananaResult;
       const gptResult = await runGptImage2();
       if (gptResult) return gptResult;
-      const polResult = await runPollinationsImage();
-      if (polResult) return polResult;
       return throwApiError();
     } else if (preferredEngine === 'chatgpt-image-2') {
       const gptResult = await runGptImage2();
@@ -1304,8 +1394,6 @@ export class ImageGenerationService {
       if (falResult) return falResult;
       const bananaResult = await runGeminiBanana();
       if (bananaResult) return bananaResult;
-      const polResult = await runPollinationsImage();
-      if (polResult) return polResult;
       return throwApiError();
     } else if (preferredEngine === 'gemini-imagen-3' || preferredEngine === 'gemini-banana') {
       const bananaResult = await runGeminiBanana();
@@ -1314,8 +1402,6 @@ export class ImageGenerationService {
       if (falResult) return falResult;
       const gptResult = await runGptImage2();
       if (gptResult) return gptResult;
-      const polResult = await runPollinationsImage();
-      if (polResult) return polResult;
       return throwApiError();
     } else {
       const falResult = await runFalImage();
@@ -1324,8 +1410,6 @@ export class ImageGenerationService {
       if (bananaResult) return bananaResult;
       const gptResult = await runGptImage2();
       if (gptResult) return gptResult;
-      const polResult = await runPollinationsImage();
-      if (polResult) return polResult;
       return throwApiError();
     }
   }

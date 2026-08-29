@@ -1,15 +1,7 @@
-
-
+import { FAL_MODELS } from "../../server/falModelConfig";
 
 export async function runVideoModelsDiagnostic() {
-  const models = [
-    'fal-ai/wan/v2.1/text-to-video',
-    'fal-ai/kling-video/v1.5/pro/text-to-video',
-    'fal-ai/minimax-video',
-    'bytedance/seedance-2.5/text-to-video',
-    'fal-ai/hunyuan-video/text-to-video',
-    'fal-ai/luma-dream-machine'
-  ];
+  const models = FAL_MODELS.map(m => m.id);
 
   const results = [];
   

@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { FounderService } from "../../src/server/fcc/FounderService";
+import { keyRotator } from "../keyRotator";
 
 export interface MultiNicheInput {
   nicheCategory?: string;
@@ -14,23 +15,18 @@ export interface MultiNicheResult {
   settingEnvironment: string;
   characterAction: string;
   optimizedImagePrompt: string;
-  veoCameraMovement: string;
+  aiVideoCameraMovement: string;
   audioNarrationScript: string;
 }
 
 export class MultiNicheDirector {
   static async analyze(input: MultiNicheInput): Promise<MultiNicheResult> {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY is missing. Cannot run Multi-Niche Director.");
-    }
-    const ai = new GoogleGenAI({ apiKey });
     const targetModel = 'gemini-2.5-flash';
 
     const systemInstruction = `Role: Master AI Multi-Niche Affiliate Director for Neuronna Platform.
 
 Objective:
-Analyze user-provided niche categories, product types, brand names, character genders, and creative notes to automatically design a contextually accurate, high-conversion visual storyboard, environment background, character action, and optimized video/image generation prompts supporting Google Veo, Product Lock, and Character Consistency.
+Analyze user-provided niche categories, product types, brand names, character genders, and creative notes to automatically design a contextually accurate, high-conversion visual storyboard, environment background, character action, and optimized video/image generation prompts supporting AI Video, Product Lock, and Character Consistency.
 
 Universal Multi-Niche Environment & Scene Matrix:
 1. TECH & GADGETS (Smartphones, Audio, Smart Home, Wearables):
@@ -66,39 +62,41 @@ When given user inputs, you must return a strict JSON response containing:
 - nicheMatched: The confirmed niche category.
 - settingEnvironment: Specific cinematic background description matching the matrix above.
 - characterAction: Specific physical action of the character utilizing the product.
-- optimizedImagePrompt: Precise English prompt for Imagen/Veo incorporating Character Consistency & Product Lock rules.
-- veoCameraMovement: Dynamic camera direction optimized for Google Veo (e.g., 9:16 aspect ratio, cinematic motion, 4K, shallow depth of field).
+- optimizedImagePrompt: Precise English prompt for Imagen/AI Video incorporating Character Consistency & Product Lock rules.
+- aiVideoCameraMovement: Dynamic camera direction optimized for AI Video Engines (e.g., 9:16 aspect ratio, cinematic motion, 4K, shallow depth of field).
 - audioNarrationScript: High-conversion hook narration script for the voiceover matching the niche.
 
 Output Format: Return a clean, valid JSON object only.`;
 
     const userPrompt = JSON.stringify(input);
 
-    const response = await ai.models.generateContent({
-      model: targetModel,
-      contents: userPrompt,
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            nicheMatched: { type: Type.STRING },
-            settingEnvironment: { type: Type.STRING },
-            characterAction: { type: Type.STRING },
-            optimizedImagePrompt: { type: Type.STRING },
-            veoCameraMovement: { type: Type.STRING },
-            audioNarrationScript: { type: Type.STRING },
-          },
-          required: ["nicheMatched", "settingEnvironment", "characterAction", "optimizedImagePrompt", "veoCameraMovement", "audioNarrationScript"]
+    return await keyRotator.executeGeminiWithRotation(async (ai, apiKey) => {
+      const response = await ai.models.generateContent({
+        model: targetModel,
+        contents: userPrompt,
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              nicheMatched: { type: Type.STRING },
+              settingEnvironment: { type: Type.STRING },
+              characterAction: { type: Type.STRING },
+              optimizedImagePrompt: { type: Type.STRING },
+              aiVideoCameraMovement: { type: Type.STRING },
+              audioNarrationScript: { type: Type.STRING },
+            },
+            required: ["nicheMatched", "settingEnvironment", "characterAction", "optimizedImagePrompt", "aiVideoCameraMovement", "audioNarrationScript"]
+          }
         }
-      }
-    });
+      });
 
-    if (response.text) {
-      return JSON.parse(response.text) as MultiNicheResult;
-    }
-    
-    throw new Error("Failed to generate multi-niche analysis.");
+      if (response.text) {
+        return JSON.parse(response.text) as MultiNicheResult;
+      }
+      
+      throw new Error("Failed to generate multi-niche analysis.");
+    });
   }
 }

@@ -189,7 +189,7 @@ export class ProductionOrchestrator {
   }
 
   private async runVideoDirector(projectId: string) {
-    const run = this.recordAgentRunStart(projectId, AgentType.SORA_VIDEO_DIRECTOR, ProductionState.PRODUCING);
+    const run = this.recordAgentRunStart(projectId, AgentType.VIDEO_DIRECTOR, ProductionState.PRODUCING);
     const project = this.getProject(projectId)!;
     
     eventBus.emitEvent({ type: ProductionEvents.SCENE_GENERATION_STARTED, projectId, timestamp: new Date() });

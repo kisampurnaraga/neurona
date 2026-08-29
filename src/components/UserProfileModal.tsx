@@ -165,7 +165,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 <Layers size={13} className="text-slate-500" />
                 Engine Video
               </span>
-              <span className="text-emerald-400 font-mono">Google Veo & BytePlus 60fps</span>
+              <span className="text-emerald-400 font-mono">Fal.ai Video Studio (11 Verified Models)</span>
             </div>
           </div>
 

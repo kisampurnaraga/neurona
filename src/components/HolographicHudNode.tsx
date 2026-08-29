@@ -138,7 +138,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
 
   // Video Generation & TTS Voice Model Selection State
   const [selectedVideoModel, setSelectedVideoModel] = useState<string>(() => {
-    return localStorage.getItem('neurona_video_model') || 'runway';
+    return localStorage.getItem('neurona_video_model') || 'fal-ai/wan-i2v';
   });
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>(() => {
     return localStorage.getItem('neurona_voice_id') || 'tryaudio-female-citra';
@@ -756,7 +756,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
   const agents: AgentTelemetry[] = project?.telemetry || [
     { id: '1', codename: 'BATARA', agentName: 'Creative Strategist', role: 'Concept & Narrative Architect', status: 'ONLINE', location: 'JAKARTA APEX NODE', currentTask: 'Synthesizing creative briefs', progress: 100, latencyMs: 18 },
     { id: '2', codename: 'SINTA', agentName: 'Storyboard Director', role: 'Cinematic & Prompt Choreographer', status: 'ONLINE', location: 'YOGYAKARTA CORE', currentTask: 'Multi-shot scene breakdown & I2V prompts', progress: 100, latencyMs: 24 },
-    { id: '3', codename: 'GATOTKACA', agentName: 'Sora Video Director', role: 'Neural Video Generation Engine', status: project?.status === 'PRODUCING' ? 'ACTIVE' : 'STANDBY', location: 'BANDUNG QUANTUM ARRAY', currentTask: 'Sora cluster video rendering', progress: project?.status === 'COMPLETED' ? 100 : project?.status === 'PRODUCING' ? 65 : 10, latencyMs: 42 },
+    { id: '3', codename: 'GATOTKACA', agentName: 'AI Video Director', role: 'Neural Video Generation Engine', status: project?.status === 'PRODUCING' ? 'ACTIVE' : 'STANDBY', location: 'BANDUNG QUANTUM ARRAY', currentTask: 'Neural cluster video rendering', progress: project?.status === 'COMPLETED' ? 100 : project?.status === 'PRODUCING' ? 65 : 10, latencyMs: 42 },
     { id: '4', codename: 'BIMA', agentName: 'Video Assembly Editor', role: 'Timeline & Multi-Track Compositor', status: 'STANDBY', location: 'SURABAYA RENDER FARM', currentTask: 'Timeline sequencer standby', progress: 100, latencyMs: 15 },
     { id: '5', codename: 'DAMAR', agentName: 'Audio Designer', role: 'Acoustic & Voice Synthesizer', status: 'ONLINE', location: 'BALI SOUND LAB', currentTask: 'Voiceover & audio scoring', progress: 90, latencyMs: 19 },
     { id: '6', codename: 'BAYU', agentName: 'Viral Content Editor', role: 'Engagement & Retention Optimizer', status: 'ONLINE', location: 'MEDAN APEX HUB', currentTask: 'Subtitles & hook stickers', progress: 80, latencyMs: 31 },
@@ -767,7 +767,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
   const logs: TerminalLog[] = project?.logs?.length ? project.logs : [
     { id: '1', timestamp: '02:24:00', source: 'NEURONA', message: 'Holographic Neural Node Matrix initialized and synchronized.', level: 'INFO' },
     { id: '2', timestamp: '02:24:02', source: 'BATARA', message: 'Creative Strategist node listening on Jakarta Apex grid.', level: 'INFO' },
-    { id: '3', timestamp: '02:24:05', source: 'GATOTKACA', message: 'Sora Neural Video Director standing by on Bandung Quantum Array.', level: 'SUCCESS' },
+    { id: '3', timestamp: '02:24:05', source: 'GATOTKACA', message: 'Neural Video Director standing by on Bandung Quantum Array.', level: 'SUCCESS' },
     { id: '4', timestamp: '02:24:08', source: 'INTERRUPT', message: 'Sistem: Semua sub-node workspace & 8 Agen AI Indonesia terhubung.', level: 'INTERRUPT' }
   ];
 
@@ -784,8 +784,8 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
     if (conversationalMessage) return conversationalMessage;
     if (isThinking) return "Sedang menganalisis brief dan merumuskan arsitektur multi-shot...";
     if (!project) return "NEURONA Node Matrix Online. Pilih Studio atau ketik instruksi produksi di bawah.";
-    if (project.status === 'AWAITING_APPROVAL') return "Storyboard telah selesai dirancang. Tekan 'Mulai Render' untuk memproses visual Sora.";
-    if (project.status === 'PRODUCING') return "Sora Video Engine sedang merender tiap adegan visual secara paralel...";
+    if (project.status === 'AWAITING_APPROVAL') return "Storyboard telah selesai dirancang. Tekan 'Mulai Render' untuk memproses visual video.";
+    if (project.status === 'PRODUCING') return "Video Engine sedang merender tiap adegan visual secara paralel...";
     if (project.status === 'COMPLETED') return "Produksi video selesai! Putar atau unduh hasil video master.";
     if (project.status === 'FAILED') return "Terjadi kendala pada pipeline eksekusi.";
     return "Mengorkestrasi multi-agent pipeline...";
@@ -878,7 +878,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
             id="hud-top-btn-models"
             onClick={() => setIsModelModalOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/60 hover:bg-rose-900/60 border border-rose-500/40 hover:border-rose-400 text-[11px] font-mono uppercase text-rose-300 transition shadow-sm cursor-pointer"
-            title="Pilih Model Video (Runway/Sora/Luma/Kling) & Pengisi Suara TTS (TryAudio/ElevenLabs)"
+            title="Pilih Model Video (Wan/Seedance/Kling/MiniMax/Hunyuan) & Pengisi Suara TTS"
           >
             <Sliders size={12} className="text-rose-400" />
             <span>Model Video & Suara</span>
@@ -1011,7 +1011,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
             id="hud-header-model-btn"
             onClick={() => setIsModelModalOpen(true)}
             className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-500/50 text-rose-300 text-xs font-mono font-bold transition shadow-sm cursor-pointer active:scale-95"
-            title="Pilih Model AI Video (BytePlus/Veo/Runway) & Suara TTS"
+            title="Pilih Model AI Video & Suara TTS"
           >
             <Sliders size={13} className="text-rose-400" />
             <span className="hidden sm:inline">Model:</span>
@@ -1574,7 +1574,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
               );
             })()}
 
-            {/* SUB-NODE 5: LIVE VIDEO STAGE & SORA PLAYER */}
+            {/* SUB-NODE 5: LIVE VIDEO STAGE & PLAYER */}
             {(() => {
               const isVideoRenderActive = ['PRODUCING', 'ASSEMBLING', 'AUDIO', 'EDITING', 'QA'].includes(project?.status || '');
               return (
@@ -1601,11 +1601,11 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
                       </div>
                       <div>
                         <h3 className="text-xs font-bold text-white tracking-wider uppercase flex items-center gap-1.5">
-                          <span>Sora Video Stage</span>
+                          <span>Video Player Stage</span>
                           {isVideoRenderActive && <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />}
                         </h3>
                         <span className="text-[10px] text-rose-400 font-mono">
-                          {project?.status === 'COMPLETED' ? 'MASTER READY' : isVideoRenderActive ? '🔥 RENDERING SORA...' : 'STANDBY'}
+                          {project?.status === 'COMPLETED' ? 'MASTER READY' : isVideoRenderActive ? '🔥 RENDERING VIDEO...' : 'STANDBY'}
                         </span>
                       </div>
                     </div>
@@ -1630,7 +1630,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
                     subtitle={currentScene?.subtitle || currentScene?.textOverlay}
                     voiceoverText={currentScene?.voiceOver}
                     status={project?.status}
-                    activeAgent={project?.activeAgent || 'GATOTKACA SORA'}
+                    activeAgent={project?.activeAgent || 'GATOTKACA VIDEO DIRECTOR'}
                     videoModel={project?.videoModel}
                     progressPercentage={progressPercentage}
                     currentPhaseName={project?.currentPhaseName}

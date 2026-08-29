@@ -460,7 +460,7 @@ Berikut adalah data akun login Anda:
 
 💡 *Panduan Singkat:*
 1. Pembuatan Storyboard & Hook AI adalah *GRATIS tanpa batas*.
-2. Kredit hanya berkurang saat Anda merender Gambar HD atau Video AI (Google Veo / Runway).
+2. Kredit hanya berkurang saat Anda merender Gambar HD atau Video AI (Fal.ai Video Studio).
 3. Jika butuh bantuan atau panduan, hubungi kami di nomor ini kapan saja.
 
 Selamat berkarya & merajai algoritma video affiliate! 🚀`;

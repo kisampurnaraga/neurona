@@ -1070,7 +1070,7 @@ export default function App() {
       case 'AWAITING_APPROVAL':
         return "Storyboard & naskah adegan siap ditinjau. Tekan 'Mulai Render' untuk memproses adegan video.";
       case 'PRODUCING':
-        return "Sora Video Director sedang merender visual adegan demi adegan...";
+        return "AI Video Director sedang merender visual adegan demi adegan...";
       case 'COMPLETED':
         return `Selesai, Bos. Video ${project.videoType?.toLowerCase()} sudah siap diputar & diunduh!`;
       case 'FAILED':
@@ -1636,16 +1636,15 @@ export default function App() {
                           className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
                           style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right .5rem center', backgroundSize: '.65em auto' }}
                         >
-                          <option value="fal-wan21">Wan 2.1</option>
-                          <option value="fal-seedance25">Seedance 2.5</option>
-                          <option value="fal-seedance20">Seedance 2.0</option>
-                          <option value="fal-sora3">Sora 3</option>
-                          <option value="fal-sora2">Sora 2</option>
-                          <option value="fal-kling15">Kling 1.5</option>
-                          <option value="fal-minimax">MiniMax H3</option>
-                          <option value="byteplus">PixelDance</option>
-                          <option value="veo">Google Veo 3.1</option>
-                          <option value="runway">Runway Gen-3</option>
+                          <option value="fal-wan21">Wan 2.1 (Budget)</option>
+                          <option value="fal-seedance20-fast">Seedance 2.0 Fast</option>
+                          <option value="fal-hunyuan">Hunyuan I2V</option>
+                          <option value="fal-kling21">Kling 2.1 Standard</option>
+                          <option value="fal-kling-o3">Kling O3 Standard</option>
+                          <option value="fal-minimax">MiniMax Video-01</option>
+                          <option value="fal-seedance20">Seedance 2.0 Standard</option>
+                          <option value="fal-seedance25">Seedance 2.5 Sinematik</option>
+                          <option value="fal-kling30-pro">Kling 3.0 Pro</option>
                         </select>
                       </div>
                     </div>
@@ -1802,7 +1801,7 @@ export default function App() {
                 subtitle={currentScene?.subtitle || currentScene?.textOverlay}
                 voiceoverText={currentScene?.voiceOver}
                 status={project?.status}
-                activeAgent={project?.activeAgent || 'GATOTKACA SORA'}
+                activeAgent={project?.activeAgent || 'GATOTKACA VIDEO DIRECTOR'}
                 videoModel={project?.videoModel}
                 progressPercentage={project?.overallProgress || 0}
                 currentPhaseName={project?.currentPhaseName}
@@ -2078,7 +2077,7 @@ export default function App() {
                   </div>
                   <div className="flex justify-between">
                     <span>Engine Model:</span>
-                    <span className="text-gray-400">Gemini 2.5 Flash + Sora Video</span>
+                    <span className="text-gray-400">Gemini 2.5 Flash + Fal.ai Video</span>
                   </div>
                 </div>
               </div>

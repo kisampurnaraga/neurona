@@ -18,7 +18,7 @@ export enum ProductionState {
 export enum AgentType {
   CREATIVE_STRATEGIST = 'CREATIVE_STRATEGIST',
   STORYBOARD_DIRECTOR = 'STORYBOARD_DIRECTOR',
-  SORA_VIDEO_DIRECTOR = 'SORA_VIDEO_DIRECTOR',
+  VIDEO_DIRECTOR = 'VIDEO_DIRECTOR',
   VIDEO_ASSEMBLY_EDITOR = 'VIDEO_ASSEMBLY_EDITOR',
   AUDIO_DESIGNER = 'AUDIO_DESIGNER',
   VIRAL_CONTENT_EDITOR = 'VIRAL_CONTENT_EDITOR',
@@ -40,7 +40,6 @@ export interface AgentRun {
 
 export interface Scene {
   videoProgress?: string;
-  prompt_video_runway?: string;
   id: string;
   duration: number;
   objective: string;

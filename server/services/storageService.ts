@@ -31,7 +31,7 @@ export class StorageService {
   }
 
   /**
-   * Uploads a local file (Veo video, TTS audio, or final muxed mp4) to Google Cloud Storage.
+   * Uploads a local file (AI video, TTS audio, or final muxed mp4) to Google Cloud Storage.
    * If GCS is not available or upload fails, falls back gracefully to local public directory URL.
    * Automatically deletes temporary local files when requested to prevent ephemeral disk overflow.
    */
@@ -137,5 +137,80 @@ export class StorageService {
     } catch (e: any) {
       console.warn(`[StorageService] Failed cleaning file ${filePath}:`, e?.message);
     }
+  }
+
+  /**
+   * Uploads a remote HTTP stream or Buffer directly to Google Cloud Storage without using local disk storage.
+   */
+  public static async uploadStreamToGCS(
+    dataStreamOrBuffer: any,
+    destinationFileName: string,
+    options: UploadOptions = { isPublic: true }
+  ): Promise<string> {
+    const cleanDestName = destinationFileName.replace(/^\/+/, '');
+    const client = this.getClient();
+    const bucket = client ? client.bucket(this.bucketName) : null;
+
+    if (!bucket || !process.env.GCS_BUCKET_NAME) {
+      throw new Error("GCS is not configured or initialized.");
+    }
+
+    const contentType = options.contentType || (
+      cleanDestName.endsWith('.mp4') ? 'video/mp4' :
+      cleanDestName.endsWith('.mp3') ? 'audio/mpeg' :
+      cleanDestName.endsWith('.wav') ? 'audio/wav' :
+      cleanDestName.endsWith('.png') ? 'image/png' :
+      cleanDestName.endsWith('.jpg') || cleanDestName.endsWith('.jpeg') ? 'image/jpeg' :
+      'application/octet-stream'
+    );
+
+    const file = bucket.file(cleanDestName);
+    const writeStream = file.createWriteStream({
+      metadata: {
+        contentType,
+        cacheControl: 'public, max-age=31536000',
+      },
+      resumable: false,
+    });
+
+    return new Promise((resolve, reject) => {
+      writeStream.on('error', (err) => {
+        console.error(`[StorageService] Streaming upload to GCS failed:`, err);
+        reject(err);
+      });
+
+      writeStream.on('finish', async () => {
+        let publicUrl = `https://storage.googleapis.com/${this.bucketName}/${cleanDestName}`;
+
+        if (options.isPublic) {
+          try {
+            await file.makePublic();
+          } catch (pubErr: any) {
+            console.warn('[StorageService] makePublic notice (bucket may use Uniform Bucket-Level Access):', pubErr?.message);
+          }
+        }
+
+        if (options.makeSignedUrl) {
+          try {
+            const [signedUrl] = await file.getSignedUrl({
+              action: 'read',
+              expires: Date.now() + (options.expiresInMinutes || 1440) * 60 * 1000,
+            });
+            publicUrl = signedUrl;
+          } catch (signErr: any) {
+            console.warn('[StorageService] getSignedUrl fallback to public URL:', signErr?.message);
+          }
+        }
+
+        console.log(`[StorageService] Streaming upload to GCS successful: ${publicUrl}`);
+        resolve(publicUrl);
+      });
+
+      if (Buffer.isBuffer(dataStreamOrBuffer)) {
+        writeStream.end(dataStreamOrBuffer);
+      } else {
+        dataStreamOrBuffer.pipe(writeStream);
+      }
+    });
   }
 }

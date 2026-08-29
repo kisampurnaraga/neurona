@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { FounderService } from '../../src/server/fcc/FounderService';
+import { keyRotator } from '../keyRotator';
 
 export interface VoiceOption {
   id: string;
@@ -168,27 +169,23 @@ export class TTSService {
     }
 
     // ----------------------------------------------------
-    // 2. Gemini Flash Native Speech AI (via GEMINI_API_KEY)
+    // 2. Gemini Flash Native Speech AI (via KeyRotator)
     // ----------------------------------------------------
-    const geminiKey = process.env.GEMINI_API_KEY;
-    if (geminiKey) {
-      try {
-        const isMale = voiceType.toLowerCase().includes('male') || voiceType.endsWith('B') || voiceType.endsWith('D');
-        const geminiVoice = isMale ? 'Puck' : 'Kore';
+    try {
+      const isMale = voiceType.toLowerCase().includes('male') || voiceType.endsWith('B') || voiceType.endsWith('D');
+      const geminiVoice = isMale ? 'Puck' : 'Kore';
 
+      const promptText = isMale
+        ? `Bicaralah dengan intonasi pria yang ramah, artikulatif, natural, dan berwibawa: "${cleanText}"`
+        : `Bicaralah dengan intonasi wanita yang ceria, ramah, memikat, artikulatif, dan natural: "${cleanText}"`;
+
+      const candidateModels = [
+        'gemini-3.1-flash-tts-preview',
+        'gemini-2.5-flash'
+      ];
+
+      return await keyRotator.executeGeminiWithRotation(async (ai, apiKey) => {
         console.log(`[TTSService] Synthesizing via Gemini Speech AI (Persona: ${geminiVoice})...`);
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
-
-        const promptText = isMale
-          ? `Bicaralah dengan intonasi pria yang ramah, artikulatif, natural, dan berwibawa: "${cleanText}"`
-          : `Bicaralah dengan intonasi wanita yang ceria, ramah, memikat, artikulatif, dan natural: "${cleanText}"`;
-
-        const candidateModels = [
-          'gemini-3.6-flash',
-          'gemini-3.1-flash-tts-preview',
-          'gemini-2.5-flash'
-        ];
-
         for (const modelName of candidateModels) {
           try {
             console.log(`[TTSService] Synthesizing via Gemini Speech AI (Model: ${modelName}, Persona: ${geminiVoice})...`);
@@ -218,11 +215,13 @@ export class TTSService {
             }
           } catch (mErr: any) {
             // Proceed to next candidate
+            console.log(`[TTSService] Model ${modelName} failed: ${mErr.message}`);
           }
         }
-      } catch (geminiErr: any) {
-        console.log(`[TTSService] Gemini Flash TTS notice: ${geminiErr?.message || geminiErr}`);
-      }
+        throw new Error("Failed to synthesize via all Gemini models.");
+      });
+    } catch (geminiErr: any) {
+      console.log(`[TTSService] Gemini Flash TTS notice: ${geminiErr?.message || geminiErr}`);
     }
 
     // ----------------------------------------------------

@@ -48,8 +48,8 @@ interface FCCConfig {
   providers: ProviderItem[];
   flags: Record<string, boolean>;
   imageEngine?: 'draft' | 'standard' | 'precision' | 'chatgpt-image-2' | 'openai' | 'dall-e-3' | 'gemini_banana' | 'google_image' | 'imagen-3' | 'flux-diffusion';
-  llmEngine?: 'gemini' | 'gemini-1.5-pro' | 'gemini-2.5-pro' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gemini-2.5-flash';
-  primaryVideoEngine?: 'byteplus' | 'veo' | 'runway' | 'sora';
+  llmEngine?: 'gemini' | 'gemini-3.1-pro-preview' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gemini-2.5-flash';
+  primaryVideoEngine?: string;
   health: {
     system: string;
     database: string;
@@ -59,7 +59,6 @@ interface FCCConfig {
   metrics?: {
     totalUsers: number;
     totalRevenueUSD: number;
-    apiCostRunwayUSD: number;
     apiCostGeminiUSD: number;
     activeRenderJobs: number;
   };
@@ -135,8 +134,8 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
   const handleOpenConfigure = (provider: ProviderItem) => {
     setEditingProvider(provider);
     setInputApiKey('');
-    setInputModel(provider.model || (provider.id === 'veo' || provider.id === 'google_veo' ? 'veo-3.1-generate-preview' : (provider.id === 'sora' ? 'sora-1.0-turbo' : '')));
-    setInputEndpoint(provider.endpoint || (provider.id === 'veo' || provider.id === 'google_veo' ? 'https://generativelanguage.googleapis.com/v1beta' : (provider.id === 'sora' ? 'https://api.openai.com/v1/videos' : '')));
+    setInputModel(provider.model || '');
+    setInputEndpoint(provider.endpoint || '');
     setTestingStatus(null);
     setSaveStatus(null);
     setShowSecret(false);
@@ -228,7 +227,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
     showNotification('Perubahan Agen AI telah disinkronkan ke memori global', 'success');
   };
   
-  const handleSetLlmEngine = async (engine: 'gemini' | 'gemini-1.5-pro' | 'gemini-2.5-pro' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gemini-2.5-flash') => {
+  const handleSetLlmEngine = async (engine: 'gemini' | 'gemini-3.1-pro-preview' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gemini-2.5-flash') => {
     try {
       const res = await fetch('/api/fcc/llm-engine', {
         method: 'POST',
@@ -262,7 +261,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
     }
   };
 
-  const handleSetVideoEngine = async (engine: 'byteplus' | 'veo' | 'runway' | 'sora') => {
+  const handleSetVideoEngine = async (engine: string) => {
     try {
       localStorage.setItem('neurona_video_model', engine);
       const res = await fetch('/api/fcc/video-engine', {
@@ -730,10 +729,10 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
                   {[
                     { 
-                      id: 'gemini-1.5-pro', 
-                      label: 'Google Gemini 1.5 Pro / 2.5', 
-                      badge: 'SUPERIOR VISION & PRODUK', 
-                      desc: 'Superior untuk analisa gambar/produk, keyframe vision, dan multimodal context raksasa.' 
+                      id: 'gemini-3.1-pro-preview', 
+                      label: 'Google Gemini 3.1 Pro (Preview)', 
+                      badge: 'SUPERIOR VISION & REASONING', 
+                      desc: 'Superior untuk analisa gambar/produk, keyframe vision, dan penalaran multimodal raksasa.' 
                     },
                     { 
                       id: 'claude-3-5-sonnet', 
@@ -749,14 +748,14 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                     },
                     { 
                       id: 'gemini-2.5-flash', 
-                      label: 'Google Gemini 2.5 Flash', 
-                      badge: 'ULTRA FAST SUB-SECOND', 
-                      desc: 'Eksekusi kilat sub-detik untuk brainstorming instan dan interaksi realtime.' 
+                      label: 'Google Gemini 3.7 Flash', 
+                      badge: 'ULTRA FAST REASONING', 
+                      desc: 'Eksekusi kilat sub-detik untuk brainstorming instan, visualisasi adegan, dan interaksi realtime.' 
                     }
                   ].map(eng => {
-                    const activeEngine = config.llmEngine || 'gemini-1.5-pro';
+                    const activeEngine = config.llmEngine || 'gemini-2.5-flash';
                     const isSelected = activeEngine === eng.id || 
-                      (eng.id === 'gemini-1.5-pro' && activeEngine === 'gemini') || 
+                      (eng.id === 'gemini-3.1-pro-preview' && activeEngine === 'gemini') || 
                       (eng.id === 'claude-3-5-sonnet' && activeEngine === 'anthropic') || 
                       (eng.id === 'gpt-4o' && activeEngine === 'openai');
                     return (
@@ -885,31 +884,19 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {[
                     { 
                       id: 'fal', 
-                      label: 'Fal.ai Universal API', 
+                      label: 'Fal.ai Video Studio (11 Verified Models)', 
                       badge: 'FAL.AI READY', 
-                      desc: 'Akses ke semua model video top-tier (Wan, Seedance, Kling).' 
+                      desc: 'Akses ke 11 model video terverifikasi (Wan 2.1, Seedance, Kling, MiniMax, Hunyuan).' 
                     },
                     { 
                       id: 'byteplus', 
                       label: 'BytePlus ModelArk (PixelDance)', 
                       badge: 'BYTEPLUS ARK', 
                       desc: 'Engine video komersial BytePlus PixelDance. Gerakan dinamis.' 
-                    },
-                    { 
-                      id: 'veo', 
-                      label: 'Google Veo 3.1', 
-                      badge: 'DEEPMIND VEO', 
-                      desc: 'Engine video fotorealistik DeepMind (veo-3.1-generate-preview).' 
-                    },
-                    { 
-                      id: 'runway', 
-                      label: 'Runway Gen-3 Alpha', 
-                      badge: 'FALLBACK TIER 1', 
-                      desc: 'Sinematik dolly, pan & motion brush Runway Gen-3.' 
                     }
                   ].map(eng => {
                     const activeModelId = config.primaryVideoEngine || localStorage.getItem('neurona_video_model') || 'byteplus';
@@ -1029,7 +1016,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                             {p.id === 'chatgpt_image_2' && 'Engine generasi gambar ChatGPT Image 2 (GPT Image 2) utama untuk merender keyframe adegan dan konsistensi karakter.'}
                             {p.id === 'tryaudio' && 'Gateway TTS TryAudioLab untuk rendering suara vokal Citra Kirana / Dimas Perkasa.'}
                             {p.id === 'elevenlabs' && 'Engine suara vokal ElevenLabs AI Studio Multilingual v2.'}
-                            {p.id === 'sora' && 'Engine video difusi sinematik OpenAI untuk menghasilkan klip visual scene.'}
+                            {p.id === 'fal' && 'Gateway Fal.ai untuk 11 model video terverifikasi (Wan, SeaDance, Kling, MiniMax, Hunyuan).'}
                             {p.id === 'gemini' && 'Engine penalaran multimodal untuk Creative Strategist & Storyboard Director.'}
                             {p.id === 'openai' && 'Engine teks & dialog ChatGPT 4.0 untuk pembentukan naskah.'}
                             {p.id === 'hermes' && 'Intelligence Adapter untuk perumusan konteks dan conversational intent.'}
@@ -1071,7 +1058,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                         onClick={() => handleOpenConfigure(p)}
                         className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-all text-center cursor-pointer shadow-[0_0_15px_rgba(79,70,229,0.2)]"
                       >
-                        {p.id === 'sora' ? (p.configured ? 'Update Sora Key' : 'Input Sora API Key') : 'Configure'}
+                        Configure
                       </button>
                       <button
                         onClick={() => handleTestConnection(p.id)}
@@ -1225,7 +1212,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
         </div>
       </main>
 
-      {/* SORA / PROVIDER CONFIGURATION MODAL */}
+      {/* PROVIDER CONFIGURATION MODAL */}
       {editingProvider && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
           <div className="bg-[#0c0c0c] border border-[#242424] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col">
@@ -1238,7 +1225,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                    {editingProvider.id === 'sora' ? 'Konfigurasi Sora Video API' : `Konfigurasi ${editingProvider.name}`}
+                    Konfigurasi {editingProvider.name}
                   </h3>
                   <div className="text-[10px] text-gray-400 uppercase tracking-widest font-mono">
                     Provider Type: {editingProvider.type}
@@ -1266,14 +1253,14 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
               ) : (
                 <div className="p-3 bg-amber-950/30 border border-amber-800/40 rounded-xl flex items-center gap-2.5 text-xs text-amber-300">
                   <AlertCircle className="text-amber-400 shrink-0" size={16} />
-                  <span>Kredensial belum tersimpan. Masukkan API Key Sora untuk mengaktifkan video riil.</span>
+                  <span>Kredensial belum tersimpan. Masukkan API Key untuk mengaktifkan provider ini.</span>
                 </div>
               )}
 
               {/* API Key Input */}
               <div>
                 <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">
-                  {editingProvider.id === 'sora' ? 'OpenAI / Sora API Key' : 'API Key / Secret'}
+                  API Key / Secret
                 </label>
                 <div className="relative flex items-center">
                   <input
@@ -1347,44 +1334,14 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
                     </div>
                   </div>
-                ) : (editingProvider.id === 'veo' || editingProvider.id === 'google_veo') ? (
-                  <div className="relative">
-                    <select
-                      id="fcc-veo-model-select"
-                      value={inputModel || 'veo-3.1-generate-preview'}
-                      onChange={e => setInputModel(e.target.value)}
-                      className="w-full bg-[#141414] border border-[#2a2a2a] focus:border-indigo-500 rounded-xl px-4 py-2.5 text-xs font-medium text-white outline-none transition-colors appearance-none cursor-pointer pr-10"
-                    >
-                      <option value="veo-3.1-lite-generate-preview" className="bg-[#1a1a1a] text-white py-2">
-                        veo-3.1-lite-generate-preview (Veo 3.1 Lite - Ekonomis & Cepat)
-                      </option>
-                      <option value="veo-3.1-generate-preview" className="bg-[#1a1a1a] text-white py-2">
-                        veo-3.1-generate-preview (Veo 3.1 Standard - High Quality)
-                      </option>
-                      <option value="veo-2.0-generate-001" className="bg-[#1a1a1a] text-white py-2">
-                        veo-2.0-generate-001 (Veo 2.0 - Stabil)
-                      </option>
-                    </select>
-                    <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="m6 9 6 6 6-6"/>
-                      </svg>
-                    </div>
-                  </div>
                 ) : (
                   <input
                     type="text"
                     value={inputModel}
                     onChange={e => setInputModel(e.target.value)}
-                    placeholder="sora-1.0-turbo"
+                    placeholder="standard-model"
                     className="w-full bg-[#141414] border border-[#2a2a2a] focus:border-indigo-500 rounded-xl px-4 py-2.5 text-xs font-mono text-white placeholder:text-gray-600 outline-none transition-colors"
                   />
-                )}
-                {(editingProvider.id === 'veo' || editingProvider.id === 'google_veo') && (
-                  <p className="text-[10px] text-gray-500 mt-1.5 flex items-center gap-1.5">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    Model resmi Google DeepMind Video Generative AI (Tier Gemini API).
-                  </p>
                 )}
               </div>
 

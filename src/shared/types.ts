@@ -32,8 +32,11 @@ export interface CharacterProfile {
 
 export interface Scene {
   featuresProduct?: boolean;
+  backgroundLock?: 'locked' | 'free';
+  location?: string;
+  faceLock?: boolean;
+  productLock?: boolean;
   videoProgress?: string;
-  prompt_video_runway?: string;
   id: string;
   duration: string;
   visualDirection: string;
@@ -41,7 +44,7 @@ export interface Scene {
   voiceOver?: string;
   textOverlay?: string;
   subtitle?: string;
-  promptImageToVideo?: string; // AI Video generation prompt (Sora / Kling / Runway / Luma)
+  promptImageToVideo?: string; // AI Video generation prompt (Wan / Seedance / Kling / Minimax / Hunyuan / BytePlus)
   promptTextToImage?: string; // AI Consistent Keyframe image prompt
   status: 'PENDING' | 'GENERATING' | 'COMPLETED' | 'FAILED';
   imageStatus?: 'PENDING' | 'GENERATING' | 'COMPLETED' | 'FAILED';
@@ -174,7 +177,7 @@ export interface ProductionProject {
   title: string;
   status: ProductionState;
   videoType: VideoType;
-  videoModel?: 'sora' | 'runway' | 'luma' | 'kling' | string;
+  videoModel?: 'kling' | 'seedance' | 'wan' | 'hunyuan' | 'minimax' | string;
   ttsVoiceConfig?: TTSVoiceConfig;
   overallProgress?: number; // 0 to 100%
   currentPhaseName?: string; // e.g. 'Perumusan Konsep (BATARA)', 'Perancangan Storyboard (SINTA)'

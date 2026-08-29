@@ -131,7 +131,17 @@ export default function AffiliateConfigModal({
     const file = files[0];
     const reader = new FileReader();
     reader.onload = (event) => {
-      setCharacterImage(event.target?.result as string);
+      const src = event.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        if (img.width < 300 || img.height < 300) {
+          alert(`⚠️ Foto wajah '${file.name}' terlalu kecil (${img.width}x${img.height}px). Harap gunakan foto minimal resolusi 300x300px agar model AI konsisten.`);
+          return;
+        }
+        setCharacterImage(src);
+      };
+      img.onerror = () => setCharacterImage(src);
+      img.src = src;
     };
     reader.readAsDataURL(file);
   };
@@ -142,6 +152,11 @@ export default function AffiliateConfigModal({
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
+          if (img.width < 300 || img.height < 300) {
+            alert(`⚠️ Foto '${file.name}' memiliki resolusi terlalu rendah (${img.width}x${img.height}px). Minimal 300x300px agar AI dapat mengenali detail fisik produk.`);
+            return reject(new Error('Resolusi foto terlalu rendah (minimal 300x300px)'));
+          }
+
           let width = img.width;
           let height = img.height;
           
@@ -173,7 +188,8 @@ export default function AffiliateConfigModal({
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    for (const file of Array.from(files)) {
+    for (let i = 0; i < files.length; i++) {
+      const file: File = files[i];
       if (type === 'VIDEO') {
         if (file.size > 800 * 1024) {
            alert(`Video ${file.name} is too large. Max 800KB due to proxy limits.`);
@@ -257,6 +273,12 @@ export default function AffiliateConfigModal({
   };
 
   const handleStartGeneration = () => {
+    const productImages = assets.filter(a => a.type === 'IMAGE').map(a => a.url);
+    if (!characterImage || productImages.length === 0) {
+      alert('⚠️ Wajib mengunggah minimal 1 Foto Produk DAN 1 Foto Model/Wajah Kreator sebelum memulai produksi!');
+      return;
+    }
+
     const config: AffiliateConfig = {
       productName,
       category,
@@ -268,7 +290,7 @@ export default function AffiliateConfigModal({
       hookStyle,
       characterImage: characterImage || undefined,
       productInfo: productInfo || keyBenefits,
-      productImages: assets.filter(a => a.type === 'IMAGE').map(a => a.url),
+      productImages: productImages,
       referenceVideoUrl: referenceVideoUrl || assets.find(a => a.type === 'VIDEO')?.url,
       sceneCount: sceneCount
     };
@@ -357,10 +379,19 @@ export default function AffiliateConfigModal({
           <div className="space-y-3">
             <div className="grid grid-cols-1 gap-3 mb-2">
               <div className="space-y-1.5">
-                <label className="font-bold text-gray-300 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
-                  <ImageIcon size={13} className="text-purple-400" />
-                  <span>Karakter / Kreator Image</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-gray-300 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                    <ImageIcon size={13} className="text-purple-400" />
+                    <span>Karakter / Kreator Image <span className="text-red-400">*</span></span>
+                  </label>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                    characterImage 
+                      ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/30' 
+                      : 'bg-red-950/60 text-red-400 border-red-500/30'
+                  }`}>
+                    {characterImage ? '✓ Wajah Terpasang' : '✗ Wajib Upload Wajah'}
+                  </span>
+                </div>
                 <div className="flex gap-2">
                   {characterImage && (
                     <div className="relative w-20 h-20 rounded-lg border border-[#27272a] bg-[#121216] overflow-hidden group shrink-0">
@@ -375,7 +406,7 @@ export default function AffiliateConfigModal({
                   )}
                   <label className="flex-1 h-20 rounded-lg border-2 border-dashed border-[#2d2d35] hover:border-purple-500/60 bg-[#0f0f13] hover:bg-[#15151c] flex flex-col items-center justify-center gap-1 text-gray-400 hover:text-purple-300 cursor-pointer transition-all">
                     <Upload size={14} />
-                    <span className="text-[10px] font-medium text-center">{characterImage ? 'Ganti Karakter' : '+ Foto Karakter'}</span>
+                    <span className="text-[10px] font-medium text-center">{characterImage ? 'Ganti Karakter' : '+ Foto Karakter (Wajib)'}</span>
                     <input type="file" accept="image/*" onChange={handleCharacterUpload} className="hidden" />
                   </label>
                 </div>
@@ -386,9 +417,15 @@ export default function AffiliateConfigModal({
             <div className="flex items-center justify-between mt-2">
               <label className="font-bold text-gray-300 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
                 <ImageIcon size={13} className="text-indigo-400" />
-                <span>Foto Produk ({assets.filter(a => a.type === 'IMAGE').length} Terpilih)</span>
+                <span>Foto Produk ({assets.filter(a => a.type === 'IMAGE').length} Terpilih) <span className="text-red-400">*</span></span>
               </label>
-              <span className="text-[10px] text-gray-500">Mendukung PNG, JPG, WebP</span>
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                assets.filter(a => a.type === 'IMAGE').length > 0
+                  ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/30' 
+                  : 'bg-red-950/60 text-red-400 border-red-500/30'
+              }`}>
+                {assets.filter(a => a.type === 'IMAGE').length > 0 ? `✓ ${assets.filter(a => a.type === 'IMAGE').length} Foto Siap` : '✗ Wajib Upload Min 1 Foto Produk'}
+              </span>
             </div>
 
             {/* Asset Thumbnails */}
@@ -646,27 +683,57 @@ export default function AffiliateConfigModal({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-[#1f1f23] bg-[#0c0c10] flex items-center justify-between">
-          <div className="text-[10px] text-gray-500">
-            {assets.length > 0 ? `✨ ${assets.length} aset terlampir` : 'Belum ada aset terlampir (akan digenerate oleh AI)'}
-          </div>
+        {(() => {
+          const productAssetsCount = assets.filter(a => a.type === 'IMAGE').length;
+          const hasRequiredFace = Boolean(characterImage && characterImage.trim().length > 0);
+          const isSubmitDisabled = productAssetsCount === 0 || !hasRequiredFace;
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg bg-transparent hover:bg-white/5 text-gray-400 text-xs font-semibold transition-colors"
-            >
-              Batal
-            </button>
-            <button
-              onClick={handleStartGeneration}
-              className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-[0_0_20px_rgba(79,70,229,0.4)] transition-all cursor-pointer"
-            >
-              <Sparkles size={14} />
-              <span>Mulai Produksi Affiliate</span>
-            </button>
-          </div>
-        </div>
+          return (
+            <div className="p-4 border-t border-[#1f1f23] bg-[#0c0c10] flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex flex-col gap-0.5">
+                <div className="text-[10px] text-gray-400">
+                  {assets.length > 0 ? `✨ ${assets.length} aset terlampir (${productAssetsCount} foto produk)` : 'Belum ada aset terlampir'}
+                </div>
+                {isSubmitDisabled && (
+                  <div className="text-[10px] font-bold text-amber-400 flex items-center gap-1">
+                    <span>⚠️</span>
+                    <span>
+                      {productAssetsCount === 0 && !hasRequiredFace 
+                        ? 'Upload minimal 1 foto produk & 1 foto wajah' 
+                        : productAssetsCount === 0 
+                          ? 'Upload minimal 1 foto produk' 
+                          : 'Upload foto wajah model/kreator'}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 rounded-lg bg-transparent hover:bg-white/5 text-gray-400 text-xs font-semibold transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmitDisabled}
+                  onClick={handleStartGeneration}
+                  className={`px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all ${
+                    isSubmitDisabled
+                      ? 'bg-slate-800/80 text-slate-500 border border-slate-700 cursor-not-allowed shadow-none'
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] cursor-pointer'
+                  }`}
+                  title={isSubmitDisabled ? 'Harap lengkapi foto produk dan wajah model sebelum lanjut' : 'Mulai produksi video affiliate'}
+                >
+                  <Sparkles size={14} />
+                  <span>Mulai Produksi Affiliate</span>
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
       </div>
     </div>

@@ -246,15 +246,21 @@ class ApiKeyRotatorService {
     const errMsg = error?.message || String(error);
     health.lastErrorReason = errMsg;
 
-    const isRateLimit = errMsg.includes('429') || 
+    const isDepleted = errMsg.toLowerCase().includes('prepayment credits are depleted');
+    
+    const isRateLimit = !isDepleted && (errMsg.includes('429') || 
                         errMsg.toLowerCase().includes('resource_exhausted') || 
                         errMsg.toLowerCase().includes('rate limit') ||
-                        errMsg.toLowerCase().includes('quota');
+                        errMsg.toLowerCase().includes('quota') ||
+                        errMsg.includes('503') ||
+                        errMsg.toLowerCase().includes('unavailable') ||
+                        errMsg.toLowerCase().includes('high demand'));
 
-    const isInvalid = errMsg.includes('401') || 
+    const isInvalid = isDepleted || errMsg.includes('401') || 
                       errMsg.includes('403') || 
                       errMsg.toLowerCase().includes('api_key_invalid') || 
-                      errMsg.toLowerCase().includes('invalid api key');
+                      errMsg.toLowerCase().includes('invalid api key') ||
+                      errMsg.toLowerCase().includes('unauthenticated');
 
     if (isInvalid) {
       health.status = 'DISABLED';

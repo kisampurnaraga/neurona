@@ -6,6 +6,9 @@ import { VideoEditor } from "./VideoEditor";
 import { GoogleGenAI, Type } from "@google/genai";
 import crypto from "crypto";
 import { EventEmitter } from "events";
+import fetch from "node-fetch";
+import { StorageService } from "./services/storageService";
+import { GCSStreamService } from "./services/gcsStreamService";
 import { 
   ProductionProject, 
   ProductAsset, 
@@ -17,8 +20,8 @@ import {
   TerminalLog 
 } from "../src/shared/types";
 import { getVideoProvider } from "../src/server/providers";
-import { VeoAdapter } from "../src/server/providers/VeoAdapter";
 import { FalVideoAdapter } from "../src/server/providers/FalVideoAdapter";
+import { BytePlusAdapter } from "../src/server/providers/BytePlusAdapter";
 import { getSampleVideoForScene } from "../src/server/providers/VideoProvider";
 
 export async function renderSceneVideoWithFallback(
@@ -28,9 +31,9 @@ export async function renderSceneVideoWithFallback(
   onProgress?: (msg: string) => void
 ): Promise<string> {
   const context = (project.brief || '') + ' TYPE:' + (project.videoType || '');
-  const preferredModel = project.videoModel || 'veo';
+  const preferredModel = project.videoModel || 'fal';
   
-  // Attempt 1: Preferred Provider
+  // Attempt 1: Preferred Provider (Fal.ai / ByteDance)
   try {
     const provider = getVideoProvider(preferredModel);
     console.log(`[Video Engine Multi-Stage] Scene ${sceneIdx + 1}: Attempting preferred provider ${provider.name}...`);
@@ -38,26 +41,10 @@ export async function renderSceneVideoWithFallback(
     if (resultUrl) return resultUrl;
   } catch (err: any) {
     console.warn(`[Video Engine Multi-Stage] Scene ${sceneIdx + 1} preferred provider (${preferredModel}) failed:`, err?.message || err);
-    appendLog(project, 'GATOTKACA', `Provider utama (${preferredModel}) mengalami kendala: ${err?.message || err}. Mengalihkan ke provider cadangan...`, 'WARN');
+    appendLog(project, 'GATOTKACA', `Provider utama (${preferredModel}) mengalami kendala: ${err?.message || err}. Mengalihkan ke engine Fal.ai cadangan...`, 'WARN');
   }
 
-  // Attempt 2: Google Veo 3.1 Adapter (if preferred was not Veo)
-  if (!preferredModel.toLowerCase().includes('veo') && !preferredModel.toLowerCase().includes('google')) {
-    try {
-      const veoProvider = new VeoAdapter();
-      console.log(`[Video Engine Multi-Stage] Scene ${sceneIdx + 1}: Failover to Google Veo 3.1...`);
-      onProgress?.('Mengalihkan ke engine cadangan Google Veo 3.1...');
-      const resultUrl = await veoProvider.generateScene(scene, context, onProgress);
-      if (resultUrl) {
-        appendLog(project, 'GATOTKACA', `Berhasil render adegan ${sceneIdx + 1} dengan Google Veo 3.1`, 'SUCCESS');
-        return resultUrl;
-      }
-    } catch (veoErr: any) {
-      console.warn(`[Video Engine Multi-Stage] Scene ${sceneIdx + 1} Google Veo failover failed:`, veoErr?.message || veoErr);
-    }
-  }
-
-  // Attempt 3: FalVideoAdapter (if preferred was not Fal)
+  // Attempt 2: FalVideoAdapter fallback (if preferred was not Fal default)
   if (!preferredModel.toLowerCase().includes('fal')) {
     try {
       const falProvider = new FalVideoAdapter();
@@ -65,7 +52,7 @@ export async function renderSceneVideoWithFallback(
       onProgress?.('Mengalihkan ke engine cadangan Fal.ai...');
       const resultUrl = await falProvider.generateScene(scene, context, onProgress);
       if (resultUrl) {
-        appendLog(project, 'GATOTKACA', `Berhasil render adegan ${sceneIdx + 1} dengan Fal.ai Video`, 'SUCCESS');
+        appendLog(project, 'GATOTKACA', `Berhasil render adegan ${sceneIdx + 1} dengan Fal.ai Video Engine`, 'SUCCESS');
         return resultUrl;
       }
     } catch (falErr: any) {
@@ -73,7 +60,7 @@ export async function renderSceneVideoWithFallback(
     }
   }
 
-  // Attempt 4: High-fidelity genre motion asset fallback guarantee
+  // Attempt 3: High-fidelity genre motion asset fallback guarantee
   console.log(`[Video Engine Multi-Stage] Scene ${sceneIdx + 1}: Applying high-fidelity sample motion asset guarantee.`);
   onProgress?.('Mengaplikasikan gerak sinematik adegan...');
   const sampleUrl = getSampleVideoForScene(scene, context);
@@ -93,6 +80,217 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const dbPath = path.join(process.cwd(), 'outputs', 'db.json');
+
+// Helper to fetch with exponential backoff retry mechanism
+async function fetchWithRetry(url: string, retries = 3, delay = 1000): Promise<any> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return response;
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      console.warn(`[LocalSaver] Retry ${i + 1}/${retries} downloading from ${url} due to error:`, err);
+      await new Promise(res => setTimeout(res, delay * Math.pow(2, i)));
+    }
+  }
+}
+
+// Background cleanup routine for the outputs folder to prevent full disk space
+export function cleanupOutputsDirectory(): void {
+  const outputsDir = path.join(process.cwd(), 'outputs');
+  if (!fs.existsSync(outputsDir)) return;
+
+  const MAX_AGE_DAYS = 14; // Automatically clean files older than 14 days
+  const MAX_DIR_SIZE_MB = 1000; // Limit local folder to 1GB to prevent container crash
+  const NOW = Date.now();
+
+  console.log('[CleanupTask] Running /outputs cleanup scan...');
+  
+  try {
+    const files = fs.readdirSync(outputsDir);
+    const fileInfos = files
+      .map(file => {
+        const filePath = path.join(outputsDir, file);
+        try {
+          const stats = fs.statSync(filePath);
+          return {
+            name: file,
+            path: filePath,
+            size: stats.size,
+            mtime: stats.mtimeMs,
+            isFile: stats.isFile()
+          };
+        } catch (e) {
+          return null;
+        }
+      })
+      .filter((f): f is NonNullable<typeof f> => f !== null && f.isFile);
+
+    // CRITICAL: Protect database files so they are NEVER deleted!
+    const protectedFiles = ['db.json', 'sqlite.db', 'sqlite.db-journal', 'sqlite.db-wal', 'sqlite.db-shm'];
+
+    // 1. Delete files older than MAX_AGE_DAYS
+    const ageThreshold = NOW - (MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
+    
+    fileInfos.forEach(file => {
+      if (protectedFiles.includes(file.name)) return;
+      
+      if (file.mtime < ageThreshold) {
+        try {
+          fs.unlinkSync(file.path);
+          console.log(`[CleanupTask] Deleted expired file (older than ${MAX_AGE_DAYS} days): ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+        } catch (err: any) {
+          console.warn(`[CleanupTask] Gagal menghapus file ${file.name}:`, err.message);
+        }
+      }
+    });
+
+    // Re-evaluate folder size after age-based deletion
+    const activeFiles = fileInfos.filter(file => {
+      if (protectedFiles.includes(file.name)) return false;
+      return fs.existsSync(file.path);
+    });
+
+    let totalSize = activeFiles.reduce((sum, file) => sum + file.size, 0);
+    const maxSizeBytes = MAX_DIR_SIZE_MB * 1024 * 1024;
+
+    console.log(`[CleanupTask] Current directory size: ${(totalSize / 1024 / 1024).toFixed(2)} MB / ${MAX_DIR_SIZE_MB} MB`);
+
+    // 2. If directory size exceeds threshold, delete oldest files (Least Recently Modified)
+    if (totalSize > maxSizeBytes) {
+      console.log(`[CleanupTask] Directory exceeds ${MAX_DIR_SIZE_MB}MB limit. Starting size-based cleanup...`);
+      
+      // Sort oldest first
+      activeFiles.sort((a, b) => a.mtime - b.mtime);
+
+      for (const file of activeFiles) {
+        if (totalSize <= maxSizeBytes) break;
+
+        try {
+          fs.unlinkSync(file.path);
+          totalSize -= file.size;
+          console.log(`[CleanupTask] Deleted file to fit quota: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+        } catch (err: any) {
+          console.warn(`[CleanupTask] Gagal menghapus file ${file.name}:`, err.message);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('[CleanupTask] Error during scan:', err);
+  }
+
+  console.log('[CleanupTask] Scan completed.');
+}
+
+// Start output cleanup scheduler
+export function startOutputsCleanupTask(): void {
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  
+  // Run first execution 15 seconds after startup to let initialization settle
+  setTimeout(() => {
+    try {
+      cleanupOutputsDirectory();
+    } catch (e) {
+      console.error('[CleanupTask] Error in initial execution:', e);
+    }
+  }, 15000);
+
+  // Run periodically every 24 hours
+  setInterval(() => {
+    try {
+      cleanupOutputsDirectory();
+    } catch (e) {
+      console.error('[CleanupTask] Error in interval execution:', e);
+    }
+  }, ONE_DAY_MS);
+}
+
+export async function saveFileLocally(urlOrData: string, prefix: string, extension: string, project?: ProductionProject): Promise<string> {
+  if (!urlOrData || typeof urlOrData !== 'string') return urlOrData;
+
+  // If it is already a local URL or GCS public URL, don't re-download
+  if (urlOrData.startsWith('/outputs/') || urlOrData.includes('storage.googleapis.com')) {
+    return urlOrData;
+  }
+
+  const uniqueId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+  const filename = `${prefix}_${uniqueId}.${extension}`;
+
+  const isReferenceImage = /reference|ref_|face|profile|upload|avatar|product_image/i.test(filename);
+
+  // === CLOUD RUN PRODUCTION HARDENING (DIRECT STREAMING TO GCS) ===
+  // If GCS_BUCKET_NAME is configured, stream directly to GCS, completely skipping local container filesystem writing!
+  if (process.env.GCS_BUCKET_NAME) {
+    try {
+      console.log(`[LocalSaver] GCS Bucket defined. Initiating direct streaming upload of '${filename}' to GCS...`);
+      const category = isReferenceImage ? 'reference_image' : 'final_output';
+      
+      if (urlOrData.startsWith('data:')) {
+        // Handle data URI (base64) directly via buffer stream
+        const matches = urlOrData.match(/^data:([^;]+);base64,(.+)$/);
+        if (matches) {
+          const buffer = Buffer.from(matches[2], 'base64');
+          const gcsUrl = await GCSStreamService.uploadStream(buffer, `assets/${filename}`, { isPublic: !isReferenceImage, category });
+          console.log(`[LocalSaver] Saved base64 data directly to persistent GCS: ${gcsUrl}`);
+          return gcsUrl;
+        }
+      } else if (urlOrData.startsWith('http://') || urlOrData.startsWith('https://')) {
+        // Stream download directly from HTTP to GCS write stream
+        console.log(`[LocalSaver] Streaming external asset with retries from ${urlOrData} directly to GCS...`);
+        const response = await fetchWithRetry(urlOrData);
+        // Node-fetch response.body is a readable stream of the response payload
+        const gcsUrl = await GCSStreamService.uploadStream(response.body, `assets/${filename}`, { isPublic: !isReferenceImage, category });
+        console.log(`[LocalSaver] Streaming download and persistent GCS upload successful: ${gcsUrl}`);
+        return gcsUrl;
+      }
+    } catch (gcsErr: any) {
+      console.warn(`[LocalSaver] Direct GCS streaming failed (${gcsErr.message}). Gracefully falling back to local disk storage.`);
+      if (project) {
+        try {
+          (project as any).storageStatus = "at_risk_local_only";
+          appendLog(project, 'SYSTEM', `CRITICAL STORAGE FAILURE: Gagal mengunggah aset ke GCS. Menggunakan penyimpanan lokal sementara (At Risk)! Error: ${gcsErr.message}`, 'ERROR');
+          saveProjects();
+        } catch (dbErr: any) {
+          console.error('[LocalSaver] Failed to flag project storage status in DB:', dbErr);
+        }
+      }
+    }
+  }
+
+  // === LOCAL FALLBACK (FOR DEVELOPMENT / PREVIEW / LOCAL WORKSPACE) ===
+  // Ensure outputs directory exists
+  const outputsDir = path.join(process.cwd(), 'outputs');
+  if (!fs.existsSync(outputsDir)) {
+    fs.mkdirSync(outputsDir, { recursive: true });
+  }
+  const localFilePath = path.join(outputsDir, filename);
+
+  try {
+    if (urlOrData.startsWith('data:')) {
+      // Handle data URI (base64)
+      const matches = urlOrData.match(/^data:([^;]+);base64,(.+)$/);
+      if (matches) {
+        const buffer = Buffer.from(matches[2], 'base64');
+        fs.writeFileSync(localFilePath, buffer);
+        console.log(`[LocalSaver-Fallback] Saved base64 data to local file: ${filename}`);
+      }
+    } else if (urlOrData.startsWith('http://') || urlOrData.startsWith('https://')) {
+      // Handle external HTTP URL with exponential backoff retry mechanism
+      console.log(`[LocalSaver-Fallback] Downloading external asset with retries from ${urlOrData} ...`);
+      const response = await fetchWithRetry(urlOrData);
+      const arrayBuffer = await response.arrayBuffer();
+      fs.writeFileSync(localFilePath, Buffer.from(arrayBuffer));
+      console.log(`[LocalSaver-Fallback] Successfully downloaded and saved external asset to: ${filename}`);
+    }
+
+    return `/outputs/${filename}`;
+  } catch (err: any) {
+    console.error(`[LocalSaver-Fallback] Gagal mengamankan file ke penyimpanan lokal:`, err);
+  }
+
+  return urlOrData;
+}
 
 export function ensureCompleteMarketingCopy(project: ProductionProject) {
   const vType = project.videoType || 'AFFILIATE';
@@ -521,7 +719,7 @@ function createDefaultTelemetry(): AgentTelemetry[] {
     {
       id: 'agent-gatotkaca',
       codename: 'GATOTKACA',
-      agentName: 'Sora Video Director',
+      agentName: 'AI Video Director',
       role: 'Neural Video Generation Engine',
       status: 'STANDBY',
       location: 'BANDUNG QUANTUM ARRAY',
@@ -652,7 +850,7 @@ export class ProductionOrchestrator {
 
     const telemetry = createDefaultTelemetry();
 
-    const selectedVideoModel = videoModel || (prompt.toLowerCase().includes('runway') ? 'runway' : prompt.toLowerCase().includes('luma') ? 'luma' : prompt.toLowerCase().includes('kling') ? 'kling' : 'sora');
+    const selectedVideoModel = videoModel || (prompt.toLowerCase().includes('seedance') ? 'fal-seedance25' : prompt.toLowerCase().includes('kling') ? 'fal-kling21' : prompt.toLowerCase().includes('wan') ? 'fal-wan21' : prompt.toLowerCase().includes('minimax') ? 'fal-minimax' : 'fal-wan21');
     const selectedTTS = ttsVoiceConfig || {
       provider: prompt.toLowerCase().includes('tryaudio') ? 'tryaudio' : prompt.toLowerCase().includes('elevenlabs') ? 'elevenlabs' : 'webspeech',
       voiceGender: prompt.toLowerCase().includes('laki') || prompt.toLowerCase().includes('pria') || prompt.toLowerCase().includes('cowok') ? 'male' : 'female',
@@ -716,7 +914,7 @@ export class ProductionOrchestrator {
         'Creative Strategist': 'WORKING',
         'Storyboard Director': 'WAITING',
         'Human Approval Gate': 'WAITING',
-        'Sora Video Director': 'WAITING',
+        'AI Video Director': 'WAITING',
         'Video Assembly Editor': 'WAITING',
         'Audio Designer': 'WAITING',
         'Viral Content Editor': 'WAITING',
@@ -967,7 +1165,7 @@ export class ProductionOrchestrator {
       if (rawScenes && Array.isArray(rawScenes) && rawScenes.length > 0) {
         generatedScenes = await Promise.all(rawScenes.map(async (s: any, idx: number) => {
           let lockedT2IPrompt = ImageGenerationService.buildT2IImagePrompt({
-            scene: { ...s, promptTextToImage: s.promptTextToImage || s.prompt_video_runway, visualDirection: s.visualDirection || s.visual_direction },
+            scene: { ...s, promptTextToImage: s.promptTextToImage || s.promptImageToVideo, visualDirection: s.visualDirection || s.visual_direction },
             sceneIndex: idx,
             videoType: vType,
             characterProfile: project.characterProfile,
@@ -978,7 +1176,7 @@ export class ProductionOrchestrator {
           });
 
           let lockedI2VPrompt = ImageGenerationService.buildI2VVideoPrompt({
-            scene: { ...s, promptImageToVideo: s.promptImageToVideo || s.prompt_video_runway, visualDirection: s.visualDirection || s.visual_direction },
+            scene: { ...s, promptImageToVideo: s.promptImageToVideo || s.promptTextToImage, visualDirection: s.visualDirection || s.visual_direction },
             sceneIndex: idx,
             videoType: vType,
             characterProfile: project.characterProfile,
@@ -1450,6 +1648,9 @@ export class ProductionOrchestrator {
       const masterCharUrl = project.masterCharacterImageUrl || project.characterProfile?.referenceImageUrl;
       const masterProdUrl = project.masterProductImageUrl || project.affiliateConfig?.productImages?.[0] || (project.affiliateConfig as any)?.productImage;
 
+      const prevScene = sceneIdx > 0 ? project.storyboard.scenes[sceneIdx - 1] : null;
+      const prevSceneImageUrl = prevScene?.imageUrl || prevScene?.assetUrl;
+
       const imageUrl = await ImageGenerationService.generateKeyframeImage({
         scene,
         sceneIndex: sceneIdx,
@@ -1463,6 +1664,7 @@ export class ProductionOrchestrator {
         resolution,
         masterCharacterImageUrl: masterCharUrl,
         masterProductImageUrl: masterProdUrl,
+        previousSceneImageUrl: prevSceneImageUrl,
         forceRegenerate: true,
         allowFallbackToFlux,
         onLog: (msg, level) => {
@@ -1471,17 +1673,20 @@ export class ProductionOrchestrator {
         }
       });
 
-      scene.imageUrl = imageUrl;
-      if (!scene.assetUrl) {
-        scene.assetUrl = imageUrl;
+      appendLog(project, 'SINTA', `Mengamankan gambar keyframe adegan ${sceneIdx + 1} ke server lokal...`, 'INFO');
+      const localImageUrl = await saveFileLocally(imageUrl, `scene_img_${sceneIdx + 1}`, 'png', project);
+
+      scene.imageUrl = localImageUrl;
+      if (!scene.assetUrl || scene.assetUrl === imageUrl) {
+        scene.assetUrl = localImageUrl;
       }
       scene.imageStatus = 'COMPLETED';
 
       // Lock as master reference if this is the first scene with a generated image
       if (sceneIdx === 0 || !project.masterCharacterImageUrl) {
-        project.masterCharacterImageUrl = imageUrl;
+        project.masterCharacterImageUrl = localImageUrl;
         if (project.characterProfile && !project.characterProfile.referenceImageUrl) {
-          project.characterProfile.referenceImageUrl = imageUrl;
+          project.characterProfile.referenceImageUrl = localImageUrl;
         }
       }
 
@@ -1563,6 +1768,8 @@ export class ProductionOrchestrator {
       try {
         const masterCharUrl = project.masterCharacterImageUrl || project.characterProfile?.referenceImageUrl;
         const masterProdUrl = project.masterProductImageUrl || project.affiliateConfig?.productImages?.[0] || (project.affiliateConfig as any)?.productImage;
+        const prevScene = i > 0 ? project.storyboard.scenes[i - 1] : null;
+        const prevSceneImageUrl = prevScene?.imageUrl || prevScene?.assetUrl;
 
         const imageUrl = await ImageGenerationService.generateKeyframeImage({
           scene: sc,
@@ -1577,6 +1784,7 @@ export class ProductionOrchestrator {
           resolution,
           masterCharacterImageUrl: masterCharUrl,
           masterProductImageUrl: masterProdUrl,
+          previousSceneImageUrl: prevSceneImageUrl,
           forceRegenerate: true,
           allowFallbackToFlux,
           onLog: (msg, level) => {
@@ -1585,17 +1793,20 @@ export class ProductionOrchestrator {
           }
         });
 
-        sc.imageUrl = imageUrl;
-        if (!sc.assetUrl) {
-          sc.assetUrl = imageUrl;
+        appendLog(project, 'SINTA', `Mengamankan gambar keyframe adegan ${i + 1} ke server lokal...`, 'INFO');
+        const localImageUrl = await saveFileLocally(imageUrl, `scene_img_${i + 1}`, 'png', project);
+
+        sc.imageUrl = localImageUrl;
+        if (!sc.assetUrl || sc.assetUrl === imageUrl) {
+          sc.assetUrl = localImageUrl;
         }
         sc.imageStatus = 'COMPLETED';
 
         // Anchor master reference from Scene 0 or first successful image
         if (i === 0 || !project.masterCharacterImageUrl) {
-          project.masterCharacterImageUrl = imageUrl;
+          project.masterCharacterImageUrl = localImageUrl;
           if (project.characterProfile && !project.characterProfile.referenceImageUrl) {
-            project.characterProfile.referenceImageUrl = imageUrl;
+            project.characterProfile.referenceImageUrl = localImageUrl;
           }
         }
 
@@ -1638,7 +1849,7 @@ export class ProductionOrchestrator {
     const scene = project.storyboard.scenes[sceneIdx];
 
     // Save selected video model
-    const effectiveVideoModel = videoModel || (scene as any).videoModel || project.videoModel || 'veo';
+    const effectiveVideoModel = videoModel || (scene as any).videoModel || project.videoModel || 'fal';
     (scene as any).videoModel = effectiveVideoModel;
     project.videoModel = effectiveVideoModel;
     
@@ -1674,20 +1885,23 @@ export class ProductionOrchestrator {
          scene.videoProgress = progressStatus;
          projectEvents.emit(`update:${id}`, project);
       });
-      scene.videoUrl = generatedUrl;
+      appendLog(project, 'GATOTKACA', `Mengamankan file video adegan ${sceneIdx + 1} ke server lokal...`, 'INFO');
+      const localVideoUrl = await saveFileLocally(generatedUrl, `scene_vid_${sceneIdx + 1}`, 'mp4', project);
+
+      scene.videoUrl = localVideoUrl;
       scene.videoStatus = 'COMPLETED';
       scene.status = 'COMPLETED';
 
       // Keep project.scenes in sync if present
       if (Array.isArray((project as any).scenes) && (project as any).scenes[sceneIdx]) {
-        (project as any).scenes[sceneIdx].videoUrl = generatedUrl;
+        (project as any).scenes[sceneIdx].videoUrl = localVideoUrl;
         (project as any).scenes[sceneIdx].videoStatus = 'COMPLETED';
         (project as any).scenes[sceneIdx].status = 'COMPLETED';
       }
 
       // Set final project video URL if not set or if placeholder
       if (!project.finalVideoUrl || project.finalVideoUrl.startsWith('data:image')) {
-        project.finalVideoUrl = generatedUrl;
+        project.finalVideoUrl = localVideoUrl;
       }
 
       saveProjects();
@@ -1713,9 +1927,9 @@ export class ProductionOrchestrator {
     project.activeProductionStage = 'VIDEOS';
     project.overallProgress = 55;
     project.currentPhaseName = 'Rendering Frame Video Per Adegan (GATOTKACA - 55%)';
-    project.activeAgent = 'Sora Video Director';
+    project.activeAgent = 'AI Video Director';
     project.agentStatus['Human Approval Gate'] = 'COMPLETE';
-    project.agentStatus['Sora Video Director'] = 'WORKING';
+    project.agentStatus['AI Video Director'] = 'WORKING';
     project.providerError = undefined;
     project.error = undefined;
 
@@ -1738,7 +1952,7 @@ export class ProductionOrchestrator {
     const agent = project.activeAgent;
     project.agentStatus[agent!] = 'WORKING';
     
-    if (agent === 'Sora Video Director') project.status = 'PRODUCING';
+    if (agent === 'AI Video Director') project.status = 'PRODUCING';
     else if (agent === 'Video Assembly Editor') project.status = 'ASSEMBLING';
     else if (agent === 'Audio Designer') project.status = 'AUDIO';
     else if (agent === 'Viral Content Editor') project.status = 'EDITING';
@@ -1750,14 +1964,14 @@ export class ProductionOrchestrator {
     this.runProductionStage(id, agent!).catch(console.error);
   }
 
-  static async runProductionStage(id: string, startFromAgent: string = 'Sora Video Director') {
+  static async runProductionStage(id: string, startFromAgent: string = 'AI Video Director') {
     const project = projects.get(id)!;
     
     try {
       const provider = getVideoProvider(project.videoModel);
       const pStatus = await provider.getStatus();
       
-      if (startFromAgent === 'Sora Video Director') {
+      if (startFromAgent === 'AI Video Director') {
         if (pStatus !== 'READY') {
           throw {
             code: pStatus,
@@ -1811,14 +2025,18 @@ export class ProductionOrchestrator {
                   scene.videoProgress = progressStatus;
                   projectEvents.emit(`update:${id}`, project);
                 });
-                scene.videoUrl = generatedUrl;
+                
+                appendLog(project, 'GATOTKACA', `Mengamankan file video adegan ${idx + 1} ke server lokal...`, 'INFO');
+                const localVideoUrl = await saveFileLocally(generatedUrl, `scene_vid_${idx + 1}`, 'mp4', project);
+
+                scene.videoUrl = localVideoUrl;
                 scene.status = 'COMPLETED';
                 scene.videoStatus = 'COMPLETED';
                 if (provider.isMock) {
                    scene.metadata = { provider: 'mock', environment: 'development', synthetic: true };
                 }
 
-                appendLog(project, 'GATOTKACA', `ADEGAN [${idx + 1}/${total}] SELESAI DIRENDER OLEH ${provider.name} -> ${generatedUrl}`, 'SUCCESS');
+                appendLog(project, 'GATOTKACA', `ADEGAN [${idx + 1}/${total}] SELESAI DIRENDER OLEH ${provider.name} -> ${localVideoUrl}`, 'SUCCESS');
             }
             projectEvents.emit(`update:${id}`, project);
             await simulateAgent(1200);
@@ -1826,12 +2044,12 @@ export class ProductionOrchestrator {
         }
         
         project.overallProgress = 76;
-        project.agentStatus['Sora Video Director'] = 'COMPLETE';
+        project.agentStatus['AI Video Director'] = 'COMPLETE';
         updateTelemetry(project, 'GATOTKACA', { status: 'ONLINE', currentTask: `Seluruh klip adegan selesai dirender oleh ${provider.name}`, progress: 100 });
       }
 
       // Stage: Video Assembly Editor (BIMA) - Menggabungkan semua adegan menjadi satu kesatuan
-      if (['Sora Video Director', 'Video Assembly Editor'].includes(startFromAgent)) {
+      if (['AI Video Director', 'Video Assembly Editor'].includes(startFromAgent)) {
         project.status = 'ASSEMBLING';
         project.overallProgress = 80;
         project.currentPhaseName = 'BIMA: Menggabungkan Seluruh Adegan Menjadi 1 Video Utuh (80%)';
@@ -1856,7 +2074,7 @@ export class ProductionOrchestrator {
       }
       
       // Stage: Audio Designer (DAMAR) - Sintesis Suara & Mastering Audio
-      if (['Sora Video Director', 'Video Assembly Editor', 'Audio Designer'].includes(startFromAgent)) {
+      if (['AI Video Director', 'Video Assembly Editor', 'Audio Designer'].includes(startFromAgent)) {
         project.status = 'AUDIO';
         project.overallProgress = 88;
         const ttsInfo = project.ttsVoiceConfig 
@@ -1884,7 +2102,7 @@ export class ProductionOrchestrator {
       }
 
       // Stage: Viral Content Editor (BAYU) - Pemasangan Subtitle Animasi
-      if (['Sora Video Director', 'Video Assembly Editor', 'Audio Designer', 'Viral Content Editor'].includes(startFromAgent)) {
+      if (['AI Video Director', 'Video Assembly Editor', 'Audio Designer', 'Viral Content Editor'].includes(startFromAgent)) {
         project.status = 'EDITING';
         project.overallProgress = 94;
         project.currentPhaseName = 'BAYU: Menilai Timecode Dialog & Membuat Subtitle Animasi (94%)';
@@ -1909,7 +2127,7 @@ export class ProductionOrchestrator {
       }
 
       // Stage: Video QA Director (SURYA) - QC Sinkronisasi Audio, Video & Subtitle
-      if (['Sora Video Director', 'Video Assembly Editor', 'Audio Designer', 'Viral Content Editor', 'Video QA Director'].includes(startFromAgent)) {
+      if (['AI Video Director', 'Video Assembly Editor', 'Audio Designer', 'Viral Content Editor', 'Video QA Director'].includes(startFromAgent)) {
         project.status = 'QA';
         project.overallProgress = 98;
         project.currentPhaseName = 'SURYA: Inpeksi Mutu Frame 4K, Audio Sync & Subtitle (98%)';
@@ -1936,14 +2154,7 @@ export class ProductionOrchestrator {
       
       const completedScenes = project.storyboard?.scenes?.filter(s => s.status === 'COMPLETED' && (s.videoUrl || s.assetUrl)) || [];
       if (completedScenes.length > 0) {
-        try {
-          if (completedScenes.length > 0) {
-            project.finalVideoUrl = await VideoEditor.processProject(project);
-          }
-        } catch (e: any) {
-          appendLog(project, 'TIARA', `Peringatan: Gagal menggabungkan video secara utuh (${e.message}). Mode fallback aktif.`, 'ERROR');
-          project.finalVideoUrl = completedScenes[0].videoUrl || completedScenes[0].assetUrl;
-        }
+        project.finalVideoUrl = await VideoEditor.processProject(project);
       }
 
       project.status = 'COMPLETED';
@@ -2042,7 +2253,7 @@ export class ProductionOrchestrator {
 
         const qaResult = await QAAuditAgent.auditAndRefine({
           promptText: s.promptTextToImage || s.visualDirection,
-          videoPrompt: s.promptImageToVideo || s.prompt_video_runway,
+          videoPrompt: s.promptImageToVideo || s.visualDirection,
           visualPrompt: s.visualDirection,
           voiceoverScript: s.voiceOver || '',
           productName: project.brief?.product || 'Product',
@@ -2051,7 +2262,7 @@ export class ProductionOrchestrator {
           videoType: project.videoType || 'AFFILIATE'
         });
         
-        let lockedI2VPrompt = s.promptImageToVideo || s.prompt_video_runway;
+        let lockedI2VPrompt = s.promptImageToVideo || s.promptTextToImage;
         if (qaResult && qaResult.autoCorrected) {
           lockedI2VPrompt = qaResult.correctedVideoPrompt || lockedI2VPrompt;
           s.voiceOver = qaResult.correctedScript || s.voiceOver;
@@ -2081,9 +2292,13 @@ export class ProductionOrchestrator {
     }
   }
 
-  static async stitchMasterVideo(projectId: string, subtitleStyle?: string): Promise<any> {
+  static async stitchMasterVideo(projectId: string, subtitleStyle?: string, ttsVoiceConfig?: any): Promise<any> {
     const project = projects.get(projectId);
     if (!project) throw new Error(`Project ${projectId} tidak ditemukan`);
+
+    if (ttsVoiceConfig) {
+      project.ttsVoiceConfig = ttsVoiceConfig;
+    }
 
     appendLog(project, 'TIMELINE', `Memulai fast re-stitch kesatuan video dari aset timeline...`, 'INFO');
     try {
@@ -2109,12 +2324,11 @@ export class ProductionOrchestrator {
       projectEvents.emit(`update:${projectId}`, project);
       return processResult;
     } catch (e: any) {
-      const validScene = project.storyboard?.scenes?.find(s => s.videoUrl || s.assetUrl || s.imageUrl);
-      const fallbackUrl = validScene?.videoUrl || validScene?.assetUrl || validScene?.imageUrl || project.finalVideoUrl || '';
-      project.finalVideoUrl = fallbackUrl;
+      appendLog(project, 'ORCHESTRATOR', `Gagal menjahit video: ${e.message}`, 'ERROR');
+      project.status = 'COMPLETED'; // Prevent it from being stuck in PROCESSING forever
       saveProjects();
       projectEvents.emit(`update:${projectId}`, project);
-      return fallbackUrl;
+      throw e;
     }
   }
 }

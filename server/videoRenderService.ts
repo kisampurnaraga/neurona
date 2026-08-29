@@ -1,8 +1,7 @@
-import { GoogleGenAI } from "@google/genai";
 import fetch from "node-fetch";
 import { FounderService } from "../src/server/fcc/FounderService";
 import { VideoEditor } from "./VideoEditor";
-import { projects } from "./orchestrator";
+import { projects, saveFileLocally } from "./orchestrator";
 import { keyRotator } from "./keyRotator";
 import { getFalModel, buildFalPayload, FAL_TIER_DEFAULTS, FalTier } from "./falModelConfig";
 import { renderWithFalQueue } from "./falQueueRunner";
@@ -14,7 +13,6 @@ export interface SceneItem {
   duration?: string;
   visual_direction?: string;
   visualDirection?: string;
-  prompt_video_runway?: string;
   promptTextToImage?: string;
   promptImageToVideo?: string;
   imageUrl?: string;
@@ -26,6 +24,8 @@ export interface SceneItem {
   voiceOver?: string;
   text_overlay?: string;
   textOverlay?: string;
+  featuresProduct?: boolean;
+  productLock?: boolean;
 }
 
 export interface SocialMediaKit {
@@ -86,93 +86,6 @@ function isQuotaError(errorMsg: string, statusCode?: number): boolean {
 }
 
 /**
- * Executes scene rendering using Google VEO (VeoAdapter using @google/genai SDK)
- */
-async function renderWithVeoEngine(
-  scene: SceneItem,
-  sceneIdx: number,
-  geminiApiKey: string,
-  engineLogs: string[]
-): Promise<string> {
-  const modelName = 'veo-3.1-lite-generate-preview';
-  const prompt = scene.prompt_video_runway || scene.promptTextToImage || scene.visual_direction || scene.visualDirection || 'High quality cinematic clip';
-
-  console.log(`[VEO ENGINE] Rendering Scene ${sceneIdx + 1} with Google Veo (${modelName})...`);
-  engineLogs.push(`[VEO ENGINE] Calling Google Veo API for Scene ${sceneIdx + 1}...`);
-
-  try {
-    const { VeoAdapter } = await import("../src/server/providers/VeoAdapter");
-    const adapter = new VeoAdapter();
-    const resultUrl = await adapter.generateScene(scene as any, prompt);
-    engineLogs.push(`[VEO ENGINE] Scene ${sceneIdx + 1} successfully generated via Google Veo API.`);
-    return resultUrl;
-  } catch (err: any) {
-    const errMsg = err?.message || String(err);
-    engineLogs.push(`[VEO ENGINE] Notice: ${errMsg}`);
-    throw err;
-  }
-}
-
-/**
- * Executes scene rendering using Runway ML Engine (Gen-3 / Gen-4 Turbo)
- */
-async function renderWithRunwayEngine(
-  scene: SceneItem,
-  sceneIdx: number,
-  runwayApiKey: string,
-  engineLogs: string[]
-): Promise<string> {
-  const modelName = 'gen3a_turbo';
-  const prompt = scene.prompt_video_runway || scene.promptTextToImage || scene.visual_direction || scene.visualDirection || 'High quality motion video';
-  const imageUrl = scene.imageUrl || scene.assetUrl;
-
-  console.log(`[RUNWAY ENGINE] Rendering Scene ${sceneIdx + 1} with ${modelName}...`);
-  engineLogs.push(`[RUNWAY ENGINE] Requesting Scene ${sceneIdx + 1} video render via ${modelName}...`);
-
-  if (!runwayApiKey || !runwayApiKey.startsWith('key_')) {
-    throw new Error(`HTTP 429 Invalid or missing Runway API Key (Key must start with 'key_')`);
-  }
-
-  const endpoint = `${FounderService.getRunwayEndpoint()}/image_to_video`;
-  try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${runwayApiKey}`,
-        'X-Runway-Version': '2024-11-06',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: modelName,
-        promptImage: imageUrl || undefined,
-        promptText: prompt.substring(0, 500)
-      })
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      if (isQuotaError(errText, res.status)) {
-        throw new Error(`HTTP ${res.status} Quota Exceeded / Rate Limit on Runway ML Engine: ${errText.substring(0, 150)}`);
-      }
-      throw new Error(`Runway API Error ${res.status}: ${errText.substring(0, 100)}`);
-    }
-
-    const json: any = await res.json();
-    if (json?.videoUrl || json?.output?.[0]) {
-      return json.videoUrl || json.output[0];
-    }
-  } catch (err: any) {
-    const errMsg = err?.message || String(err);
-    if (isQuotaError(errMsg)) {
-      throw new Error(`Runway Quota Exceeded / Rate Limit: ${errMsg}`);
-    }
-    throw err;
-  }
-
-  return scene.videoUrl || scene.assetUrl || '/api/videos/sample-flower.mp4';
-}
-
-/**
  * Executes scene rendering using BytePlus ModelArk (PixelDance / Doubao)
  */
 async function renderWithBytePlusEngine(
@@ -184,7 +97,21 @@ async function renderWithBytePlusEngine(
   const apiKey = bytePlusConfig.apiKey || process.env.BYTEPLUS_API_KEY || '';
   const endpoint = bytePlusConfig.endpoint || process.env.BYTEPLUS_BASE_URL || 'https://ark.ap-southeast-1.byteplusapi.com/api/v3';
   const modelName = bytePlusConfig.model || process.env.BYTEPLUS_MODEL || 'dreamina-seedance-2-0-mini-260615';
-  const prompt = scene.prompt_video_runway || scene.promptTextToImage || scene.visual_direction || scene.visualDirection || 'High quality commercial video scene';
+  const featuresProduct = scene.featuresProduct !== false && (scene as any)?.productLock !== false;
+  let rawPrompt = scene.promptImageToVideo || scene.promptTextToImage || scene.visual_direction || scene.visualDirection || 'High quality commercial video scene';
+
+  let prompt = rawPrompt;
+  if (!featuresProduct) {
+    if (!prompt.includes("NO PRODUCT VISIBLE")) {
+      prompt = `Character Locked. NO PRODUCT VISIBLE. The character's hands are empty. Do not add, render, or hallucinate any product, object, or item in the scene. Scene Action: ${rawPrompt}`;
+    }
+  } else {
+    if (!prompt.includes("Product Consistency Lock")) {
+      prompt = `Product Consistency Lock: Keep product packaging, shape, color, and label text exactly identical to the reference product image. Do not alter or reinterpret the product design. ${rawPrompt}`;
+    }
+  }
+
+  const imageUrl = scene.imageUrl || scene.assetUrl || (featuresProduct ? (scene as any)?.masterProductImageUrl : undefined);
 
   console.log(`[BYTEPLUS ENGINE] Rendering Scene ${sceneIdx + 1} with ${modelName}...`);
   engineLogs.push(`[BYTEPLUS ENGINE] Requesting Scene ${sceneIdx + 1} video generation via BytePlus ${modelName}...`);
@@ -202,7 +129,7 @@ async function renderWithBytePlusEngine(
         body: JSON.stringify({
           model: modelName,
           prompt,
-          image_url: scene.videoUrl || scene.assetUrl || undefined,
+          image_url: imageUrl || scene.videoUrl || undefined,
           duration: 5
         })
       });
@@ -231,8 +158,21 @@ async function renderWithFalVideoEngine(
   overrideModelId?: string
 ): Promise<string> {
   const falApiKey = keyRotator.getNextFalKey();
-  const prompt = scene.prompt_video_runway || scene.promptTextToImage || scene.visual_direction || scene.visualDirection || 'High quality cinematic clip';
-  const imageUrl = scene.imageUrl || scene.assetUrl;
+  const featuresProduct = scene.featuresProduct !== false && (scene as any)?.productLock !== false;
+  let rawPrompt = scene.promptImageToVideo || scene.promptTextToImage || scene.visual_direction || scene.visualDirection || 'High quality cinematic clip';
+
+  let prompt = rawPrompt;
+  if (!featuresProduct) {
+    if (!prompt.includes("NO PRODUCT VISIBLE")) {
+      prompt = `Character Locked. NO PRODUCT VISIBLE. The character's hands are empty. Do not add, render, or hallucinate any product, object, or item in the scene. Scene Action: ${rawPrompt}`;
+    }
+  } else {
+    if (!prompt.includes("Product Consistency Lock")) {
+      prompt = `Product Consistency Lock: Keep product packaging, shape, color, and label text exactly identical to the reference product image. Do not alter or reinterpret the product design. ${rawPrompt}`;
+    }
+  }
+
+  const imageUrl = scene.imageUrl || scene.assetUrl || (featuresProduct ? (scene as any)?.masterProductImageUrl : undefined);
 
   console.log(`[FAL.AI VIDEO ENGINE] Rendering Scene ${sceneIdx + 1} with Fal.ai...`);
   engineLogs.push(`[FAL.AI VIDEO ENGINE] Calling Fal.ai Queue API for Scene ${sceneIdx + 1}...`);
@@ -270,29 +210,23 @@ async function renderWithFalVideoEngine(
 }
 
 /**
- * Helper to render all scenes with a specific engine ('fal', 'byteplus', 'veo', or 'runway')
+ * Helper to render all scenes with a specific engine ('fal' or 'byteplus')
  */
 async function renderScenesWithEngine(
-  engine: 'fal' | 'byteplus' | 'veo' | 'runway',
+  engine: 'fal' | 'byteplus',
   scenes: SceneItem[],
   engineLogs: string[],
-  overrideModelId?: string
+  overrideModelId?: string,
+  projectId?: string
 ): Promise<SceneItem[]> {
-  const geminiApiKey = process.env.GEMINI_API_KEY || '';
-  const runwayApiKey = process.env.RUNWAY_API_KEY || process.env.RUNWAYML_API_SECRET || '';
   const falApiKey = keyRotator.getNextFalKey();
 
   if (engine === 'fal' && !falApiKey) {
     throw new Error("HTTP 429 Quota Exceeded: FAL_KEY missing for Fal.ai Video Engine.");
   }
-  if (engine === 'veo' && !geminiApiKey) {
-    throw new Error("HTTP 429 Quota Exceeded: Google Gemini API Key missing for VEO Engine.");
-  }
-  if (engine === 'runway' && (!runwayApiKey || !runwayApiKey.startsWith('key_'))) {
-    throw new Error("HTTP 429 Quota Exceeded: Runway API Key missing or invalid format.");
-  }
 
   const renderedScenes: SceneItem[] = [];
+  const project = projectId ? projects.get(projectId) : undefined;
 
   for (let i = 0; i < scenes.length; i++) {
     const scene = scenes[i];
@@ -300,20 +234,19 @@ async function renderScenesWithEngine(
 
     if (engine === 'fal') {
       videoUrl = await renderWithFalVideoEngine(scene, i, engineLogs, overrideModelId);
-    } else if (engine === 'byteplus') {
-      videoUrl = await renderWithBytePlusEngine(scene, i, engineLogs);
-    } else if (engine === 'veo') {
-      videoUrl = await renderWithVeoEngine(scene, i, geminiApiKey, engineLogs);
     } else {
-      videoUrl = await renderWithRunwayEngine(scene, i, runwayApiKey, engineLogs);
+      videoUrl = await renderWithBytePlusEngine(scene, i, engineLogs);
     }
+
+    console.log(`[VideoRenderService] Securing scene ${i + 1} video to local permanent storage...`);
+    const localVideoUrl = await saveFileLocally(videoUrl, `studio_scene_${i + 1}`, 'mp4', project);
 
     renderedScenes.push({
       ...scene,
       status: 'COMPLETED',
       videoStatus: 'COMPLETED',
-      videoUrl,
-      assetUrl: videoUrl
+      videoUrl: localVideoUrl,
+      assetUrl: localVideoUrl
     });
   }
 
@@ -332,11 +265,11 @@ async function stitchVideoScenes(projectId: string, scenes: SceneItem[]): Promis
       const finalUrl = await VideoEditor.processProject(project);
       return finalUrl;
     } catch (e: any) {
-      console.warn(`[Video Stitcher] FFmpeg stitching notice: ${e.message}. Using first scene video as master cut.`);
-      return scenes[0]?.videoUrl || scenes[0]?.assetUrl || '';
+      console.error(`[Video Stitcher] Gagal menggabungkan video: ${e.message}`);
+      throw e;
     }
   }
-  return scenes[0]?.videoUrl || scenes[0]?.assetUrl || '';
+  throw new Error("Project tidak ditemukan untuk digabungkan.");
 }
 
 export class VideoRenderService {
@@ -383,9 +316,9 @@ export class VideoRenderService {
     const holdId = holdResult.holdId;
 
     // 3. Step 1: Check Global Config from Founder Dashboard / system_configs
-    const rawEngine = FounderService.getPrimaryVideoEngine(); // 'fal' | 'byteplus' | 'veo' | 'runway'
-    const primaryEngine: 'fal' | 'byteplus' | 'veo' | 'runway' = rawEngine === 'fal' ? 'fal' : (rawEngine === 'runway' ? 'runway' : (rawEngine === 'veo' ? 'veo' : 'fal'));
-    const secondaryEngine: 'fal' | 'byteplus' | 'veo' | 'runway' = primaryEngine === 'fal' ? 'veo' : 'fal';
+    const rawEngine = FounderService.getPrimaryVideoEngine(); // 'fal' | 'byteplus'
+    const primaryEngine: 'fal' | 'byteplus' = rawEngine === 'byteplus' ? 'byteplus' : 'fal';
+    const secondaryEngine: 'fal' | 'byteplus' = primaryEngine === 'fal' ? 'byteplus' : 'fal';
 
     console.log(`[VIDEO RENDER PIPELINE] System Config Primary Engine: '${primaryEngine.toUpperCase()}'. Secondary Fallback Engine: '${secondaryEngine.toUpperCase()}'. Project ID: ${projectId}`);
     engineLogs.push(`[SYSTEM CONFIG] Primary Engine set to '${primaryEngine.toUpperCase()}'. Model: '${targetModelId}'`);
@@ -398,7 +331,7 @@ export class VideoRenderService {
       console.log(`[VIDEO RENDER PIPELINE] Executing Primary Engine (${primaryEngine.toUpperCase()})...`);
       engineLogs.push(`[PRIMARY EXECUTION] Launching video render on '${primaryEngine.toUpperCase()}'...`);
 
-      const renderedScenes = await renderScenesWithEngine(primaryEngine, scenes, engineLogs, targetModelId);
+      const renderedScenes = await renderScenesWithEngine(primaryEngine, scenes, engineLogs, targetModelId, projectId);
       const finalVideoUrl = await stitchVideoScenes(projectId, renderedScenes);
 
       console.log(`[VIDEO RENDER PIPELINE] Primary Engine (${primaryEngine.toUpperCase()}) rendering succeeded!`);
@@ -433,7 +366,7 @@ export class VideoRenderService {
       console.log(`[VIDEO RENDER PIPELINE] Executing Fallback 1 with Secondary Engine (${secondaryEngine.toUpperCase()})...`);
       engineLogs.push(`[FALLBACK 1 EXECUTION] Launching video render on secondary engine '${secondaryEngine.toUpperCase()}'...`);
 
-      const renderedScenes = await renderScenesWithEngine(secondaryEngine, scenes, engineLogs, targetModelId);
+      const renderedScenes = await renderScenesWithEngine(secondaryEngine, scenes, engineLogs, targetModelId, projectId);
       const finalVideoUrl = await stitchVideoScenes(projectId, renderedScenes);
 
       console.log(`[VIDEO RENDER PIPELINE] Fallback Engine (${secondaryEngine.toUpperCase()}) rendering succeeded!`);

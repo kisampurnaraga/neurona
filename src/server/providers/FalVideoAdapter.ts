@@ -47,7 +47,7 @@ export class FalVideoAdapter implements VideoGenerationProvider {
     const modelDef = getFalModel(configuredModel);
     const modelPath = modelDef.id;
 
-    const prompt = scene.prompt_video_runway || scene.promptTextToImage || scene.visualDirection || 'High quality cinematic scene';
+    const prompt = scene.promptImageToVideo || scene.promptTextToImage || scene.visualDirection || 'High quality cinematic scene';
     const imageUrl = scene.imageUrl || scene.assetUrl || '';
 
     console.log(`[FAL.AI VIDEO ADAPTER] Rendering scene using single source model: ${modelPath}`);

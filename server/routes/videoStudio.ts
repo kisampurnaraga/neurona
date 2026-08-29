@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { verifyToken, requireRole, AuthenticatedRequest, userDatabase } from '../middleware/auth';
 import { QueueService } from '../services/queueService';
-import { GoogleVeoService } from '../services/googleVeoService';
+import { VideoRenderService } from '../videoRenderService';
 import { SUPPORTED_VOICE_PRESETS } from '../services/ttsService';
 import { QAAuditAgent, QAAuditInput } from '../services/qaAuditAgent';
 import { MultiNicheDirector, MultiNicheInput } from '../services/multiNicheDirector';
@@ -49,7 +49,7 @@ router.post(
 
 /**
  * POST /api/v1/studio/render-video
- * Initiates an AI video render using Google Veo + Google Cloud TTS with Cloud Tasks queue
+ * Initiates an AI video render using AI Video Models + Google Cloud TTS with Cloud Tasks queue
  */
 router.post(
   '/render-video',
@@ -110,7 +110,7 @@ router.post(
         durationSeconds: cleanDuration
       });
 
-      // Use refined prompt/script if auto-corrected for superior Veo cinematic quality
+      // Use refined prompt/script if auto-corrected for superior cinematic quality
       const finalPrompt = (qaAudit.autoCorrected && qaAudit.correctedVideoPrompt) ? qaAudit.correctedVideoPrompt : cleanPrompt;
       const finalScript = (qaAudit.autoCorrected && qaAudit.correctedScript) ? qaAudit.correctedScript : (voiceoverScript || '');
 
@@ -118,35 +118,37 @@ router.post(
 
       // Synchronous Direct Render Mode (Optional fallback parameter)
       if (syncMode === true) {
-        console.log(`[VideoStudioRoute] Running synchronous direct Veo render for ${user.email}...`);
-        const result = await GoogleVeoService.generateVeoVideo(finalPrompt, cleanRefImage, {
-          aspectRatio: cleanAspect,
-          durationSeconds: cleanDuration,
-          uploadToStorage: true
+        console.log(`[VideoStudioRoute] Running synchronous direct render for ${user.email}...`);
+        const result = await VideoRenderService.executeVideoRenderPipeline({
+          projectId: `sync_${Date.now()}`,
+          userId: user.user_id || user.email,
+          deductedCredits: user.role === 'founder' ? 0 : REQUIRED_CREDITS_PER_RENDER,
+          scenes: [
+            {
+              id: 'scene-1',
+              scene_number: 1,
+              duration: String(cleanDuration),
+              promptImageToVideo: finalPrompt,
+              imageUrl: cleanRefImage,
+              voiceOver: finalScript
+            }
+          ]
         });
 
-        // Deduct credits
-        if (user.role !== 'founder') {
-          user.credits = Math.max(0, currentCredits - REQUIRED_CREDITS_PER_RENDER);
-          await userDatabase.adjustCredits(user.user_id, -REQUIRED_CREDITS_PER_RENDER, true);
-          // Handled by adjustCredits
-        }
-
         return res.json({
-          success: true,
-          videoUrl: result.videoUrl,
-          modelUsed: result.modelUsed,
+          success: result.status === 'SUCCESS',
+          videoUrl: result.finalVideoUrl || result.scenes[0]?.videoUrl,
+          modelUsed: result.primaryEngineUsed,
           remainingCredits: user.credits,
-          fallbackUsed: result.fallbackUsed,
-          notice: result.notice,
+          fallbackUsed: result.fallbackTriggered,
           qaAudit,
-          message: 'Render video berhasil selesai.'
+          message: result.message || 'Render video berhasil selesai.'
         });
       }
 
       // Asynchronous Queue Mode (via Google Cloud Tasks / Background Worker)
       const taskResult = await QueueService.createRenderTask({
-        taskId: `veo_task_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        taskId: `render_task_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         userId: user.user_id || user.email,
         promptText: finalPrompt,
         voiceoverScript: finalScript,
@@ -172,7 +174,7 @@ router.post(
       console.error('[VideoStudioRoute] Error handling render-video request:', err);
       return res.status(500).json({
         error: 'RENDER_FAILED',
-        message: err?.message || 'Gagal memulai render video Google Veo.'
+        message: err?.message || 'Gagal memulai render video.'
       });
     }
   }

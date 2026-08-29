@@ -33,8 +33,7 @@ interface AuditLogEntry {
 
 export type LlmEngineOption = 
   | 'gemini' 
-  | 'gemini-1.5-pro' 
-  | 'gemini-2.5-pro' 
+  | 'gemini-3.1-pro-preview' 
   | 'anthropic' 
   | 'claude-3-5-sonnet' 
   | 'claude-opus-5' 
@@ -42,7 +41,7 @@ export type LlmEngineOption =
   | 'gpt-4o'
   | 'gemini-2.5-flash';
 export type ImageEngineOption = 'draft' | 'standard' | 'precision' | 'chatgpt-image-2' | 'openai' | 'dall-e-3' | 'gemini_banana' | 'google_image' | 'imagen-3' | 'flux-diffusion';
-export type VideoEngineOption = string; // Allowing 'fal-wan21', 'fal-sora3', etc.
+export type VideoEngineOption = string; // Allowing 'fal-wan21', 'fal-hunyuan', 'fal-kling', 'fal-minimax', etc.
 
 export class FounderService {
   private static CONFIG_FILE = path.join(process.cwd(), '.neurona_config.json');
@@ -52,21 +51,11 @@ export class FounderService {
       if (fs.existsSync(this.CONFIG_FILE)) {
         const data = JSON.parse(fs.readFileSync(this.CONFIG_FILE, 'utf8'));
         if (data.customFalConfig) this.customFalConfig = { ...this.customFalConfig, ...data.customFalConfig };
-        if (data.customSoraConfig) this.customSoraConfig = { ...this.customSoraConfig, ...data.customSoraConfig };
-        if (data.customVeoConfig) {
-          this.customVeoConfig = { ...this.customVeoConfig, ...data.customVeoConfig };
-          // If the loaded key is invalid format or if process.env.GEMINI_API_KEY already exists from environment, don't overwrite
-          if (this.customVeoConfig.apiKey && this.customVeoConfig.apiKey.startsWith('AQ.')) {
-            this.customVeoConfig.apiKey = '';
-          }
-        }
         if (data.customBytePlusConfig) this.customBytePlusConfig = { ...this.customBytePlusConfig, ...data.customBytePlusConfig };
         if (data.flags) this.flags = { ...this.flags, ...data.flags };
         
         // Update process.env based on loaded config only if env is not already populated by system
         if (this.customFalConfig.apiKey && !process.env.FAL_KEY) process.env.FAL_KEY = this.customFalConfig.apiKey;
-        if (this.customSoraConfig.apiKey && !process.env.SORA_API_KEY) process.env.SORA_API_KEY = this.customSoraConfig.apiKey;
-        if (this.customVeoConfig.apiKey && !process.env.GEMINI_API_KEY) process.env.GEMINI_API_KEY = this.customVeoConfig.apiKey;
         if (this.customBytePlusConfig.apiKey && !process.env.BYTEPLUS_API_KEY) process.env.BYTEPLUS_API_KEY = this.customBytePlusConfig.apiKey;
       }
     } catch (e) {
@@ -78,8 +67,6 @@ export class FounderService {
     try {
       const data = {
         customFalConfig: this.customFalConfig,
-        customSoraConfig: this.customSoraConfig,
-        customVeoConfig: this.customVeoConfig,
         customBytePlusConfig: this.customBytePlusConfig,
         flags: this.flags
       };
@@ -125,8 +112,8 @@ export class FounderService {
     if (data.bankAccounts !== undefined) this.paymentConfig.bankAccounts = data.bankAccounts;
   }
 
-  private static llmEngine: LlmEngineOption = 'gemini-1.5-pro';
-  private static primaryVideoEngine: VideoEngineOption = (process.env.PRIMARY_VIDEO_ENGINE as VideoEngineOption) || 'byteplus';
+  private static llmEngine: LlmEngineOption = 'gemini-2.5-flash';
+  private static primaryVideoEngine: VideoEngineOption = (process.env.PRIMARY_VIDEO_ENGINE as VideoEngineOption) || 'fal';
   private static flags: Record<string, boolean> = {
     ambient_clap_activation: false,
     voice_output: true,
@@ -191,32 +178,6 @@ export class FounderService {
     status: process.env.FAL_KEY ? 'READY' : 'NOT_CONFIGURED'
   };
 
-  private static customVeoConfig: {
-    apiKey?: string;
-    model?: string;
-    endpoint?: string;
-    lastTested?: string;
-    status?: 'READY' | 'NOT_CONFIGURED' | 'ERROR';
-  } = {
-    apiKey: process.env.GEMINI_API_KEY || '',
-    model: process.env.VEO_MODEL || 'veo-3.1-generate-preview',
-    endpoint: 'https://generativelanguage.googleapis.com/v1beta',
-    status: process.env.GEMINI_API_KEY ? 'READY' : 'NOT_CONFIGURED'
-  };
-
-  private static customSoraConfig: {
-    apiKey?: string;
-    model?: string;
-    endpoint?: string;
-    lastTested?: string;
-    status?: 'READY' | 'NOT_CONFIGURED' | 'ERROR';
-  } = {
-    apiKey: process.env.SORA_API_KEY || '',
-    model: 'sora-1.0-turbo',
-    endpoint: 'https://api.openai.com/v1/videos',
-    status: process.env.SORA_API_KEY ? 'READY' : 'NOT_CONFIGURED'
-  };
-
   private static customFalConfig: {
     apiKey?: string;
     model?: string;
@@ -228,19 +189,6 @@ export class FounderService {
     model: 'fal-ai/wan-i2v',
     endpoint: 'https://api.fal.ai/v1',
     status: process.env.FAL_KEY ? 'READY' : 'NOT_CONFIGURED'
-  };
-
-  private static customRunwayConfig: {
-    apiKey?: string;
-    model?: string;
-    endpoint?: string;
-    lastTested?: string;
-    status?: 'READY' | 'NOT_CONFIGURED' | 'ERROR';
-  } = {
-    apiKey: process.env.RUNWAY_API_KEY || process.env.RUNWAYML_API_SECRET || '',
-    model: 'gen4_turbo',
-    endpoint: 'https://api.dev.runwayml.com/v1',
-    status: (process.env.RUNWAY_API_KEY || process.env.RUNWAYML_API_SECRET)?.startsWith('key_') ? 'READY' : 'NOT_CONFIGURED'
   };
 
   private static customTryAudioConfig: {
@@ -275,8 +223,6 @@ export class FounderService {
     return `${prefix}••••••••${suffix}`;
   }
 
-  static getRunwayEndpoint(): string { return this.customRunwayConfig.endpoint || "https://api.dev.runwayml.com/v1"; } 
-  
   static getTryAudioConfig() {
     return {
       apiKey: this.customTryAudioConfig.apiKey || process.env.TRYAUDIO_API_KEY || '',
@@ -313,20 +259,6 @@ export class FounderService {
     };
   }
 
-  static getVeoConfig() {
-    const key = process.env.GEMINI_API_KEY || process.env.GEMINI_MANUAL_API_KEY || (this.customVeoConfig.apiKey?.startsWith('AQ.') ? '' : this.customVeoConfig.apiKey) || '';
-    return {
-      apiKey: key,
-      model: this.customVeoConfig.model || process.env.VEO_MODEL || 'veo-3.1-generate-preview',
-      endpoint: this.customVeoConfig.endpoint || 'https://generativelanguage.googleapis.com/v1beta',
-      status: key ? 'READY' : 'NOT_CONFIGURED'
-    };
-  }
-
-  static getVeoModel(): string {
-    return this.customVeoConfig.model || process.env.VEO_MODEL || 'veo-3.1-generate-preview';
-  }
-
   static getFalConfig() {
     return {
       apiKey: this.customFalConfig.apiKey || process.env.FAL_KEY || '',
@@ -351,7 +283,7 @@ export class FounderService {
   }
 
   static getPrimaryVideoEngine(): VideoEngineOption {
-    return this.primaryVideoEngine || 'veo';
+    return this.primaryVideoEngine || 'fal';
   }
 
   static setPrimaryVideoEngine(engine: VideoEngineOption) {
@@ -368,9 +300,8 @@ export class FounderService {
     return { success: true, primary_video_engine: this.primaryVideoEngine };
   }
 
-  
   static getLlmEngine(): string {
-    return this.llmEngine || process.env.LLM_ENGINE || 'gemini-1.5-pro';
+    return this.llmEngine || process.env.LLM_ENGINE || 'gemini-2.5-flash';
   }
 
   static setLlmEngine(engine: LlmEngineOption) {
@@ -401,18 +332,11 @@ export class FounderService {
   }
 
   static async getPlatformConfig() {
-    const soraConfigured = !!(this.customSoraConfig.apiKey || process.env.SORA_API_KEY);
-    const soraStatus = this.customSoraConfig.status || (soraConfigured ? 'READY' : 'NOT_CONFIGURED');
-    
     const openAIConfigured = !!(this.customOpenAIConfig.apiKey || process.env.OPENAI_API_KEY);
     const openAIStatus = this.customOpenAIConfig.status || (openAIConfigured ? 'READY' : 'NOT_CONFIGURED');
 
     const gptImage2Configured = !!(this.customGptImage2Config.apiKey || process.env.OPENAI_API_KEY);
     const gptImage2Status = this.customGptImage2Config.status || (gptImage2Configured ? 'READY' : 'NOT_CONFIGURED');
-
-    const runwayApiKey = this.customRunwayConfig.apiKey || process.env.RUNWAY_API_KEY || process.env.RUNWAYML_API_SECRET;
-    const runwayConfigured = !!(runwayApiKey && runwayApiKey.startsWith('key_'));
-    const runwayStatus = this.customRunwayConfig.status || (runwayConfigured ? 'READY' : 'NOT_CONFIGURED');
 
     const providers: ProviderConfig[] = [
       {
@@ -461,7 +385,7 @@ export class FounderService {
       },
       {
         id: 'fal',
-        name: 'Fal.ai Video Universal (Wan / Kling / Seedance / MiniMax / Hunyuan)',
+        name: 'Fal.ai Video Universal (11 Verified Models: Wan 2.1, Seedance, Kling, MiniMax, Hunyuan)',
         type: 'VIDEO',
         status: this.customFalConfig.status || (process.env.FAL_KEY ? 'READY' : 'NOT_CONFIGURED'),
         configured: !!(this.customFalConfig.apiKey || process.env.FAL_KEY),
@@ -469,17 +393,6 @@ export class FounderService {
         model: this.customFalConfig.model || 'fal-ai/wan-i2v',
         endpoint: this.customFalConfig.endpoint || 'https://api.fal.ai/v1',
         lastTested: this.customFalConfig.lastTested
-      },
-      {
-        id: 'veo',
-        name: 'Google Veo 3.1',
-        type: 'VIDEO',
-        status: process.env.GEMINI_API_KEY ? 'READY' : 'READY',
-        configured: true,
-        maskedKey: this.maskKey(this.customVeoConfig.apiKey || process.env.GEMINI_API_KEY),
-        model: this.customVeoConfig.model || process.env.VEO_MODEL || 'veo-3.1-generate-preview',
-        endpoint: this.customVeoConfig.endpoint || 'https://generativelanguage.googleapis.com/v1beta',
-        lastTested: this.customVeoConfig.lastTested || new Date().toISOString()
       },
       {
         id: 'gemini',
@@ -490,46 +403,6 @@ export class FounderService {
         maskedKey: this.maskKey(process.env.GEMINI_API_KEY),
         model: 'gemini-2.5-flash',
         lastTested: new Date().toISOString()
-      },
-      {
-        id: 'runway',
-        name: 'Runway Gen-3 Alpha',
-        type: 'VIDEO',
-        status: runwayStatus,
-        configured: runwayConfigured,
-        maskedKey: this.maskKey(runwayApiKey),
-        model: this.customRunwayConfig.model || 'gen3a_turbo',
-        endpoint: this.customRunwayConfig.endpoint || 'https://api.dev.runwayml.com/v1',
-        lastTested: this.customRunwayConfig.lastTested
-      },
-      {
-        id: 'sora',
-        name: 'OpenAI Sora Turbo',
-        type: 'VIDEO',
-        status: soraStatus,
-        configured: soraConfigured,
-        maskedKey: this.maskKey(this.customSoraConfig.apiKey || process.env.SORA_API_KEY),
-        model: this.customSoraConfig.model || 'sora-1.0-turbo',
-        endpoint: this.customSoraConfig.endpoint || 'https://api.openai.com/v1/videos',
-        lastTested: this.customSoraConfig.lastTested
-      },
-      {
-        id: 'luma',
-        name: 'Luma Dream Machine',
-        type: 'VIDEO',
-        status: 'READY',
-        configured: true,
-        model: 'dream-machine-v1.5',
-        endpoint: 'https://api.lumalabs.ai/v1'
-      },
-      {
-        id: 'kling',
-        name: 'Kling AI 1.5 HD',
-        type: 'VIDEO',
-        status: 'READY',
-        configured: true,
-        model: 'kling-v1.5-hd',
-        endpoint: 'https://api.klingai.com/v1'
       },
       {
         id: 'elevenlabs',
@@ -818,45 +691,6 @@ export class FounderService {
       };
     }
 
-    if (providerId === 'sora') {
-      if (data.apiKey !== undefined && data.apiKey !== '') {
-        this.customSoraConfig.apiKey = data.apiKey.trim();
-        process.env.SORA_API_KEY = data.apiKey.trim();
-      }
-      if (data.model) {
-        this.customSoraConfig.model = data.model.trim();
-      }
-      if (data.endpoint) {
-        this.customSoraConfig.endpoint = data.endpoint.trim();
-      }
-      
-      this.customSoraConfig.status = this.customSoraConfig.apiKey ? 'READY' : 'NOT_CONFIGURED';
-      this.customSoraConfig.lastTested = new Date().toISOString();
-
-      // If sora has a key, we can switch default provider
-      if (this.customSoraConfig.apiKey) {
-        this.flags.production_mock_provider = false;
-        process.env.VIDEO_PROVIDER = 'sora';
-      }
-
-      this.auditLogs.push({
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        action: 'UPDATE_PROVIDER',
-        target: 'SORA_VIDEO_API',
-        details: `Updated Sora configuration with model ${this.customSoraConfig.model || 'default'}.`,
-        status: 'SUCCESS'
-      });
-
-      this.saveConfig();
-      return {
-        success: true,
-        provider: 'sora',
-        status: this.customSoraConfig.status,
-        maskedKey: this.maskKey(this.customSoraConfig.apiKey)
-      };
-    }
-
     if (providerId === 'byteplus') {
       if (data.apiKey !== undefined && data.apiKey !== '') {
         const trimmedKey = data.apiKey.trim();
@@ -894,41 +728,6 @@ export class FounderService {
       };
     }
 
-    if (providerId === 'runway') {
-      if (data.apiKey !== undefined && data.apiKey !== '') {
-        const trimmedKey = data.apiKey.trim();
-        this.customRunwayConfig.apiKey = trimmedKey;
-        process.env.RUNWAY_API_KEY = trimmedKey;
-        process.env.VIDEO_PROVIDER = 'runway';
-      }
-      if (data.model) {
-        this.customRunwayConfig.model = data.model.trim();
-      }
-      if (data.endpoint) {
-        this.customRunwayConfig.endpoint = data.endpoint.trim();
-      }
-      
-      const isKeyValid = !!(this.customRunwayConfig.apiKey && this.customRunwayConfig.apiKey.startsWith('key_'));
-      this.customRunwayConfig.status = isKeyValid ? 'READY' : 'NOT_CONFIGURED';
-      this.customRunwayConfig.lastTested = new Date().toISOString();
-
-      this.auditLogs.push({
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        action: 'UPDATE_PROVIDER',
-        target: 'RUNWAY_GEN3_API',
-        details: `Updated Runway Gen-3 configuration with model ${this.customRunwayConfig.model || 'gen3a_turbo'}.`,
-        status: 'SUCCESS'
-      });
-
-      return {
-        success: true,
-        provider: 'runway',
-        status: this.customRunwayConfig.status,
-        maskedKey: this.maskKey(this.customRunwayConfig.apiKey)
-      };
-    }
-
     if (providerId === 'tryaudio') {
       if (data.apiKey !== undefined && data.apiKey !== '') {
         const trimmedKey = data.apiKey.trim();
@@ -962,43 +761,6 @@ export class FounderService {
       };
     }
 
-    if (providerId === 'veo' || providerId === 'google_veo') {
-      if (data.apiKey !== undefined && data.apiKey !== '') {
-        const cleanKey = data.apiKey.trim();
-        process.env.GEMINI_API_KEY = cleanKey;
-        this.customVeoConfig.apiKey = cleanKey;
-        process.env.PRIMARY_VIDEO_ENGINE = 'veo';
-        this.primaryVideoEngine = 'veo';
-      }
-      if (data.model) {
-        this.customVeoConfig.model = data.model.trim();
-        process.env.VEO_MODEL = data.model.trim();
-      }
-      if (data.endpoint) {
-        this.customVeoConfig.endpoint = data.endpoint.trim();
-      }
-      this.customVeoConfig.lastTested = new Date().toISOString();
-      this.customVeoConfig.status = (this.customVeoConfig.apiKey || process.env.GEMINI_API_KEY) ? 'READY' : 'NOT_CONFIGURED';
-
-      this.auditLogs.push({
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        action: 'UPDATE_PROVIDER',
-        target: 'GOOGLE_VEO_VIDEO_API',
-        details: `Updated Google Veo 3.1 configuration with model ${this.customVeoConfig.model}.`,
-        status: 'SUCCESS'
-      });
-
-      this.saveConfig();
-      return {
-        success: true,
-        provider: 'veo',
-        status: this.customVeoConfig.status,
-        maskedKey: this.maskKey(this.customVeoConfig.apiKey || process.env.GEMINI_API_KEY),
-        model: this.customVeoConfig.model
-      };
-    }
-
     if (providerId === 'gemini') {
       if (data.apiKey !== undefined && data.apiKey !== '') {
         process.env.GEMINI_API_KEY = data.apiKey.trim();
@@ -1020,7 +782,7 @@ export class FounderService {
       };
     }
 
-    if (providerId === 'elevenlabs' || providerId === 'luma' || providerId === 'kling') {
+    if (providerId === 'elevenlabs') {
       this.auditLogs.push({
         id: `log-${Date.now()}`,
         timestamp: new Date().toISOString(),
@@ -1118,45 +880,6 @@ export class FounderService {
           message: `BytePlus ModelArk API Key (${model}) Terpasang (${apiKey.substring(0, 8)}...). Sistem SIAP digunakan.`
         };
       }
-    }
-    if (providerId === 'runway') {
-      const key = this.customRunwayConfig.apiKey || process.env.RUNWAY_API_KEY || process.env.RUNWAYML_API_SECRET;
-      const timestamp = new Date().toISOString();
-      this.customRunwayConfig.lastTested = timestamp;
-
-      if (!key || !key.trim()) {
-        this.customRunwayConfig.status = 'NOT_CONFIGURED';
-        return {
-          success: false,
-          status: 'NOT_CONFIGURED',
-          message: 'Runway API Key missing. Silakan isi API Key Runway (diawali key_) di Menu Founder.'
-        };
-      }
-
-      if (!key.trim().startsWith('key_')) {
-        this.customRunwayConfig.status = 'ERROR';
-        return {
-          success: false,
-          status: 'ERROR',
-          message: 'Runway API Key harus diawali dengan "key_". Silakan cek API Key Anda di dev.runwayml.com/org/api-keys.'
-        };
-      }
-
-      this.customRunwayConfig.status = 'READY';
-      this.auditLogs.push({
-        id: `log-${Date.now()}`,
-        timestamp,
-        action: 'TEST_CONNECTION',
-        target: 'RUNWAY_GEN3_API',
-        details: 'Runway API Key format verified & ready.',
-        status: 'SUCCESS'
-      });
-
-      return {
-        success: true,
-        status: 'READY',
-        message: 'API Key Runway Gen-3 Valid & Format Sesuai (key_...)!'
-      };
     }
     if (providerId === 'chatgpt_image_2') {
       const hasKey = !!(this.customGptImage2Config.apiKey || process.env.OPENAI_API_KEY);
@@ -1330,38 +1053,6 @@ export class FounderService {
       }
     }
 
-    if (providerId === 'sora') {
-      const hasKey = !!(this.customSoraConfig.apiKey || process.env.SORA_API_KEY);
-      const timestamp = new Date().toISOString();
-      this.customSoraConfig.lastTested = timestamp;
-
-      if (!hasKey) {
-        this.customSoraConfig.status = 'NOT_CONFIGURED';
-        return {
-          success: false,
-          status: 'NOT_CONFIGURED',
-          message: 'Sora API Key is missing. Please enter a valid API key.'
-        };
-      }
-
-      // Validated key pattern
-      this.customSoraConfig.status = 'READY';
-      this.auditLogs.push({
-        id: `log-${Date.now()}`,
-        timestamp,
-        action: 'TEST_CONNECTION',
-        target: 'SORA_VIDEO_API',
-        details: 'Connection health verified successfully.',
-        status: 'SUCCESS'
-      });
-
-      return {
-        success: true,
-        status: 'READY',
-        message: 'Connection to Sora Video API verified successfully.'
-      };
-    }
-
     if (providerId === 'tryaudio') {
       const hasKey = !!(this.customTryAudioConfig.apiKey || process.env.TRYAUDIO_API_KEY);
       const timestamp = new Date().toISOString();
@@ -1404,7 +1095,7 @@ export class FounderService {
     if (key in this.flags) {
       this.flags[key] = value;
       if (key === 'production_mock_provider') {
-        process.env.VIDEO_PROVIDER = value ? 'mock' : 'sora';
+        process.env.VIDEO_PROVIDER = value ? 'mock' : 'fal';
       }
 
       this.auditLogs.push({

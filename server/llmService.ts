@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from "openai";
 import { FounderService } from "../src/server/fcc/FounderService";
-import { RunwayStyleLibrary } from "./StyleLibrary";
+import { CinematicStyleLibrary } from "./StyleLibrary";
 import { keyRotator } from "./keyRotator";
 
 export interface LLMGenerationResult<T = any> {
@@ -40,7 +40,7 @@ export function getPreferredLLMProvider(): 'gemini' | 'openai' | 'anthropic' | '
 
 export function getActiveGeminiModel(): string {
   const engine = FounderService.getLlmEngine()?.toLowerCase() || '';
-  if (engine.includes('pro')) return 'gemini-2.5-pro';
+  if (engine.includes('pro')) return 'gemini-3.1-pro-preview';
   if (engine.includes('flash')) return 'gemini-2.5-flash';
   return 'gemini-2.5-flash';
 }
@@ -135,7 +135,7 @@ FORMAT OUTPUT (HANYA JSON):
        pref = 'gemini';
     }
     const openaiKey = process.env.OPENAI_API_KEY;
-    const geminiKey = process.env.GEMINI_API_KEY;
+    const geminiKey = keyRotator.getNextGeminiKey();
     const openAIModel = getOpenAIModel();
 
     let systemInstruction = "";
@@ -215,7 +215,7 @@ Craft a high-converting affiliate video brief focusing on scroll-stopping hook, 
     const genAI = getGenAI();
     if (genAI) {
       try {
-        onLog?.('BATARA', `TASKING AI MODEL -> Google Gemini 2.5 Flash`, 'INFO');
+        onLog?.('BATARA', `TASKING AI MODEL -> Google Gemini 3.7 Flash`, 'INFO');
         const response = await withTimeout(
           genAI.models.generateContent({
             model: getActiveGeminiModel(),
@@ -244,7 +244,7 @@ Craft a high-converting affiliate video brief focusing on scroll-stopping hook, 
             brief: data.brief || ""
           },
           rawText,
-          modelUsed: "Google Gemini 2.5 Flash",
+          modelUsed: "Google Gemini 3.7 Flash",
           provider: 'gemini'
         };
       } catch (geminiErr: any) {
@@ -374,7 +374,7 @@ Craft a high-converting affiliate video brief focusing on scroll-stopping hook, 
       }
     }
 
-    // 2. Fallback to Gemini 2.5 Flash Vision
+    // 2. Fallback to Gemini 3.7 Flash Vision
     try {
       const genAI = getGenAI();
       if (genAI && base64Data) {
@@ -396,7 +396,7 @@ Craft a high-converting affiliate video brief focusing on scroll-stopping hook, 
         );
         const result = response.text?.trim();
         if (result) {
-          onLog?.('BATARA', `ANALISIS VISUAL FOTO PRODUK SELESAI (Gemini 2.5 Flash): "${result.substring(0, 100)}..."`, 'SUCCESS');
+          onLog?.('BATARA', `ANALISIS VISUAL FOTO PRODUK SELESAI (Gemini 3.7 Flash): "${result.substring(0, 100)}..."`, 'SUCCESS');
           return result;
         }
       }
@@ -476,7 +476,7 @@ Craft a high-converting affiliate video brief focusing on scroll-stopping hook, 
       }
     }
 
-    // 2. Fallback to Gemini 2.5 Flash Vision
+    // 2. Fallback to Gemini 3.7 Flash Vision
     try {
       const genAI = getGenAI();
       if (genAI && base64Data) {
@@ -498,7 +498,7 @@ Craft a high-converting affiliate video brief focusing on scroll-stopping hook, 
         );
         const result = response.text?.trim();
         if (result) {
-          onLog?.('BATARA', `ANALISIS VISUAL FOTO KARAKTER SELESAI (Gemini 2.5 Flash): "${result.substring(0, 100)}..."`, 'SUCCESS');
+          onLog?.('BATARA', `ANALISIS VISUAL FOTO KARAKTER SELESAI (Gemini 3.7 Flash): "${result.substring(0, 100)}..."`, 'SUCCESS');
           return result;
         }
       }
@@ -538,8 +538,8 @@ ATURAN WAJIB (QA AUDIT & DNA LOCK):
 1. CHARACTER & PRODUCT LOCK WAJIB DIPERTAHANKAN: "${characterLock}"
 2. Jika ADD: Sisipkan 1 adegan baru di posisi ${targetIndex + 1}. Sesuaikan narasi agar menjembatani adegan ${targetIndex} dan ${targetIndex + 2}.
 3. Jika REMOVE: Hapus adegan di posisi ${targetIndex + 1}. Sesuaikan narasi adegan ${targetIndex} dan ${targetIndex + 2} agar ceritanya tidak terputus.
-4. Output HARUS array of objects \`storyboard_scenes\` yang berisi SELURUH adegan baru hasil resync.
-5. Pertahankan \`promptTextToImage\` dan \`prompt_video_runway\` dengan DNA Lock di setiap adegan.
+4. Output HARUS array of objects 'storyboard_scenes' yang berisi SELURUH adegan baru hasil resync.
+5. Pertahankan 'promptTextToImage' dan 'promptImageToVideo' dengan DNA Lock di setiap adegan.
 
 Storyboard Saat Ini:
 ${JSON.stringify(existingScenes, null, 2)}
@@ -547,7 +547,7 @@ ${JSON.stringify(existingScenes, null, 2)}
 Kembalikan format JSON:
 {
   "storyboard_scenes": [
-    { "duration": "...", "visualDirection": "...", "textOverlay": "...", "voiceOver": "...", "promptTextToImage": "...", "prompt_video_runway": "..." }
+    { "duration": "...", "visualDirection": "...", "textOverlay": "...", "voiceOver": "...", "promptTextToImage": "...", "promptImageToVideo": "..." }
   ]
 }`;
 
@@ -572,7 +572,7 @@ Kembalikan format JSON:
                     textOverlay: { type: Type.STRING },
                     voiceOver: { type: Type.STRING },
                     promptTextToImage: { type: Type.STRING },
-                    prompt_video_runway: { type: Type.STRING },
+                    promptImageToVideo: { type: Type.STRING },
                     styleKeywords: { type: Type.ARRAY, items: { type: Type.STRING } }
                   }
                 }
@@ -589,7 +589,7 @@ Kembalikan format JSON:
           scene_number: idx + 1,
           id: existingScenes[idx]?.id || Math.random().toString(36).substring(2, 9),
           status: 'PENDING',
-          promptImageToVideo: s.prompt_video_runway || s.promptImageToVideo
+          promptImageToVideo: s.promptImageToVideo || s.promptTextToImage
         }));
         onLog?.('QA AUDIT', `✅ Memori Karakter/Produk terkunci. ${newScenes.length} adegan berhasil di-resync.`, 'SUCCESS');
         return newScenes;
@@ -614,12 +614,12 @@ Kembalikan format JSON:
        pref = 'gemini';
     }
     const openaiKey = process.env.OPENAI_API_KEY;
-    const geminiKey = process.env.GEMINI_API_KEY;
+    const geminiKey = keyRotator.getNextGeminiKey();
     const openAIModel = getOpenAIModel();
 
     let styleMagicWords = '';
-    if (videoType !== 'AFFILIATE' && config?.style_id && RunwayStyleLibrary[config.style_id]) {
-      styleMagicWords = RunwayStyleLibrary[config.style_id].magic_words;
+    if (videoType !== 'AFFILIATE' && config?.style_id && CinematicStyleLibrary[config.style_id]) {
+      styleMagicWords = CinematicStyleLibrary[config.style_id].magic_words;
     }
 
     let contextBlock = '';
@@ -645,7 +645,7 @@ ${charVisual ? `- Ciri Fisik Ekstrak dari Foto Karakter (Vision Lock): "${charVi
    - For 9:16: Emphasize vertical depth, low-to-high tilting, and dramatic close-ups.
    - Absolutely NO smartphone/UGC/selfie keywords. Maintain epic cinematic narrative scale.
 2. CINEMATIC LIGHTING & VISUAL AESTHETIC:
-   - Every \`promptTextToImage\` and \`prompt_video_runway\` MUST strictly include advanced lighting keywords: "volumetric lighting", "hard rim lighting", "dramatic single-source key light", "bokeh background", and "cinematic depth of field".
+   - Every 'promptTextToImage' and 'promptImageToVideo' MUST strictly include advanced lighting keywords: "volumetric lighting", "hard rim lighting", "dramatic single-source key light", "bokeh background", and "cinematic depth of field".
 3. STRICT CHARACTER LOCK:
    - Extract exact physical traits (hair color/style, clothing/outfit/jersey, facial features, accessories) and write them consistently into EVERY SINGLE prompt across all scenes.
 4. DYNAMIC SCENE BREAKDOWN (4 SCENES):
@@ -653,7 +653,7 @@ ${charVisual ? `- Ciri Fisik Ekstrak dari Foto Karakter (Vision Lock): "${charVi
    - Scene 2 (Action/Conflict): Dynamic movement, Dutch angle, or over-the-shoulder perspective.
    - Scene 3 (Emotional Core): Extreme close-up on face highlighting eye reflections and emotional intensity.
    - Scene 4 (Climax/Resolution): Sweeping camera motion, orbital arc, or dramatic peak action.
-5. VEO CAMERA MOTION:
+5. DYNAMIC CAMERA MOTION:
    - Include specific dynamic camera movement in every scene (e.g. "slow cinematic low-angle pan", "dynamic orbital arc", "fast push-in tracking shot").
 `;
     } else if (videoType === 'EDUCATIONAL') {
@@ -723,7 +723,7 @@ ATURAN WAJIB & LOGIKA KONSISTENSI VISUAL (MANDATORY RULES):
 - Masukkan \`consistencyAnchorPrompt\` yang mengunci karakter tersebut di semua adegan.
 
 3. DUAL VISUAL LOCK & ACTION-DRIVEN ANCHORS DI PROMPT PER ADEGAN:
-- Di dalam field \`promptTextToImage\` dan \`prompt_video_runway\` (I2V), gunakan struktur Action-Driven Anchor di 20 token pertama:
+- Di dalam field \`promptTextToImage\` dan \`promptImageToVideo\` (I2V), gunakan struktur Action-Driven Anchor di 20 token pertama:
   "Photorealistic 35mm commercial photo of hands holding [Detail Produk] at chest level, presented by [Detail Model], medium close-up product shot, 50mm lens f/2.8, authentic skin texture, clean dark studio backdrop, cool blue accent edge lighting, sharp focus, 8k resolution"
 - JANGAN gunakan kata-kata negatif seperti "preserve exact", "do not alter", "no distortion" di dalam positive prompt string.
 
@@ -768,14 +768,21 @@ Kembalikan JSON dengan struktur baku:
       "scene_number": 1,
       "duration": "4s",
       "visual_direction": "Deskripsi sinematik Bahasa Indonesia untuk pratinjau user...",
-      "prompt_video_runway": "Character identity locked: ... Setting locked: ... Visual Scene: ...",
+      "promptImageToVideo": "Character identity locked: ... Setting locked: ... Visual Scene: ...",
       "promptTextToImage": "Character identity locked: ... Setting locked: ... Visual Scene: ...",
       "voiceover_script": "Naskah narasi suara adegan...",
       "text_overlay": "TEKS HOOK DI LAYAR",
-      "featuresProduct": true
+      "featuresProduct": true,
+      "backgroundLock": "locked",
+      "location": "Modern minimalist indoor setting"
     }
   ]
 }
+
+ATURAN LOGIKA SCENE-BY-SCENE (CRITICAL):
+- "featuresProduct" (BOOLEAN): Bernilai true HANYA jika adegan ini secara visual memegang, mengoleskan, memakai, atau menyorot produk fisik. Bernilai false jika adegan ini murni menceritakan masalah wajah, keluhan emosional, atau hook sebelum produk diperkenalkan.
+- "backgroundLock" (STRING: "locked" | "free"): Bernilai "locked" jika adegan bertempat di ruangan/setting fisik yang sama dengan adegan sebelumnya demi kontinuitas. Bernilai "free" jika adegan berganti lokasi/suasana baru.
+- "location" (STRING): Deskripsi singkat setting fisik (misal: "Kamar tidur minimalis", "Kamar mandi modern", "Studio foto komersial").
 
 FORMAT OUTPUT MUTLAK: JSON`;
 
@@ -791,7 +798,7 @@ FORMAT OUTPUT MUTLAK: JSON`;
               messages: [
                 { 
                   role: "system", 
-                  content: `You are SINTA, NEURONA Master Storyboard & Product/Character Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' (caption, hashtags, voiceProfile) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[], featuresProduct: boolean }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with an Action-Driven Anchor linking subject and product in the first 20 tokens: 'Photorealistic 35mm commercial photo of hands holding [Product name and physical details] at chest level, presented by [Model description], medium close-up product shot, 50mm lens f/2.8, authentic skin texture with pores, clean dark backdrop, cool blue accent edge lighting, sharp focus, 8k resolution'. DO NOT include negative phrases like 'preserve exact', 'do not alter', or 'no distortion' in the positive prompt.` 
+                  content: `You are SINTA, NEURONA Master Storyboard & Product/Character Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' (caption, hashtags, voiceProfile) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[], featuresProduct: boolean, backgroundLock: "locked" | "free", location: string }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with an Action-Driven Anchor linking subject and product in the first 20 tokens: 'Photorealistic 35mm commercial photo of hands holding [Product name and physical details] at chest level, presented by [Model description], medium close-up product shot, 50mm lens f/2.8, authentic skin texture with pores, clean dark backdrop, cool blue accent edge lighting, sharp focus, 8k resolution'. DO NOT include negative phrases like 'preserve exact', 'do not alter', or 'no distortion' in the positive prompt.` 
                 },
                 { role: "user", content: storyboardPrompt }
               ],
@@ -815,9 +822,11 @@ FORMAT OUTPUT MUTLAK: JSON`;
               text_overlay: s.text_overlay || s.textOverlay || '',
               voiceOver: s.voiceover_script || s.voiceOver || '',
               voiceover_script: s.voiceover_script || s.voiceOver || '',
-              promptTextToImage: s.prompt_video_runway || s.promptTextToImage || '',
-              prompt_video_runway: s.prompt_video_runway || s.promptTextToImage || '',
-              promptImageToVideo: s.promptImageToVideo || s.prompt_video_runway || '',
+              promptTextToImage: s.promptTextToImage || s.promptImageToVideo || '',
+              promptImageToVideo: s.promptImageToVideo || s.promptTextToImage || '',
+              featuresProduct: s.featuresProduct !== undefined ? Boolean(s.featuresProduct) : (s.features_product !== undefined ? Boolean(s.features_product) : true),
+              backgroundLock: (s.backgroundLock === 'free' || s.background_lock === 'free') ? 'free' : 'locked',
+              location: s.location || '',
               styleKeywords: s.styleKeywords || []
             }));
             const marketingCopy = {
@@ -861,10 +870,11 @@ FORMAT OUTPUT MUTLAK: JSON`;
     const genAI = getGenAI();
     if (genAI) {
       try {
-        onLog?.('SINTA', `TASKING STORYBOARD AI -> Google Gemini 2.5 Flash`, 'INFO');
+        const activeGemini = getActiveGeminiModel();
+        onLog?.('SINTA', `TASKING STORYBOARD AI -> Google Gemini (${activeGemini})`, 'INFO');
         const response = await withTimeout(
           genAI.models.generateContent({
-            model: getActiveGeminiModel(),
+            model: activeGemini,
             contents: storyboardPrompt,
             config: {
               responseMimeType: "application/json",
@@ -932,9 +942,11 @@ FORMAT OUTPUT MUTLAK: JSON`;
                         textOverlay: { type: Type.STRING },
                         voiceover_script: { type: Type.STRING },
                         voiceOver: { type: Type.STRING },
-                        prompt_video_runway: { type: Type.STRING },
                         promptTextToImage: { type: Type.STRING },
-                        promptImageToVideo: { type: Type.STRING }
+                        promptImageToVideo: { type: Type.STRING },
+                        featuresProduct: { type: Type.BOOLEAN },
+                        backgroundLock: { type: Type.STRING },
+                        location: { type: Type.STRING }
                       }
                     }
                   },
@@ -951,9 +963,11 @@ FORMAT OUTPUT MUTLAK: JSON`;
                         textOverlay: { type: Type.STRING },
                         voiceover_script: { type: Type.STRING },
                         voiceOver: { type: Type.STRING },
-                        prompt_video_runway: { type: Type.STRING },
                         promptTextToImage: { type: Type.STRING },
                         promptImageToVideo: { type: Type.STRING },
+                        featuresProduct: { type: Type.BOOLEAN },
+                        backgroundLock: { type: Type.STRING },
+                        location: { type: Type.STRING },
                         styleKeywords: {
                           type: Type.ARRAY,
                           items: { type: Type.STRING }
@@ -965,7 +979,7 @@ FORMAT OUTPUT MUTLAK: JSON`;
               }
             }
           }),
-          14000,
+          25000,
           'Gemini Storyboard Generator'
         );
 
@@ -982,9 +996,11 @@ FORMAT OUTPUT MUTLAK: JSON`;
             text_overlay: s.text_overlay || s.textOverlay || '',
             voiceOver: s.voiceover_script || s.voiceOver || '',
             voiceover_script: s.voiceover_script || s.voiceOver || '',
-            promptTextToImage: s.prompt_video_runway || s.promptTextToImage || '',
-            prompt_video_runway: s.prompt_video_runway || s.promptTextToImage || '',
-            promptImageToVideo: s.promptImageToVideo || s.prompt_video_runway || '',
+            promptTextToImage: s.promptTextToImage || s.promptImageToVideo || '',
+            promptImageToVideo: s.promptImageToVideo || s.promptTextToImage || '',
+            featuresProduct: s.featuresProduct !== undefined ? Boolean(s.featuresProduct) : (s.features_product !== undefined ? Boolean(s.features_product) : true),
+            backgroundLock: (s.backgroundLock === 'free' || s.background_lock === 'free') ? 'free' : 'locked',
+            location: s.location || '',
             styleKeywords: s.styleKeywords || []
           }));
           const marketingCopy = {
@@ -1014,7 +1030,7 @@ FORMAT OUTPUT MUTLAK: JSON`;
               marketingCopy
             },
             rawText,
-            modelUsed: "Google Gemini 2.5 Flash",
+            modelUsed: `Google Gemini (${activeGemini})`,
             provider: 'gemini'
           };
         }
@@ -1039,7 +1055,7 @@ FORMAT OUTPUT MUTLAK: JSON`;
                   messages: [
                     { 
                       role: "system", 
-                      content: `You are SINTA, NEURONA Master Storyboard & Product Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' ({ caption, hashtags, tiktok_caption, instagram_caption, youtube_caption, hashtags_tiktok, hashtags_instagram, hashtags_youtube, voiceProfile }) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[], featuresProduct: boolean }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with an Action-Driven Anchor linking subject and product in the first 20 tokens: 'Photorealistic 35mm commercial photo of hands holding [Product name and physical details] at chest level, presented by [Model description], medium close-up product shot, 50mm lens f/2.8, authentic skin texture with pores, clean dark backdrop, cool blue accent edge lighting, sharp focus, 8k resolution'. DO NOT include negative phrases like 'preserve exact', 'do not alter', or 'no distortion' in the positive prompt.` 
+                      content: `You are SINTA, NEURONA Master Storyboard & Product Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' ({ caption, hashtags, tiktok_caption, instagram_caption, youtube_caption, hashtags_tiktok, hashtags_instagram, hashtags_youtube, voiceProfile }) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[], featuresProduct: boolean, backgroundLock: "locked" | "free", location: string }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with an Action-Driven Anchor linking subject and product in the first 20 tokens: 'Photorealistic 35mm commercial photo of hands holding [Product name and physical details] at chest level, presented by [Model description], medium close-up product shot, 50mm lens f/2.8, authentic skin texture with pores, clean dark backdrop, cool blue accent edge lighting, sharp focus, 8k resolution'. DO NOT include negative phrases like 'preserve exact', 'do not alter', or 'no distortion' in the positive prompt.` 
                     },
                     { role: "user", content: storyboardPrompt }
                   ],
@@ -1052,8 +1068,24 @@ FORMAT OUTPUT MUTLAK: JSON`;
 
               const rawText = response.choices[0]?.message?.content || "{}";
               const parsed = JSON.parse(rawText);
-              const scenes = parsed.scenes || parsed.storyboard || [];
-              if (Array.isArray(scenes) && scenes.length > 0) {
+              const rawScenes = parsed.scenes || parsed.storyboard_scenes || parsed.storyboard || [];
+              if (Array.isArray(rawScenes) && rawScenes.length > 0) {
+                const scenes = rawScenes.map((s: any, idx: number) => ({
+                  scene_number: s.scene_number || idx + 1,
+                  duration: s.duration || '3s',
+                  visualDirection: s.visualDirection || s.visual_direction || '',
+                  visual_direction: s.visualDirection || s.visual_direction || '',
+                  textOverlay: s.textOverlay || s.text_overlay || '',
+                  text_overlay: s.textOverlay || s.text_overlay || '',
+                  voiceOver: s.voiceOver || s.voiceover_script || '',
+                  voiceover_script: s.voiceOver || s.voiceover_script || '',
+                  promptTextToImage: s.promptTextToImage || s.promptImageToVideo || '',
+                  promptImageToVideo: s.promptImageToVideo || s.promptTextToImage || '',
+                  featuresProduct: s.featuresProduct !== undefined ? Boolean(s.featuresProduct) : (s.features_product !== undefined ? Boolean(s.features_product) : true),
+                  backgroundLock: (s.backgroundLock === 'free' || s.background_lock === 'free') ? 'free' : 'locked',
+                  location: s.location || '',
+                  styleKeywords: s.styleKeywords || []
+                }));
                 const marketingCopy = {
                   caption: parsed.social_media_kit?.caption || parsed.marketingCopy?.caption || '',
                   hashtags: parsed.social_media_kit?.hashtags || parsed.marketingCopy?.hashtags || [],
@@ -1099,34 +1131,33 @@ FORMAT OUTPUT MUTLAK: JSON`;
   }
 
   static async callGatotkaca(storyboardData: any, creditStatus: string, videoType: string): Promise<any> {
-    const gatotkacaSystemPrompt = `Kamu adalah Gatotkaca, API Pipeline Engineer dan GATEKEEPER untuk Neuronna yang terhubung ke mesin rendering Runway.
+    const gatotkacaSystemPrompt = `Kamu adalah Gatotkaca, API Pipeline Engineer dan GATEKEEPER untuk Neuronna yang terhubung ke mesin rendering Fal Video Engine (Kling, Seedance, Wan, MiniMax).
 Tugasmu beroperasi HANYA pada Fase 2 (Eksekusi Render). Kamu akan menerima payload JSON \`storyboard_scenes\` (dari Sinta) dan parameter \`credit_status\` dari backend.
 
 ATURAN GATEKEEPER (SUPER STRICT):
 1. Cek parameter [CREDIT_STATUS].
 2. JIKA [CREDIT_STATUS] BUKAN "approved" (misalnya "insufficient_funds", "pending", atau null):
-   - Kamu DILARANG KERAS merakit payload API Runway.
+   - Kamu DILARANG KERAS merakit payload API.
    - Outputkan JSON error: { "status": "REJECTED", "reason": "Saldo kredit tidak mencukupi atau transaksi belum di-approve backend." }
 3. JIKA [CREDIT_STATUS] ADALAH "approved":
    - Kamu diizinkan untuk merakit Payload API.
 
 ATURAN PAYLOAD API JIKA APPROVED:
-- Ekstrak string dari \`runway_prompt\` milik Sinta di setiap adegan.
-- JIKA [VIDEO_TYPE] == "AFFILIATE": Set parameter API \`motion: 3\` (Low motion) agar produk tidak distorsi. Gunakan endpoint \`/image_to_video\`.
-- JIKA [VIDEO_TYPE] == "CONTENT": Set parameter API \`motion: 7\` (High motion) untuk dinamika cerita. Gunakan endpoint \`/text_to_video\` atau \`/image_to_video\`.
+- Ekstrak string dari \`promptImageToVideo\` milik Sinta di setiap adegan.
+- JIKA [VIDEO_TYPE] == "AFFILIATE": Gunakan endpoint I2V presisi dengan durasi 5s.
+- JIKA [VIDEO_TYPE] == "ANIMATION": Gunakan endpoint I2V sinematik dengan durasi 5s.
 
 FORMAT OUTPUT JIKA APPROVED (HANYA JSON):
 {
   "status": "APPROVED",
-  "engine": "runway_gen3",
+  "engine": "fal_video",
   "api_payloads": [
     {
       "scene_number": 1,
-      "endpoint": "/image_to_video",
+      "endpoint": "fal-ai/kling-video/v2.1/standard/image-to-video",
       "body": {
-        "promptText": "(isi dari runway_prompt Sinta)",
-        "duration": 4,
-        "motion": 3
+        "prompt": "(isi dari promptImageToVideo Sinta)",
+        "duration": "5"
       }
     }
   ]

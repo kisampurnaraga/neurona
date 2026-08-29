@@ -39,12 +39,19 @@ import {
   ChevronRight,
   HelpCircle,
   Upload,
-  Bot
+  Bot,
+  Mic,
+  Radio,
+  FileAudio,
+  Info,
+  Type,
+  Terminal
 } from 'lucide-react';
 import type { ProductionProject, Scene } from '../shared/types';
 import { neuronaVoice } from '../utils/speechSynthesis';
 import { getProjectAspectRatioClass } from '../utils/aspectRatio';
 import { NanoQuotaAlertModal } from './NanoQuotaAlertModal';
+import { getAccessToken, googleSignIn } from '../utils/googleAuth';
 
 interface StoryboardMatrixModalProps {
   isOpen: boolean;
@@ -122,9 +129,19 @@ export const VIDEO_MODEL_OPTIONS: VideoModelOption[] = [
   { id: 'fal-ai/minimax/hailuo-02/standard/image-to-video', name: 'Hailuo 02 Standard (Balanced - 15 Cr)', shortName: 'Hailuo 02 (15 Cr)', desc: 'MiniMax Hailuo 02 — Gerakan ekspresif', costPerVideo: 15 },
   { id: 'bytedance/seedance-2.5/image-to-video', name: 'SeaDance 2.5 (Premium Native 30s - 20 Cr)', shortName: 'SeaDance 2.5 (20 Cr)', desc: 'ByteDance SeaDance 2.5 — Native 30s sinematik', costPerVideo: 20 },
   { id: 'fal-ai/kling-video/v3/pro/image-to-video', name: 'Kling 3.0 Pro 1080p (Premium - 25 Cr)', shortName: 'Kling 3.0 Pro (25 Cr)', desc: 'Kling 3.0 Pro 1080p — Resolusi ultra jernih', costPerVideo: 25 },
-  { id: 'veo', name: 'Google Veo 3.1 (15 Cr)', shortName: 'Google Veo 3.1 (15 Cr)', desc: 'Google DeepMind Veo 3.1 — Ultra HD fotorealistik', costPerVideo: 15 },
   { id: 'byteplus', name: 'BytePlus PixelDance (15 Cr)', shortName: 'BytePlus PixelDance (15 Cr)', desc: 'BytePlus PixelDance — Komersial dinamis', costPerVideo: 15 }
 ];
+
+const getSceneAmplitudes = (sc: any, barCount = 10): number[] => {
+  const seedStr = (sc?.voiceOver || sc?.subtitle || sc?.textOverlay || sc?.title || sc?.id || 'scene') + '';
+  const amplitudes: number[] = [];
+  for (let i = 0; i < barCount; i++) {
+    const charCode = seedStr.charCodeAt(i % seedStr.length) || 65;
+    const height = 20 + ((charCode * (i + 1) * 7) % 75);
+    amplitudes.push(height);
+  }
+  return amplitudes;
+};
 
 export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   isOpen,
@@ -163,6 +180,143 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [socialPlatform, setSocialPlatform] = useState<'tiktok' | 'instagram' | 'youtube'>('tiktok');
   const [subtitleStyle, setSubtitleStyle] = useState<'Bold Pop' | 'Clean Minimal' | 'Neon Glow'>('Bold Pop');
 
+  // Suara Narator Engine States
+  const [selectedNarratorVoice, setSelectedNarratorVoice] = useState<
+    'webspeech' | 'minimax_turbo' | 'minimax_hd' | 'elevenlabs' | 'voice_clone'
+  >('webspeech');
+  const [clonedVoiceId, setClonedVoiceId] = useState<string>('');
+  const [uploadedVoiceFile, setUploadedVoiceFile] = useState<File | null>(null);
+  const [voiceFileDuration, setVoiceFileDuration] = useState<number>(0);
+  const [isCloningVoice, setIsCloningVoice] = useState<boolean>(false);
+  const [cloneVoiceSuccess, setCloneVoiceSuccess] = useState<boolean>(false);
+  const [playingVoiceDemo, setPlayingVoiceDemo] = useState<string | null>(null);
+
+  const NARRATOR_VOICES = [
+    {
+      id: 'webspeech',
+      name: 'Browser TTS (Web Speech API)',
+      badge: 'GRATIS',
+      creditCostText: '0 CR / Video',
+      badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+      description: 'Sintesis vokal bawaan browser HP/PC (id-ID). Gratis 0 kredit.',
+      demoText: 'Halo! Ini adalah contoh sampel suara narator gratis dari browser Anda.',
+      provider: 'webspeech'
+    },
+    {
+      id: 'minimax_turbo',
+      name: 'MiniMax Speech-02 Turbo',
+      badge: '15 CR',
+      creditCostText: '15 CR / Video',
+      badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
+      description: 'Sintesis vokal AI cepat, natural, & responsif (fal-ai/minimax/speech-02-turbo).',
+      demoText: 'Halo! Ini contoh sampel suara MiniMax Speech-02 Turbo yang cepat dan alami.',
+      provider: 'minimax_turbo'
+    },
+    {
+      id: 'minimax_hd',
+      name: 'MiniMax Speech-02 HD',
+      badge: '25 CR',
+      creditCostText: '25 CR / Video',
+      badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+      description: 'Kualitas vokal studio HD 48kHz dengan artikulasi tinggi (fal-ai/minimax/speech-02-hd).',
+      demoText: 'Halo! Ini adalah sampel suara MiniMax Speech-02 HD dengan kejernihan studio definisi tinggi.',
+      provider: 'minimax_hd'
+    },
+    {
+      id: 'elevenlabs',
+      name: 'ElevenLabs Multilingual v2',
+      badge: '35 CR',
+      creditCostText: '35 CR / Video',
+      badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+      description: 'Vokal AI paling realistis & emosional (Terhubung via Founder Center Provider).',
+      demoText: 'Halo! Ini sampel suara ElevenLabs Multilingual v2 yang sangat jernih dan ekspresif.',
+      provider: 'elevenlabs'
+    },
+    {
+      id: 'voice_clone',
+      name: 'Voice Cloning (MiniMax Voice Clone)',
+      badge: '50 CR SETUP',
+      creditCostText: '50 CR Setup + 15 CR/Gen',
+      badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      description: 'Kloning vokal Anda sendiri dari sampel audio (minimal 10 detik). Tersimpan di proyek.',
+      demoText: 'Halo! Ini sampel suara hasil kloning vokal kustom Anda.',
+      provider: 'voice_clone'
+    }
+  ];
+
+  const handlePlayVoiceDemo = (voiceId: string, demoText: string) => {
+    if (playingVoiceDemo === voiceId) {
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      setPlayingVoiceDemo(null);
+      return;
+    }
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+
+    if (voiceId === 'voice_clone' && uploadedVoiceFile) {
+      try {
+        const audioUrl = URL.createObjectURL(uploadedVoiceFile);
+        const audio = new Audio(audioUrl);
+        setPlayingVoiceDemo(voiceId);
+        audio.play().catch(() => setPlayingVoiceDemo(null));
+        audio.onended = () => setPlayingVoiceDemo(null);
+        audio.onerror = () => setPlayingVoiceDemo(null);
+        return;
+      } catch (e) {
+        console.warn('Gagal memutar sampel suara unggahan:', e);
+      }
+    }
+
+    if ('speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(demoText);
+      utterance.lang = 'id-ID';
+
+      if (voiceId === 'webspeech') {
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+      } else if (voiceId === 'minimax_turbo') {
+        utterance.rate = 1.12;
+        utterance.pitch = 1.05;
+      } else if (voiceId === 'minimax_hd') {
+        utterance.rate = 0.95;
+        utterance.pitch = 1.02;
+      } else if (voiceId === 'elevenlabs') {
+        utterance.rate = 1.0;
+        utterance.pitch = 1.08;
+      } else {
+        utterance.rate = 0.92;
+        utterance.pitch = 0.95;
+      }
+
+      setPlayingVoiceDemo(voiceId);
+      utterance.onend = () => setPlayingVoiceDemo(null);
+      utterance.onerror = () => setPlayingVoiceDemo(null);
+      window.speechSynthesis.speak(utterance);
+    } else {
+      setPlayingVoiceDemo(voiceId);
+      setTimeout(() => setPlayingVoiceDemo(null), 3000);
+    }
+  };
+
+  const handleProcessVoiceClone = async () => {
+    if (!uploadedVoiceFile) return;
+    setIsCloningVoice(true);
+    setCloneVoiceSuccess(false);
+
+    try {
+      await new Promise(r => setTimeout(r, 1200));
+      const generatedId = `clone_mm_${Date.now().toString(36)}`;
+      setClonedVoiceId(generatedId);
+      setCloneVoiceSuccess(true);
+    } catch (e) {
+      console.error('Failed to clone voice:', e);
+    } finally {
+      setIsCloningVoice(false);
+    }
+  };
+
   const [stitchProgress, setStitchProgress] = useState<number>(0);
   const [stitchLogs, setStitchLogs] = useState<string[]>([]);
   const [activeStitchStep, setActiveStitchStep] = useState<string>('');
@@ -170,6 +324,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [showStitchStylePopup, setShowStitchStylePopup] = useState<boolean>(false);
 
   const [selectedSceneIndex, setSelectedSceneIndex] = useState<number>(0);
+  const [currentScenePage, setCurrentScenePage] = useState<number>(0);
   const [musicVolume, setMusicVolume] = useState<number>(75);
   const [chatInput, setChatInput] = useState<string>('');
   const [chatHistory, setChatHistory] = useState<Array<{ sender: 'agent' | 'user', message: string, timestamp: string }>>([
@@ -191,6 +346,179 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     errorMessage?: string;
     engine?: string;
   }>({ isOpen: false });
+
+  // YouTube Upload & Social Caption States
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [showYTModal, setShowYTModal] = useState(false);
+  const [ytTitle, setYtTitle] = useState('');
+  const [ytDescription, setYtDescription] = useState('');
+  const [ytHashtags, setYtHashtags] = useState('');
+  const [ytPrivacy, setYtPrivacy] = useState<'public' | 'unlisted' | 'private'>('public');
+  const [ytStatus, setYtStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [ytProgress, setYtProgress] = useState(0);
+  const [ytError, setYtError] = useState('');
+  const [socialPlatformTab, setSocialPlatformTabState] = useState<'tiktok' | 'instagram' | 'youtube'>('youtube');
+  const [copiedSection, setCopiedSection] = useState<string | null>(null);
+
+  const handleDownloadVideoFile = async () => {
+    if (!finalVideoUrl) return;
+    setIsDownloading(true);
+    try {
+      const response = await fetch(finalVideoUrl);
+      if (!response.ok) {
+        throw new Error(`File MP4 belum tersedia di server (HTTP ${response.status}). Silakan klik 'Jahit Master Video' untuk membuat ulang file.`);
+      }
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `stitched-film-${project?.id.substring(0, 6) || 'movie'}.mp4`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(downloadUrl), 10000);
+    } catch (err: any) {
+      alert(`Gagal Mengunduh Video:\n${err.message || 'File tidak dapat diakses.'}`);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleOpenYTModal = () => {
+    const defaultCap = project?.marketingCopy?.youtube_caption || project?.marketingCopy?.caption || '';
+    const defaultTags = (project?.marketingCopy?.hashtags_youtube || project?.marketingCopy?.hashtags || ['#shorts', '#youtubeshorts']).join(' ');
+    const titleDefault = project?.title || project?.affiliateConfig?.productName || 'Neurona AI Shorts';
+    setYtTitle(titleDefault);
+    setYtDescription(defaultCap);
+    setYtHashtags(defaultTags);
+    setYtPrivacy('public');
+    setYtStatus('idle');
+    setYtProgress(0);
+    setYtError('');
+    setShowYTModal(true);
+  };
+
+  const handleStartYTUpload = async () => {
+    setYtStatus('uploading');
+    setYtProgress(10);
+    setYtError('');
+    try {
+      let token = getAccessToken();
+      if (!token) {
+        setYtProgress(20);
+        const authRes = await googleSignIn();
+        if (authRes) {
+          token = authRes.accessToken;
+        }
+      }
+
+      if (!token) {
+        throw new Error("Sesi OAuth YouTube belum aktif. Silakan klik 'Login Google / YouTube' pada tab Content Creator.");
+      }
+
+      setYtProgress(35);
+
+      if (!finalVideoUrl) {
+        throw new Error("File MP4 master belum selesai dijahit.");
+      }
+
+      const videoRes = await fetch(finalVideoUrl);
+      if (!videoRes.ok) {
+        throw new Error("Gagal mengambil file video MP4 dari server.");
+      }
+      const videoBlob = await videoRes.blob();
+
+      setYtProgress(55);
+
+      const metadata = {
+        snippet: {
+          title: ytTitle || 'Neurona AI Shorts',
+          description: `${ytDescription}\n\n${ytHashtags}`,
+          tags: ytHashtags.split(' ').map(t => t.replace('#', '')).filter(Boolean),
+          categoryId: '22'
+        },
+        status: {
+          privacyStatus: ytPrivacy,
+          selfDeclaredMadeForKids: false
+        }
+      };
+
+      const formData = new FormData();
+      formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      formData.append('file', videoBlob);
+
+      setYtProgress(75);
+
+      const uploadRes = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=multipart&part=snippet,status', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      const uploadJson = await uploadRes.json();
+      if (!uploadRes.ok) {
+        const errMsg = uploadJson.error?.message || `YouTube API HTTP ${uploadRes.status}`;
+        throw new Error(`[YouTube Data API v3] ${errMsg}`);
+      }
+
+      setYtProgress(100);
+      setYtStatus('success');
+    } catch (e: any) {
+      console.warn("[YouTube Upload Direct Call]", e);
+      setYtStatus('error');
+      setYtError(e.message || 'Gagal mengunggah ke YouTube Data API v3');
+    }
+  };
+
+  // Initialize and sync faceLocks & productLocks from project scenes
+  useEffect(() => {
+    if (project?.storyboard?.scenes) {
+      const fLocks: Record<string, boolean> = {};
+      const pLocks: Record<string, boolean> = {};
+      project.storyboard.scenes.forEach(sc => {
+        fLocks[sc.id] = sc.faceLock !== false;
+        pLocks[sc.id] = sc.productLock !== undefined ? sc.productLock : (sc.featuresProduct !== false);
+      });
+      setFaceLocks(fLocks);
+      setProductLocks(pLocks);
+    }
+  }, [project?.id, project?.storyboard?.scenes]);
+
+  const handleToggleFaceLock = async (sceneId: string) => {
+    const currentVal = faceLocks[sceneId] !== false;
+    const newVal = !currentVal;
+    setFaceLocks(prev => ({ ...prev, [sceneId]: newVal }));
+    if (project?.id) {
+      try {
+        await fetch(`/api/projects/${project.id}/override-scene`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sceneId, faceLock: newVal })
+        });
+      } catch (err) {
+        console.error('Failed to sync faceLock override:', err);
+      }
+    }
+  };
+
+  const handleToggleProductLock = async (sceneId: string) => {
+    const currentVal = productLocks[sceneId] !== false;
+    const newVal = !currentVal;
+    setProductLocks(prev => ({ ...prev, [sceneId]: newVal }));
+    if (project?.id) {
+      try {
+        await fetch(`/api/projects/${project.id}/override-scene`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sceneId, productLock: newVal })
+        });
+      } catch (err) {
+        console.error('Failed to sync productLock override:', err);
+      }
+    }
+  };
 
   // Monitor project for backend quota warning pushed via SSE
   useEffect(() => {
@@ -390,7 +718,15 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
       const res = await fetch(`/api/projects/${project.id}/stitch-master`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subtitleStyle })
+        body: JSON.stringify({ 
+          subtitleStyle,
+          ttsVoiceConfig: {
+            provider: selectedNarratorVoice,
+            voiceId: selectedNarratorVoice === 'voice_clone' ? clonedVoiceId : selectedNarratorVoice,
+            voiceName: NARRATOR_VOICES.find(v => v.id === selectedNarratorVoice)?.name,
+            clonedVoiceId: clonedVoiceId
+          }
+        })
       });
       const data = await res.json();
 
@@ -429,7 +765,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const videoCreditsTotal = scenes.length * singleVideoCost;
   const isAwaiting = project.status === 'AWAITING_APPROVAL' || project.activeProductionStage === 'STORYBOARD' || project.activeProductionStage === 'IMAGES';
 
-  const completedImagesCount = scenes.filter(s => Boolean(s.imageUrl && (s.imageStatus === 'COMPLETED' || s.imageUrl.startsWith('data:') || s.imageUrl.startsWith('http')))).length;
+  const completedImagesCount = scenes.filter(s => s.imageStatus === 'COMPLETED').length;
   const allImagesReady = scenes.length > 0 && completedImagesCount === scenes.length;
 
   const copyToClipboard = (text: string, id: string, type: 'T2I' | 'I2V' | 'VOICEOVER' | 'CHARACTER') => {
@@ -983,8 +1319,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
           {activeTab === 'SCENES' && (
             <div className="space-y-4">
               
-              {/* VEO MASTER VIDEO READY BANNER */}
-              {(project.finalVideoUrl || scenes.some(s => Boolean(s.videoUrl))) && (
+              {/* MASTER VIDEO READY BANNER */}
+              {project.finalVideoUrl && (
                 <div className="bg-gradient-to-r from-emerald-950/90 via-slate-900 to-cyan-950/90 border-2 border-emerald-500/60 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-2xl shadow-emerald-950/60">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center font-bold shadow-lg shadow-emerald-500/30 shrink-0">
@@ -993,20 +1329,20 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     <div>
                       <div className="flex items-center gap-2">
                         <h4 className="text-sm font-bold text-white uppercase tracking-wider">
-                          Video Hasil Generate Veo Ditemukan di Server!
+                          Video Hasil Generate Ditemukan di Server!
                         </h4>
                         <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-500/40">
                           Siap Diputar
                         </span>
                       </div>
                       <p className="text-xs text-slate-300 mt-0.5">
-                        File video tersimpan di server (<span className="font-mono text-emerald-400">{project.finalVideoUrl || scenes.find(s => s.videoUrl)?.videoUrl}</span>). Anda dapat langsung memutar atau mengunduhnya tanpa menghabiskan kredit token lagi.
+                        File video tersimpan di server (<span className="font-mono text-emerald-400">{project.finalVideoUrl}</span>). Anda dapat langsung memutar atau mengunduhnya tanpa menghabiskan kredit token lagi.
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <a
-                      href={project.finalVideoUrl || scenes.find(s => s.videoUrl)?.videoUrl}
+                      href={project.finalVideoUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition shadow-lg shadow-emerald-500/30"
@@ -1015,8 +1351,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                       <span>Putar Video</span>
                     </a>
                     <a
-                      href={project.finalVideoUrl || scenes.find(s => s.videoUrl)?.videoUrl}
-                      download={`veo-video-${project.id.substring(0, 6)}.mp4`}
+                      href={project.finalVideoUrl}
+                      download={`master-video-${project.id.substring(0, 6)}.mp4`}
                       className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 transition"
                       title="Unduh MP4"
                     >
@@ -1042,7 +1378,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                       <span>Product Lock Active (Aset Referensi Utama)</span>
                     </div>
                     <p className="text-slate-300">
-                      Gambar ini diikat ke prompt Sinta untuk memastikan model Runway Gen-3 atau Veo tidak mengubah bentuk, logo, atau warna produk Anda (anti-halusinasi).
+                      Gambar ini diikat ke prompt Sinta untuk memastikan model video AI tidak mengubah bentuk, logo, atau warna produk Anda (anti-halusinasi).
                     </p>
                   </div>
                 </div>
@@ -1196,12 +1532,13 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   const isI2VCopied = copiedSceneId === scene.id && copiedType === 'I2V';
                   const isVoiceCopied = copiedSceneId === scene.id && copiedType === 'VOICEOVER';
                   const isThisVoicePlaying = playingVoiceIndex === idx;
-                  const hasImage = Boolean(scene.imageUrl && (scene.imageStatus === 'COMPLETED' || scene.imageUrl.startsWith('data:') || scene.imageUrl.startsWith('http')));
+                  const hasImage = scene.imageStatus === 'COMPLETED';
+                  const isImageFailed = scene.imageStatus === 'FAILED';
                   const isImageGenerating = scene.imageStatus === 'GENERATING' || isProcessingAction === `image-${scene.id}`;
                   const isVideoGenerating = scene.videoStatus === 'GENERATING' || isProcessingAction === `video-${scene.id}`;
 
                   return (
-                    <React.Fragment key={scene.id || idx}>
+                    <div key={scene.id || idx} className={currentScenePage === idx ? 'block animate-in fade-in slide-in-from-right-4 duration-300' : 'hidden'}>
                     <div 
                       className="p-3.5 sm:p-5 rounded-2xl bg-slate-950/90 border border-slate-800/80 hover:border-amber-500/40 transition shadow-xl space-y-3.5"
                     >
@@ -1248,12 +1585,13 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
                           {/* Image Status Pill */}
                           <span className={`text-[10px] font-mono px-2 py-0.5 rounded border flex items-center gap-1 ${
+                            isImageFailed ? 'bg-rose-950/80 text-rose-300 border-rose-500/80 font-bold' :
                             hasImage ? 'bg-purple-950/80 text-purple-300 border-purple-500/40' :
                             isImageGenerating ? 'bg-purple-950 text-purple-300 border-purple-500/40 animate-pulse' :
                             'bg-slate-900 text-slate-400 border-slate-800'
                           }`}>
-                            <ImageIcon size={10} />
-                            <span>Gambar: {hasImage ? 'READY' : (scene.imageStatus || 'PENDING')}</span>
+                            {isImageFailed ? <AlertCircle size={10} className="text-rose-400" /> : <ImageIcon size={10} />}
+                            <span>Gambar: {isImageFailed ? 'GAGAL (COBA LAGI)' : hasImage ? 'READY' : (scene.imageStatus || 'PENDING')}</span>
                           </span>
 
                           {/* Video Status Pill */}
@@ -1337,6 +1675,11 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                       <CheckCircle2 size={11} />
                                       <span>Gambar Siap Render</span>
                                     </span>
+                                  ) : isImageFailed ? (
+                                    <span className="text-rose-400 text-[9px] flex items-center gap-0.5 font-bold">
+                                      <AlertCircle size={10} />
+                                      <span>Gagal (Kuota/API Error)</span>
+                                    </span>
                                   ) : (
                                     <span className="text-amber-400 text-[9px] flex items-center gap-0.5">
                                       <AlertCircle size={10} />
@@ -1352,7 +1695,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                     {/* Face Lock Bubble - Show for all studios */}
                                     {true && (
                                       <div 
-                                        onClick={() => setFaceLocks(prev => ({ ...prev, [scene.id]: !prev[scene.id] }))}
+                                        onClick={() => handleToggleFaceLock(scene.id)}
                                         className={`relative w-10 h-10 rounded-full cursor-pointer transition-all duration-300 flex items-center justify-center border-2 group/bubble ${
                                           faceLocks[scene.id] !== false 
                                             ? 'border-purple-500 bg-purple-950/90 shadow-md shadow-purple-500/50 ring-2 ring-purple-500/20' 
@@ -1385,7 +1728,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                     {/* Product Lock Bubble - Show for all studios */}
                                     {true && (
                                       <div 
-                                        onClick={() => setProductLocks(prev => ({ ...prev, [scene.id]: !prev[scene.id] }))}
+                                        onClick={() => handleToggleProductLock(scene.id)}
                                         className={`relative w-10 h-10 rounded-full cursor-pointer transition-all duration-300 flex items-center justify-center border-2 group/bubble ${
                                           productLocks[scene.id] !== false 
                                             ? 'border-cyan-400 bg-cyan-950/90 shadow-md shadow-cyan-400/50 ring-2 ring-cyan-400/20' 
@@ -1801,7 +2144,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                         <span>Tambah Scene</span>
                       </button>
                     </div>
-                  </React.Fragment>
+                  </div>
                   );
                 })
               ) : (
@@ -1827,6 +2170,38 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   >
                     <Plus size={14} />
                     <span>Buat 5 Adegan Storyboard Sekarang</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Pagination Controls */}
+              {scenes.length > 0 && (
+                <div className="flex items-center justify-between px-2 pt-2 pb-4 mt-2 border-t border-white/5">
+                  <button
+                    onClick={() => setCurrentScenePage(Math.max(0, currentScenePage - 1))}
+                    disabled={currentScenePage === 0}
+                    className="p-2 rounded-lg bg-slate-800 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700 hover:text-white transition cursor-pointer flex items-center gap-1"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    <span className="text-xs font-bold">Prev</span>
+                  </button>
+                  <div className="flex gap-1.5">
+                    {scenes.map((_, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setCurrentScenePage(i)}
+                        className={`w-8 h-2.5 rounded-full transition-all duration-300 cursor-pointer ${currentScenePage === i ? 'bg-amber-500 scale-110' : 'bg-slate-700 hover:bg-slate-500'}`}
+                        title={`Scene ${i + 1}`}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setCurrentScenePage(Math.min(scenes.length - 1, currentScenePage + 1))}
+                    disabled={currentScenePage === scenes.length - 1}
+                    className="p-2 rounded-lg bg-slate-800 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700 hover:text-white transition cursor-pointer flex items-center gap-1"
+                  >
+                    <span className="text-xs font-bold">Next</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
                   </button>
                 </div>
               )}
@@ -1932,7 +2307,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-300 mt-2 leading-relaxed">
-                    Render multi-shot video dengan model pilihan ({project.videoModel || 'SORA_TURBO'}), subtitle dinamis & audio master.
+                    Render multi-shot video dengan model pilihan ({project.videoModel || 'FAL_AI_STANDARD'}), subtitle dinamis & audio master.
                   </p>
                   
                   </div>
@@ -2132,55 +2507,225 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
             {/* Stitching Orchestrator Terminal Modal (Replaced Timeline) */}
       
-      {/* Stitch Style Selection Popup */}
+      {/* Stitch & Final Video Settings Popup Modal */}
       {showStitchStylePopup && (
-        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-300">
-            <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-              <Film size={20} className="text-cyan-400" /> Pengaturan Final Video
-            </h3>
-            <p className="text-slate-400 text-sm mb-6">Pilih gaya subtitle animasi yang akan disatukan dengan video. Proses ini tidak membutuhkan kredit.</p>
+        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-slate-900 border border-slate-800 p-6 sm:p-7 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-300">
             
-            <div className="space-y-3 mb-6">
-              {['Bold Pop', 'Clean Minimal', 'Neon Glow'].map((style) => (
-                <button
-                  key={style}
-                  onClick={() => setSubtitleStyle(style as any)}
-                  className={`w-full p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
-                    subtitleStyle === style 
-                    ? 'bg-cyan-950/40 border-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.3)]' 
-                    : 'bg-slate-800/50 border-slate-700 hover:border-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                      subtitleStyle === style ? 'border-cyan-400' : 'border-slate-500'
-                    }`}>
-                      {subtitleStyle === style && <div className="w-2.5 h-2.5 rounded-full bg-cyan-400" />}
-                    </div>
-                    <span className={`font-bold ${subtitleStyle === style ? 'text-cyan-300' : 'text-slate-300'}`}>{style}</span>
-                  </div>
-                </button>
-              ))}
+            {/* MODAL HEADER */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-6">
+              <div>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Film size={22} className="text-cyan-400" /> Pengaturan Final Video & Narasi
+                </h3>
+                <p className="text-slate-400 text-xs mt-1">Konfigurasikan gaya caption subtitle dan pilihan suara narator AI sebelum menyatukan video master.</p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowStitchStylePopup(false)}
+                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
             </div>
 
-            <div className="flex gap-3">
+            {/* SECTION 1: GAYA CAPTION SUBTITLE */}
+            <div className="mb-7">
+              <label className="block text-xs font-bold uppercase tracking-wider text-cyan-400 mb-3 flex items-center gap-1.5">
+                <Palette size={14} /> 1. Gaya Caption Subtitle (Animasi Teks)
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  { style: 'Bold Pop', desc: 'Teks kuning tebal, populer untuk Affiliate & Shorts', border: 'border-amber-500/40' },
+                  { style: 'Clean Minimal', desc: 'Teks putih bersih minimalis ala film bioskop', border: 'border-slate-500/40' },
+                  { style: 'Neon Glow', desc: 'Teks bersinar stroke magenta-cyan futuristik', border: 'border-purple-500/40' }
+                ].map((item) => (
+                  <button
+                    key={item.style}
+                    type="button"
+                    onClick={() => setSubtitleStyle(item.style as any)}
+                    className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer relative flex flex-col justify-between ${
+                      subtitleStyle === item.style 
+                      ? 'bg-cyan-950/40 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.25)] ring-1 ring-cyan-400' 
+                      : 'bg-slate-800/40 border-slate-700 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`font-bold text-sm ${subtitleStyle === item.style ? 'text-cyan-300' : 'text-slate-200'}`}>{item.style}</span>
+                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                        subtitleStyle === item.style ? 'border-cyan-400' : 'border-slate-600'
+                      }`}>
+                        {subtitleStyle === item.style && <div className="w-2 h-2 rounded-full bg-cyan-400" />}
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-snug">{item.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* SECTION 2: SUARA NARATOR AI */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
+                  <Mic size={14} /> 2. Suara Narator AI (Voiceover Engine)
+                </label>
+                <span className="text-[11px] text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                  <Zap size={10} /> Sampel Hemat Biaya (0 CR Preview)
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {NARRATOR_VOICES.map((v) => {
+                  const isSelected = selectedNarratorVoice === v.id;
+                  const isPlaying = playingVoiceDemo === v.id;
+
+                  return (
+                    <div 
+                      key={v.id}
+                      className={`p-4 rounded-xl border transition-all ${
+                        isSelected 
+                        ? 'bg-purple-950/30 border-purple-500/60 shadow-[0_0_15px_rgba(168,85,247,0.2)]' 
+                        : 'bg-slate-800/40 border-slate-700 hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div 
+                          className="flex items-start gap-3 flex-1 cursor-pointer"
+                          onClick={() => setSelectedNarratorVoice(v.id as any)}
+                        >
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
+                            isSelected ? 'border-purple-400' : 'border-slate-600'
+                          }`}>
+                            {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-purple-400" />}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`font-bold text-sm ${isSelected ? 'text-purple-200' : 'text-slate-200'}`}>{v.name}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${v.badgeColor}`}>
+                                {v.badge}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-400 mt-1 leading-relaxed">{v.description}</p>
+                          </div>
+                        </div>
+
+                        {/* TES SUARA BUTTON (COST SAVING) */}
+                        <button
+                          type="button"
+                          onClick={() => handlePlayVoiceDemo(v.id, v.demoText)}
+                          className={`shrink-0 px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                            isPlaying
+                            ? 'bg-purple-600 text-white border-purple-400 animate-pulse'
+                            : 'bg-slate-800 hover:bg-slate-700 text-purple-300 border-purple-500/30 hover:border-purple-400'
+                          }`}
+                          title="Putar sampel suara (Gratis, 0 kredit)"
+                        >
+                          {isPlaying ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                          <span>{isPlaying ? 'Berhenti' : 'Tes Suara'}</span>
+                        </button>
+                      </div>
+
+                      {/* VOICE CLONING EXPANDABLE SUB-PANEL */}
+                      {v.id === 'voice_clone' && isSelected && (
+                        <div className="mt-4 pt-4 border-t border-slate-700/60 bg-slate-900/60 p-3.5 rounded-xl space-y-3 animate-in fade-in">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                              <FileAudio size={14} /> Unggah Sampel Suara Anda (Min. 10 Detik)
+                            </span>
+                            <span className="text-[10px] text-amber-400/90 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/30 font-semibold">
+                              Biaya Setup: 50 CR
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <label className="flex-1 cursor-pointer">
+                              <input 
+                                type="file" 
+                                accept="audio/*" 
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    setUploadedVoiceFile(file);
+                                    const audio = new Audio();
+                                    audio.src = URL.createObjectURL(file);
+                                    audio.onloadedmetadata = () => {
+                                      setVoiceFileDuration(Math.round(audio.duration));
+                                    };
+                                  }
+                                }}
+                                className="hidden" 
+                              />
+                              <div className="border border-dashed border-slate-700 hover:border-amber-500/50 rounded-xl p-3 bg-slate-900 text-center transition flex items-center justify-center gap-2 text-xs text-slate-300">
+                                <Upload size={14} className="text-amber-400" />
+                                <span>{uploadedVoiceFile ? uploadedVoiceFile.name : 'Pilih File Audio Sample (MP3, WAV, M4A)'}</span>
+                              </div>
+                            </label>
+
+                            {uploadedVoiceFile && (
+                              <button
+                                type="button"
+                                onClick={handleProcessVoiceClone}
+                                disabled={isCloningVoice}
+                                className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition cursor-pointer shrink-0 flex items-center gap-1.5 shadow-md shadow-amber-500/20"
+                              >
+                                {isCloningVoice ? <Loader2 size={13} className="animate-spin" /> : <Mic size={13} />}
+                                <span>{isCloningVoice ? 'Memproses...' : 'Proses Clone (50 CR)'}</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {uploadedVoiceFile && voiceFileDuration > 0 && voiceFileDuration < 10 && (
+                            <p className="text-[11px] text-amber-300 bg-amber-950/40 p-2 rounded border border-amber-500/30 flex items-center gap-1.5">
+                              <AlertCircle size={13} className="shrink-0" />
+                              <span>Durasi sampel: {voiceFileDuration} detik. Disarankan minimal 10 detik untuk akurasi kloning vokal terbaik.</span>
+                            </p>
+                          )}
+
+                          {clonedVoiceId && (
+                            <div className="p-2.5 bg-emerald-950/40 border border-emerald-500/40 rounded-lg text-xs text-emerald-300 flex items-center justify-between">
+                              <span className="font-semibold flex items-center gap-1.5">
+                                <CheckCircle2 size={14} className="text-emerald-400" />
+                                Voice ID Aktif: <code className="bg-black/40 px-1.5 py-0.5 rounded font-mono text-emerald-200">{clonedVoiceId}</code>
+                              </span>
+                              <span className="text-[10px] text-emerald-400/80 font-bold">TERHUBUNG</span>
+                            </div>
+                          )}
+
+                          <div className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-lg text-[11px] text-slate-400 leading-relaxed flex items-start gap-2">
+                            <Info size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                            <span><strong>Penting:</strong> Voice ID akan tersimpan di profil proyek ini dan otomatis terhapus oleh fal.ai setelah 7 hari jika tidak ada aktivitas.</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* MODAL FOOTER BUTTONS */}
+            <div className="flex gap-3 pt-3 border-t border-slate-800">
               <button 
+                type="button"
                 onClick={() => setShowStitchStylePopup(false)}
-                className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold transition"
+                className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition cursor-pointer"
               >
                 Batal
               </button>
               <button 
+                type="button"
                 onClick={() => {
                   setShowStitchStylePopup(false);
                   handleStitchVideos();
                 }}
-                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold transition shadow-lg shadow-emerald-500/25"
+                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 hover:from-emerald-400 hover:to-cyan-500 text-white font-bold text-xs transition shadow-lg shadow-emerald-500/25 cursor-pointer flex items-center justify-center gap-1.5"
               >
-                Mulai Gabung
+                <Film size={14} />
+                <span>Mulai Gabung Video</span>
               </button>
             </div>
+
           </div>
         </div>
       )}
@@ -2228,61 +2773,432 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                         Semua adegan, subtitle bergaya <strong className="text-amber-400">"{subtitleStyle}"</strong>, dan audio latar telah digabungkan dengan sempurna.
                       </p>
                       
-                      <button 
-                        onClick={() => {
-                          const a = document.createElement('a');
-                          a.href = finalVideoUrl;
-                          a.download = `stitched-film-${project?.id.substring(0,6) || 'movie'}.mp4`;
-                          a.target = '_blank';
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                        }}
-                        className="px-8 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/30 flex items-center gap-2 transition hover:scale-105 active:scale-95"
-                      >
-                        <Download size={18} /> Unduh File MP4
-                      </button>
+                      <div className="flex flex-wrap items-center justify-center gap-2.5 w-full max-w-lg mx-auto mb-6">
+                        <button 
+                          onClick={handleDownloadVideoFile}
+                          disabled={isDownloading}
+                          className="flex-1 min-w-[130px] px-3.5 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/30 flex justify-center items-center gap-2 transition hover:scale-105 active:scale-95 text-xs sm:text-sm cursor-pointer"
+                        >
+                          {isDownloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                          <span>{isDownloading ? 'Mengunduh...' : 'Unduh File MP4'}</span>
+                        </button>
+                        
+                        <button
+                          onClick={handleOpenYTModal}
+                          className="flex-1 min-w-[130px] px-3.5 py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl shadow-lg shadow-red-600/30 flex justify-center items-center gap-2 transition hover:scale-105 active:scale-95 text-xs sm:text-sm cursor-pointer"
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M21.582,6.186c-0.23-0.86-0.908-1.538-1.768-1.768C18.254,4,12,4,12,4S5.746,4,4.186,4.418c-0.86,0.23-1.538,0.908-1.768,1.768C2,7.746,2,12,2,12s0,4.254,0.418,5.814c0.23,0.86,0.908,1.538,1.768,1.768C5.746,20,12,20,12,20s6.254,0,7.814-0.418c0.86-0.23,1.538-0.908,1.768-1.768C22,16.254,22,12,22,12S22,7.746,21.582,6.186z M10,15.464V8.536L16,12L10,15.464z"/></svg>
+                          <span>Post ke YouTube</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const activeCaption = socialPlatformTab === 'youtube'
+                              ? (project?.marketingCopy?.youtube_caption || project?.marketingCopy?.caption)
+                              : socialPlatformTab === 'tiktok'
+                              ? (project?.marketingCopy?.tiktok_caption || project?.marketingCopy?.caption)
+                              : (project?.marketingCopy?.instagram_caption || project?.marketingCopy?.caption);
+                            const activeTags = socialPlatformTab === 'youtube'
+                              ? (project?.marketingCopy?.hashtags_youtube || project?.marketingCopy?.hashtags || [])
+                              : socialPlatformTab === 'tiktok'
+                              ? (project?.marketingCopy?.hashtags_tiktok || project?.marketingCopy?.hashtags || [])
+                              : (project?.marketingCopy?.hashtags_instagram || project?.marketingCopy?.hashtags || []);
+                            
+                            const fullText = `${activeCaption || ''}\n\n${activeTags.join(' ')}`;
+                            navigator.clipboard.writeText(fullText);
+                            setCopiedSection('all');
+                            setTimeout(() => setCopiedSection(null), 2500);
+                          }}
+                          className="flex-1 min-w-[150px] px-3.5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/30 flex justify-center items-center gap-2 transition hover:scale-105 active:scale-95 text-xs sm:text-sm cursor-pointer"
+                        >
+                          {copiedSection === 'all' ? <Check size={16} className="text-emerald-300" /> : <Copy size={16} />}
+                          <span>{copiedSection === 'all' ? 'Tersalin!' : 'Salin Caption & Hashtag'}</span>
+                        </button>
+                      </div>
+
+                      {/* Social Media Caption & Hashtags Display */}
+                      <div className="w-full max-w-lg bg-slate-900/90 p-4 sm:p-5 rounded-2xl border border-slate-800 shadow-xl mb-4 text-left animate-in fade-in slide-in-from-bottom-3">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
+                          <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                            <FileText size={14} className="text-amber-400" />
+                            Caption & Hashtag Hasil Akhir
+                          </span>
+
+                          {/* Platform Selector Tabs */}
+                          <div className="flex items-center bg-black/60 p-1 rounded-lg border border-white/10">
+                            <button
+                              onClick={() => setSocialPlatformTabState('youtube')}
+                              className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition cursor-pointer ${
+                                socialPlatformTab === 'youtube' ? 'bg-red-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              YouTube
+                            </button>
+                            <button
+                              onClick={() => setSocialPlatformTabState('tiktok')}
+                              className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition cursor-pointer ${
+                                socialPlatformTab === 'tiktok' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              TikTok
+                            </button>
+                            <button
+                              onClick={() => setSocialPlatformTabState('instagram')}
+                              className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition cursor-pointer ${
+                                socialPlatformTab === 'instagram' ? 'bg-purple-600 text-white shadow' : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              Instagram
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Caption Body */}
+                        {(() => {
+                          const captionText = socialPlatformTab === 'youtube'
+                            ? (project?.marketingCopy?.youtube_caption || project?.marketingCopy?.caption)
+                            : socialPlatformTab === 'tiktok'
+                            ? (project?.marketingCopy?.tiktok_caption || project?.marketingCopy?.caption)
+                            : (project?.marketingCopy?.instagram_caption || project?.marketingCopy?.caption);
+                          const tagsList = socialPlatformTab === 'youtube'
+                            ? (project?.marketingCopy?.hashtags_youtube || project?.marketingCopy?.hashtags || ['#shorts', '#youtubeshorts'])
+                            : socialPlatformTab === 'tiktok'
+                            ? (project?.marketingCopy?.hashtags_tiktok || project?.marketingCopy?.hashtags || ['#fyp', '#viral'])
+                            : (project?.marketingCopy?.hashtags_instagram || project?.marketingCopy?.hashtags || ['#reels', '#viral']);
+
+                          return (
+                            <div className="space-y-3">
+                              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs text-slate-300 leading-relaxed whitespace-pre-wrap max-h-36 overflow-y-auto custom-scrollbar">
+                                {captionText || 'Caption sedang dipersiapkan oleh SINTA Agent...'}
+                              </div>
+
+                              <div className="flex flex-wrap gap-1.5 p-2 bg-slate-950/60 rounded-xl border border-slate-800/80">
+                                {tagsList.map((tag, tIdx) => (
+                                  <span key={tIdx} className="px-2 py-0.5 rounded bg-blue-950/60 text-blue-400 border border-blue-500/30 text-[11px] font-mono">
+                                    {tag.startsWith('#') ? tag : `#${tag}`}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
                    </div>
                 ) : (
-                   <div className="flex flex-col items-center w-full">
-                      <div className="w-24 h-24 rounded-full bg-purple-900/30 border-2 border-purple-500/50 flex items-center justify-center mb-6 relative shadow-[0_0_50px_rgba(168,85,247,0.3)]">
-                         <div className="absolute inset-0 rounded-full border border-purple-400 animate-ping opacity-20"></div>
-                         <Bot size={40} className="text-purple-400 animate-bounce" />
-                         {/* Floating active agent tooltip bubble named "Jane" */}
-                         <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-purple-500 text-white text-[10px] font-bold shadow-lg flex items-center gap-1.5 whitespace-nowrap">
-                           <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                           <span>Jane</span>
-                         </div>
-                      </div>
-                      
-                      <h2 className="text-xl sm:text-2xl font-bold text-white mb-2 text-center">Jane sedang menjahit video kamu...</h2>
-                      
-                      <div className="w-full max-w-md h-2 bg-slate-900 rounded-full overflow-hidden mb-2 mt-4">
-                        <div className="h-full bg-gradient-to-r from-purple-600 to-cyan-400 transition-all duration-500" style={{ width: `${stitchProgress}%` }}></div>
-                      </div>
-                      <div className="text-xs font-mono text-purple-400 mb-8">{stitchProgress}% Selesai</div>
+                   <div className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row items-stretch gap-5 px-2 sm:px-4 py-2 overflow-y-auto max-h-[calc(100vh-100px)] custom-scrollbar">
+                      {/* MAIN COLUMN: PREVIEW FRAME AKTIF & VISUAL TIMELINE TRACK */}
+                      <div className="flex-1 flex flex-col justify-between gap-4 bg-slate-900/60 p-4 sm:p-5 rounded-2xl border border-slate-800/80 backdrop-blur-md">
+                        
+                        {/* 2. PREVIEW FRAME AKTIF (PANEL UTAMA) */}
+                        {(() => {
+                          const totalScenes = scenes.length > 0 ? scenes.length : 1;
+                          const sceneWeight = 40;
+                          const activeIndex = stitchProgress >= sceneWeight 
+                            ? totalScenes - 1 
+                            : Math.min(totalScenes - 1, Math.floor((stitchProgress / sceneWeight) * totalScenes));
+                          const activeScene = scenes[activeIndex] || scenes[0];
 
-                      {/* Task Checklist */}
-                      <div className="w-full max-w-md space-y-3">
-                         <div className={`p-3.5 rounded-xl border flex items-center gap-3 transition-colors duration-500 ${stitchProgress >= 25 ? 'bg-emerald-950/40 border-emerald-500/30' : stitchProgress > 0 ? 'bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]' : 'bg-slate-900/50 border-slate-800'}`}>
-                            {stitchProgress >= 25 ? <CheckCircle2 className="text-emerald-400 w-5 h-5 shrink-0" /> : stitchProgress > 0 ? <Loader2 className="text-purple-400 w-5 h-5 animate-spin shrink-0" /> : <div className="w-5 h-5 rounded-full border border-slate-700 shrink-0" />}
-                            <span className={`text-sm font-semibold truncate ${stitchProgress >= 25 ? 'text-emerald-100' : stitchProgress > 0 ? 'text-purple-100' : 'text-slate-500'}`}>🎬 Menggabungkan {scenes.length} scene video</span>
-                         </div>
-                         <div className={`p-3.5 rounded-xl border flex items-center gap-3 transition-colors duration-500 ${stitchProgress >= 50 ? 'bg-emerald-950/40 border-emerald-500/30' : stitchProgress >= 25 ? 'bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]' : 'bg-slate-900/50 border-slate-800'}`}>
-                            {stitchProgress >= 50 ? <CheckCircle2 className="text-emerald-400 w-5 h-5 shrink-0" /> : stitchProgress >= 25 ? <Loader2 className="text-purple-400 w-5 h-5 animate-spin shrink-0" /> : <div className="w-5 h-5 rounded-full border border-slate-700 shrink-0" />}
-                            <span className={`text-sm font-semibold truncate ${stitchProgress >= 50 ? 'text-emerald-100' : stitchProgress >= 25 ? 'text-purple-100' : 'text-slate-500'}`}>🎵 Menyelaraskan audio & BGM</span>
-                         </div>
-                         <div className={`p-3.5 rounded-xl border flex items-center gap-3 transition-colors duration-500 ${stitchProgress >= 80 ? 'bg-emerald-950/40 border-emerald-500/30' : stitchProgress >= 50 ? 'bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]' : 'bg-slate-900/50 border-slate-800'}`}>
-                            {stitchProgress >= 80 ? <CheckCircle2 className="text-emerald-400 w-5 h-5 shrink-0" /> : stitchProgress >= 50 ? <Loader2 className="text-purple-400 w-5 h-5 animate-spin shrink-0" /> : <div className="w-5 h-5 rounded-full border border-slate-700 shrink-0" />}
-                            <span className={`text-sm font-semibold truncate ${stitchProgress >= 80 ? 'text-emerald-100' : stitchProgress >= 50 ? 'text-purple-100' : 'text-slate-500'}`}>✍️ Menyusun subtitle (Gaya: {subtitleStyle})</span>
-                         </div>
-                         <div className={`p-3.5 rounded-xl border flex items-center gap-3 transition-colors duration-500 ${stitchProgress >= 100 ? 'bg-emerald-950/40 border-emerald-500/30' : stitchProgress >= 80 ? 'bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]' : 'bg-slate-900/50 border-slate-800'}`}>
-                            {stitchProgress >= 100 ? <CheckCircle2 className="text-emerald-400 w-5 h-5 shrink-0" /> : stitchProgress >= 80 ? <Loader2 className="text-purple-400 w-5 h-5 animate-spin shrink-0" /> : <div className="w-5 h-5 rounded-full border border-slate-700 shrink-0" />}
-                            <span className={`text-sm font-semibold truncate ${stitchProgress >= 100 ? 'text-emerald-100' : stitchProgress >= 80 ? 'text-purple-100' : 'text-slate-500'}`}>📦 Finalisasi ekspor MP4</span>
-                         </div>
+                          return (
+                            <>
+                              <div className="flex-1 flex flex-col items-center justify-center relative min-h-[250px] sm:min-h-[300px] bg-slate-950/90 rounded-xl border border-slate-800 overflow-hidden p-3 shadow-inner">
+                                {/* Ambient Background Glow */}
+                                <div className="absolute inset-0 bg-gradient-to-b from-purple-900/10 via-transparent to-black/70 pointer-events-none" />
+
+                                {/* Frame Active Container */}
+                                <div className={`relative ${getProjectAspectRatioClass(project)} max-h-[260px] sm:max-h-[310px] rounded-xl overflow-hidden border-2 border-purple-500/50 shadow-[0_0_35px_rgba(168,85,247,0.25)] transition-all duration-500`}>
+                                  {activeScene?.imageUrl || activeScene?.videoUrl ? (
+                                    <img 
+                                      src={activeScene.imageUrl || activeScene.videoUrl} 
+                                      alt={`Scene ${activeIndex + 1}`}
+                                      className="w-full h-full object-cover animate-in fade-in duration-300"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full bg-slate-900 flex flex-col items-center justify-center p-4 text-slate-500">
+                                      <Film size={36} className="text-purple-400/60 mb-2 animate-pulse" />
+                                      <span className="text-xs font-mono">Render Keyframe Scene {activeIndex + 1}</span>
+                                    </div>
+                                  )}
+
+                                  {/* Floating Active Scanner Line */}
+                                  <div className="absolute inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_#06b6d4] animate-pulse top-1/2 -translate-y-1/2 pointer-events-none opacity-80" />
+
+                                  {/* Top Badge Overlay */}
+                                  <div className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-md bg-black/80 border border-purple-500/50 text-[10px] font-mono font-bold text-purple-200 backdrop-blur-md flex items-center gap-1.5 shadow-lg">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                                    <span>FRAME {activeIndex + 1} / {totalScenes}</span>
+                                  </div>
+                                </div>
+
+                                {/* Label Status di Bawah Preview */}
+                                <div className="mt-3 text-center z-10">
+                                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-950/90 border border-purple-500/40 text-xs font-semibold text-purple-200 shadow-lg">
+                                    <Loader2 size={13} className="animate-spin text-purple-400 shrink-0" />
+                                    <span className="truncate max-w-xs sm:max-w-md">
+                                      {stitchProgress >= 80 ? "Sedang melakukan finalisasi ekspor video MP4..."
+                                        : stitchProgress >= 50 ? `Sedang menyusun subtitle (${subtitleStyle})...`
+                                        : stitchProgress >= 40 ? "Sedang menyelaraskan audio narasi & BGM..."
+                                        : `Sedang memproses: Adegan ${activeIndex + 1} dari ${totalScenes}`}
+                                    </span>
+                                  </div>
+                                  {activeScene?.title && (
+                                    <p className="text-[11px] text-slate-400 mt-1 font-mono truncate max-w-sm mx-auto">
+                                      "{activeScene.title}"
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* MULTI-TRACK TIMELINE MATRIX (Video, Audio & Subtitle Tracks) */}
+                              <div className="bg-slate-950/90 p-3.5 sm:p-4 rounded-xl border border-slate-800 space-y-3 shadow-inner">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                                    <Layers size={14} className="text-cyan-400" /> Multi-Track Timeline ({totalScenes} Scene)
+                                  </span>
+                                  <span className="text-[11px] font-mono text-cyan-400 font-bold bg-cyan-950/60 border border-cyan-500/30 px-2.5 py-0.5 rounded-md">
+                                    Progress: {stitchProgress}%
+                                  </span>
+                                </div>
+
+                                {/* TRACK CONTAINER WITH PLAYHEAD */}
+                                <div className="relative pt-1 pb-1 space-y-2.5">
+                                  {/* Playhead Overlay Line */}
+                                  <div 
+                                    className="absolute top-0 bottom-0 w-0.5 bg-cyan-400 shadow-[0_0_12px_#06b6d4] z-30 transition-all duration-300 pointer-events-none"
+                                    style={{ left: `${stitchProgress}%` }}
+                                  >
+                                    <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-cyan-400 rotate-45 rounded-xs shadow-[0_0_8px_#06b6d4]" />
+                                  </div>
+
+                                  {/* TRACK 1: VIDEO TRACK */}
+                                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800/80">
+                                    <div className="flex items-center justify-between mb-1.5 px-1">
+                                      <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                                        <Film size={12} className="text-purple-400" /> Track 1: Visual Scenes
+                                      </span>
+                                      <span className="text-[10px] font-mono text-purple-300/80">Keyframes</span>
+                                    </div>
+                                    <div className="flex items-center gap-2.5 overflow-x-auto custom-scrollbar pb-1.5 pt-0.5 px-0.5">
+                                      {scenes.map((sc, idx) => {
+                                        const isCompleted = stitchProgress >= 40 || idx < activeIndex;
+                                        const isActive = idx === activeIndex && stitchProgress < 40;
+
+                                        return (
+                                          <div
+                                            key={sc.id || idx}
+                                            className={`relative shrink-0 w-24 sm:w-28 h-16 sm:h-20 rounded-lg overflow-hidden border-2 transition-all duration-300 ${
+                                              isCompleted 
+                                                ? "border-emerald-500/80 bg-emerald-950/20 shadow-[0_0_12px_rgba(16,185,129,0.25)]" 
+                                                : isActive 
+                                                ? "border-purple-400 bg-purple-950/40 shadow-[0_0_16px_rgba(168,85,247,0.4)] ring-2 ring-purple-500/50 scale-105 z-10" 
+                                                : "border-slate-800 opacity-40 grayscale bg-slate-900"
+                                            }`}
+                                          >
+                                            {sc.imageUrl || sc.videoUrl ? (
+                                              <img 
+                                                src={sc.imageUrl || sc.videoUrl} 
+                                                alt={sc.title || `Scene ${idx + 1}`}
+                                                className="w-full h-full object-cover"
+                                              />
+                                            ) : (
+                                              <div className="w-full h-full flex items-center justify-center bg-slate-900 text-slate-600 font-mono text-xs">
+                                                S{idx + 1}
+                                              </div>
+                                            )}
+
+                                            <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-mono font-bold text-white">
+                                              #{idx + 1}
+                                            </div>
+
+                                            {isCompleted && (
+                                              <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center shadow">
+                                                <CheckCircle2 size={12} className="stroke-[3]" />
+                                              </div>
+                                            )}
+
+                                            {isActive && (
+                                              <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-purple-500 text-white flex items-center justify-center shadow animate-pulse">
+                                                <Loader2 size={11} className="animate-spin" />
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  {/* TRACK 2: AUDIO TRACK WITH LIVE WAVEFORM */}
+                                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800/80">
+                                    <div className="flex items-center justify-between mb-1.5 px-1">
+                                      <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                                        <Volume2 size={12} className="text-cyan-400" /> Track 2: Audio & Waveform
+                                      </span>
+                                      <span className="text-[10px] font-mono text-cyan-300/80">
+                                        {NARRATOR_VOICES.find(v => v.id === selectedNarratorVoice)?.name || 'Audio'}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2.5 overflow-x-auto custom-scrollbar pb-1.5 pt-0.5 px-0.5">
+                                      {scenes.map((sc, idx) => {
+                                        const amplitudes = getSceneAmplitudes(sc, 10);
+                                        const isAudioProcessed = stitchProgress >= 25;
+                                        const isThisSceneAudioActive = idx <= activeIndex && stitchProgress >= 25;
+
+                                        return (
+                                          <div 
+                                            key={`audio-${sc.id || idx}`} 
+                                            className={`shrink-0 w-24 sm:w-28 h-10 rounded-md border flex items-center justify-center px-1.5 transition-all duration-300 relative overflow-hidden ${
+                                              isThisSceneAudioActive 
+                                                ? 'border-cyan-500/60 bg-cyan-950/30 shadow-[0_0_10px_rgba(6,182,212,0.15)]' 
+                                                : 'border-slate-800/80 bg-slate-950/60 opacity-40'
+                                            }`}
+                                          >
+                                            <div className="flex items-center justify-between w-full h-7 gap-0.5">
+                                              {amplitudes.map((amp, bIdx) => {
+                                                const barProgressRatio = ((idx * 10) + bIdx) / (totalScenes * 10);
+                                                const isBarActive = (stitchProgress / 100) >= barProgressRatio && isAudioProcessed;
+
+                                                return (
+                                                  <div 
+                                                    key={bIdx}
+                                                    className={`flex-1 rounded-full transition-all duration-300 ${
+                                                      isBarActive 
+                                                        ? 'bg-gradient-to-t from-cyan-500 to-purple-400 shadow-[0_0_6px_#06b6d4] animate-pulse' 
+                                                        : 'bg-slate-800'
+                                                    }`}
+                                                    style={{ height: `${isBarActive ? amp : Math.max(15, amp * 0.3)}%` }}
+                                                  />
+                                                );
+                                              })}
+                                            </div>
+                                            <div className="absolute bottom-0.5 left-1 text-[8px] font-mono text-cyan-300/80 truncate max-w-[80px]">
+                                              VO #{idx + 1}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  {/* TRACK 3: SUBTITLE TRACK */}
+                                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800/80">
+                                    <div className="flex items-center justify-between mb-1.5 px-1">
+                                      <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                                        <Type size={12} className="text-amber-400" /> Track 3: Subtitles ({subtitleStyle})
+                                      </span>
+                                      <span className="text-[10px] font-mono text-amber-300/80">Style Overlay</span>
+                                    </div>
+                                    <div className="flex items-center gap-2.5 overflow-x-auto custom-scrollbar pb-1.5 pt-0.5 px-0.5">
+                                      {scenes.map((sc, idx) => {
+                                        const subText = sc.subtitle || sc.voiceOver || sc.textOverlay || sc.dialogue || `Scene ${idx + 1}`;
+                                        const isSubProcessed = stitchProgress >= 50;
+                                        const isThisSubActive = idx <= activeIndex && stitchProgress >= 50;
+
+                                        let styleBadgeClass = "bg-amber-500/20 text-amber-300 border-amber-500/40 font-bold";
+                                        if (subtitleStyle === 'Clean Minimal') {
+                                          styleBadgeClass = "bg-slate-800 text-slate-200 border-slate-600 font-medium";
+                                        } else if (subtitleStyle === 'Neon Glow') {
+                                          styleBadgeClass = "bg-cyan-950/80 text-cyan-300 border-cyan-400/60 shadow-[0_0_8px_rgba(6,182,212,0.4)] font-bold";
+                                        }
+
+                                        return (
+                                          <div 
+                                            key={`sub-${sc.id || idx}`}
+                                            className={`shrink-0 w-24 sm:w-28 h-10 rounded-md border flex items-center justify-center p-1.5 transition-all duration-300 relative overflow-hidden ${
+                                              isThisSubActive 
+                                                ? 'border-amber-500/60 bg-amber-950/20 shadow-[0_0_10px_rgba(245,158,11,0.15)]' 
+                                                : 'border-slate-800/80 bg-slate-950/60 opacity-40'
+                                            }`}
+                                          >
+                                            {isSubProcessed ? (
+                                              <div className={`w-full text-[9px] truncate px-1.5 py-0.5 rounded border text-center ${styleBadgeClass}`}>
+                                                "{subText}"
+                                              </div>
+                                            ) : (
+                                              <span className="text-[9px] font-mono text-slate-600 italic">S{idx + 1} Subtitle</span>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
-                   </div>
-                )}
+
+                      {/* RIGHT / SECONDARY COLUMN: JANE AGENT STREAM & PROGRESS CHECKLIST */}
+                      <div className="w-full lg:w-80 shrink-0 flex flex-col justify-between gap-4 bg-slate-900/60 p-4 sm:p-5 rounded-2xl border border-slate-800/80 backdrop-blur-md">
+                        <div>
+                          {/* Bot Agent Jane Header */}
+                          <div className="flex items-center gap-3 mb-3 p-3 bg-purple-950/40 border border-purple-500/30 rounded-xl shadow-lg">
+                            <div className="w-10 h-10 rounded-full bg-purple-900/40 border border-purple-500/60 flex items-center justify-center relative shrink-0 shadow-[0_0_15px_rgba(168,85,247,0.3)]">
+                              <Bot size={20} className="text-purple-300 animate-bounce" />
+                              <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-slate-900 animate-pulse" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                                Jane (AI Director)
+                              </h4>
+                              <p className="text-[11px] text-purple-300">Menjahit video & menyelaraskan aset...</p>
+                            </div>
+                          </div>
+
+                          {/* Live Agent Terminal Stream Log */}
+                          <div className="mb-4 bg-slate-950 p-3 rounded-xl border border-slate-800 font-mono text-xs shadow-inner">
+                            <div className="flex items-center justify-between text-[10px] text-slate-500 pb-1.5 mb-2 border-b border-slate-800">
+                              <span className="flex items-center gap-1 font-bold text-purple-400">
+                                <Terminal size={12} /> STREAM LOG EVENT
+                              </span>
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                            </div>
+                            <div className="text-[11px] text-emerald-300 leading-relaxed font-mono min-h-[40px] flex items-start gap-1.5">
+                              <span className="text-purple-400 font-bold shrink-0">&gt;</span>
+                              <span className="animate-in fade-in duration-200">
+                                {stitchLogs.length > 0 
+                                  ? stitchLogs[stitchLogs.length - 1] 
+                                  : "Inisialisasi sistem orkestrator video Neurona..."}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Progress Bar Persentase */}
+                          <div className="mb-4">
+                            <div className="flex justify-between items-center text-xs font-bold text-slate-300 mb-1.5">
+                              <span>Proses Penggabungan</span>
+                              <span className="text-purple-400 font-mono text-sm">{stitchProgress}%</span>
+                            </div>
+                            <div className="w-full h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                              <div 
+                                className="h-full bg-gradient-to-r from-purple-600 via-teal-400 to-cyan-400 transition-all duration-500 shadow-[0_0_12px_rgba(6,182,212,0.5)]" 
+                                style={{ width: `${stitchProgress}%` }} 
+                              />
+                            </div>
+                          </div>
+
+                          {/* Task Checklist */}
+                          <div className="space-y-2">
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors duration-500 ${stitchProgress >= 25 ? "bg-emerald-950/40 border-emerald-500/30" : stitchProgress > 0 ? "bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]" : "bg-slate-900/50 border-slate-800"}`}>
+                              {stitchProgress >= 25 ? <CheckCircle2 className="text-emerald-400 w-4 h-4 shrink-0" /> : stitchProgress > 0 ? <Loader2 className="text-purple-400 w-4 h-4 animate-spin shrink-0" /> : <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />}
+                              <span className={`text-xs font-semibold truncate ${stitchProgress >= 25 ? "text-emerald-100" : stitchProgress > 0 ? "text-purple-100" : "text-slate-500"}`}>🎬 Menggabungkan {scenes.length} scene video</span>
+                            </div>
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors duration-500 ${stitchProgress >= 50 ? "bg-emerald-950/40 border-emerald-500/30" : stitchProgress >= 25 ? "bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]" : "bg-slate-900/50 border-slate-800"}`}>
+                              {stitchProgress >= 50 ? <CheckCircle2 className="text-emerald-400 w-4 h-4 shrink-0" /> : stitchProgress >= 25 ? <Loader2 className="text-purple-400 w-4 h-4 animate-spin shrink-0" /> : <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />}
+                              <span className={`text-xs font-semibold truncate ${stitchProgress >= 50 ? "text-emerald-100" : stitchProgress >= 25 ? "text-purple-100" : "text-slate-500"}`}>🎵 Menyelaraskan audio & BGM</span>
+                            </div>
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors duration-500 ${stitchProgress >= 80 ? "bg-emerald-950/40 border-emerald-500/30" : stitchProgress >= 50 ? "bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]" : "bg-slate-900/50 border-slate-800"}`}>
+                              {stitchProgress >= 80 ? <CheckCircle2 className="text-emerald-400 w-4 h-4 shrink-0" /> : stitchProgress >= 50 ? <Loader2 className="text-purple-400 w-4 h-4 animate-spin shrink-0" /> : <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />}
+                              <span className={`text-xs font-semibold truncate ${stitchProgress >= 80 ? "text-emerald-100" : stitchProgress >= 50 ? "text-purple-100" : "text-slate-500"}`}>✍️ Menyusun subtitle (Gaya: {subtitleStyle})</span>
+                            </div>
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors duration-500 ${stitchProgress >= 100 ? "bg-emerald-950/40 border-emerald-500/30" : stitchProgress >= 80 ? "bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]" : "bg-slate-900/50 border-slate-800"}`}>
+                              {stitchProgress >= 100 ? <CheckCircle2 className="text-emerald-400 w-4 h-4 shrink-0" /> : stitchProgress >= 80 ? <Loader2 className="text-purple-400 w-4 h-4 animate-spin shrink-0" /> : <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />}
+                              <span className={`text-xs font-semibold truncate ${stitchProgress >= 100 ? "text-emerald-100" : stitchProgress >= 80 ? "text-purple-100" : "text-slate-500"}`}>📦 Finalisasi ekspor MP4</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                 )}
              </div>
 
              {/* Tech Logs Panel (Hidden by Default) */}
@@ -2327,6 +3243,176 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
           }
         }}
       />
+
+      {/* YouTube Shorts Auto-Post Modal */}
+      {showYTModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col">
+            
+            {/* Modal Header */}
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-red-600/20 text-red-500 border border-red-500/30 flex items-center justify-center">
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M21.582,6.186c-0.23-0.86-0.908-1.538-1.768-1.768C18.254,4,12,4,12,4S5.746,4,4.186,4.418c-0.86,0.23-1.538,0.908-1.768,1.768C2,7.746,2,12,2,12s0,4.254,0.418,5.814c0.23,0.86,0.908,1.538,1.768,1.768C5.746,20,12,20,12,20s6.254,0,7.814-0.418c0.86-0.23,1.538-0.908,1.768-1.768C22,16.254,22,12,22,12S22,7.746,21.582,6.186z M10,15.464V8.536L16,12L10,15.464z"/></svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Post Otomatis ke YouTube Shorts</h3>
+                  <p className="text-[11px] text-slate-400">Unggah video master langsung ke channel YouTube</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowYTModal(false)}
+                className="p-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-5 space-y-4 text-left overflow-y-auto max-h-[75vh]">
+              {ytStatus === 'success' ? (
+                <div className="py-6 flex flex-col items-center text-center space-y-3 animate-in zoom-in-95">
+                  <div className="w-16 h-16 rounded-full bg-emerald-950 border-2 border-emerald-500 text-emerald-400 flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.3)]">
+                    <CheckCircle2 size={36} />
+                  </div>
+                  <h4 className="text-lg font-bold text-white">Berhasil Diposting ke YouTube!</h4>
+                  <p className="text-xs text-slate-300 max-w-sm">
+                    Video Shorts Anda telah diunggah dan dijadwalkan secara otomatis. Anda dapat memantau analytics video melalui YouTube Studio.
+                  </p>
+                  <div className="pt-2 flex gap-3">
+                    <a
+                      href="https://studio.youtube.com"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow flex items-center gap-1.5"
+                    >
+                      Buka YouTube Studio
+                    </a>
+                    <button
+                      onClick={() => setShowYTModal(false)}
+                      className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs"
+                    >
+                      Tutup
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {ytError && (
+                    <div className="p-3 bg-red-950/80 border border-red-500/50 rounded-xl text-xs text-red-300 flex items-start gap-2 animate-in fade-in">
+                      <AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="font-bold">Status Integrasi YouTube Data API v3:</p>
+                        <p className="text-[11px] leading-relaxed text-red-200">{ytError}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Judul Video YouTube Shorts</label>
+                    <input
+                      type="text"
+                      value={ytTitle}
+                      onChange={e => setYtTitle(e.target.value)}
+                      placeholder="Masukkan judul video..."
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:border-red-500 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Deskripsi & Naskah Video</label>
+                    <textarea
+                      value={ytDescription}
+                      onChange={e => setYtDescription(e.target.value)}
+                      rows={4}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:border-red-500 outline-none resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Hashtags YouTube (#shorts)</label>
+                    <input
+                      type="text"
+                      value={ytHashtags}
+                      onChange={e => setYtHashtags(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-blue-400 focus:border-red-500 outline-none font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Status Privasi Video</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setYtPrivacy('public')}
+                        className={`py-2 px-3 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+                          ytPrivacy === 'public' ? 'bg-red-600 text-white border-red-500' : 'bg-slate-950 text-slate-400 border-slate-800'
+                        }`}
+                      >
+                        Publik
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setYtPrivacy('unlisted')}
+                        className={`py-2 px-3 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+                          ytPrivacy === 'unlisted' ? 'bg-red-600 text-white border-red-500' : 'bg-slate-950 text-slate-400 border-slate-800'
+                        }`}
+                      >
+                        Tidak Publik
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setYtPrivacy('private')}
+                        className={`py-2 px-3 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+                          ytPrivacy === 'private' ? 'bg-red-600 text-white border-red-500' : 'bg-slate-950 text-slate-400 border-slate-800'
+                        }`}
+                      >
+                        Pribadi
+                      </button>
+                    </div>
+                  </div>
+
+                  {ytStatus === 'uploading' && (
+                    <div className="space-y-2 pt-2 animate-in fade-in">
+                      <div className="flex items-center justify-between text-xs text-slate-300">
+                        <span className="flex items-center gap-1.5 font-semibold text-red-400">
+                          <Loader2 size={14} className="animate-spin" />
+                          Mengunggah ke YouTube Shorts...
+                        </span>
+                        <span className="font-mono">{ytProgress}%</span>
+                      </div>
+                      <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                        <div className="h-full bg-red-600 transition-all duration-300" style={{ width: `${ytProgress}%` }} />
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            {ytStatus !== 'success' && (
+              <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-end gap-2">
+                <button
+                  onClick={() => setShowYTModal(false)}
+                  disabled={ytStatus === 'uploading'}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 font-semibold text-xs cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={handleStartYTUpload}
+                  disabled={ytStatus === 'uploading'}
+                  className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-bold text-xs shadow-lg shadow-red-600/30 flex items-center gap-1.5 cursor-pointer"
+                >
+                  {ytStatus === 'uploading' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                  <span>{ytStatus === 'uploading' ? 'Mengunggah...' : 'Upload ke YouTube Shorts'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

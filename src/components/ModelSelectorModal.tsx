@@ -28,64 +28,54 @@ interface ModelSelectorModalProps {
 
 export const VIDEO_MODELS = [
   {
-    id: 'byteplus',
-    name: 'BytePlus ModelArk (PixelDance / Doubao)',
-    tag: 'Extreme Dynamics & High-Fidelity Physics',
-    badge: 'AKTIF & REKOMENDASI (MODELARK API)',
+    id: 'fal-ai/wan-i2v',
+    name: 'Wan 2.1 Image-to-Video',
+    tag: 'Budget & High Efficiency',
+    badge: 'FAL.AI BUDGET',
+    disabled: false,
+    color: 'border-emerald-500/60 bg-emerald-950/40 text-emerald-300 font-bold',
+    description: 'Model video hemat dan efisien dari Fal.ai dengan gerakan natural untuk scene umum.',
+    capabilities: ['Wan 2.1 Engine', 'High Efficiency', 'Natural Motion', 'Fast Generation']
+  },
+  {
+    id: 'bytedance/seedance-2.5/image-to-video',
+    name: 'ByteDance Seedance 2.5 Sinematik',
+    tag: 'Cinematic & Long Form',
+    badge: 'FAL.AI PREMIUM',
+    disabled: false,
+    color: 'border-amber-500/60 bg-amber-950/40 text-amber-300 font-bold',
+    description: 'Model video kelas sinematik tertinggi ByteDance melalui Fal.ai. Kualitas gerak & sinkronisasi audio terbaik.',
+    capabilities: ['Seedance 2.5 Engine', 'Native Audio Synchrony', 'Ultra Cinematic', 'Dynamic Camera']
+  },
+  {
+    id: 'fal-ai/kling-video/v2.1/standard/image-to-video',
+    name: 'Kling 2.1 Standard Image-to-Video',
+    tag: 'Character & Lighting Consistency',
+    badge: 'FAL.AI BALANCED',
+    disabled: false,
+    color: 'border-cyan-500/60 bg-cyan-950/40 text-cyan-300 font-bold',
+    description: 'Model rendering video Kling 2.1 dengan keseimbangan luar biasa antara konsistensi karakter dan pergerakan.',
+    capabilities: ['Kling 2.1 Engine', 'Character Rig Lock', 'Volumetric Lighting', 'Smooth Panning']
+  },
+  {
+    id: 'fal-ai/hunyuan-video-image-to-video',
+    name: 'Tencent Hunyuan Video',
+    tag: 'High Fidelity Motion',
+    badge: 'FAL.AI BALANCED',
     disabled: false,
     color: 'border-blue-500/60 bg-blue-950/40 text-blue-300 font-bold',
-    description: 'Engine video komersial bertenaga BytePlus ModelArk (PixelDance/Doubao). Mendukung Product Lock ekstrem dan gerakan dinamis resolusi tinggi.',
-    capabilities: ['PixelDance Motion Engine', 'Product Lock Anchor', 'Doubao Video AI', 'Ultra 8K Upscaling']
+    description: 'Model difusi video open architecture berkemampuan tinggi untuk transisi dinamis.',
+    capabilities: ['Hunyuan Motion Engine', 'High Fidelity Physics', 'Volumetric Depth', 'Dynamic Movement']
   },
   {
-    id: 'veo',
-    name: 'Google Veo 3.1',
-    tag: 'DeepMind Photorealistic Motion',
-    badge: 'REKOMENDASI UTAMA (API READY)',
+    id: 'fal-ai/minimax/video-01/image-to-video',
+    name: 'MiniMax Hailuo Video-01',
+    tag: 'Extreme Dynamics & High-Fidelity Physics',
+    badge: 'FAL.AI BALANCED',
     disabled: false,
-    color: 'border-cyan-500/60 bg-cyan-950/40 text-cyan-300 font-bold',
-    description: 'Engine utama generasi video Google DeepMind (veo-3.1-generate-preview). Terhubung langsung via Google AI Studio API.',
-    capabilities: ['Veo 3.1 Engine', 'Photorealistic Motion', 'Dual Lock Anchor', 'Google Flow Native']
-  },
-  {
-    id: 'runway',
-    name: 'Runway Gen-3 Alpha',
-    tag: 'Cinematic Camera & Speed Ramping',
-    badge: 'FALLBACK TIER 1 (API READY)',
-    disabled: false,
-    color: 'border-cyan-500/60 bg-cyan-950/40 text-cyan-300 font-bold',
-    description: 'Engine cadangan pembuatan video adegan I2V. Terhubung langsung dengan Runway Gen-3 API resmi.',
-    capabilities: ['Motion Brush', 'Camera Dolly & Pan', 'Hollywood Color Grading', 'Runway Gen-3 Engine']
-  },
-  {
-    id: 'sora',
-    name: 'OpenAI Sora Turbo',
-    tag: 'Closed Beta / Disabled',
-    badge: 'DISABLED (NO PUBLIC API)',
-    disabled: true,
-    color: 'border-slate-700 bg-slate-950/60 text-slate-500',
-    description: 'OpenAI Sora belum menyediakan API publik resmi untuk umum. Disarankan memilih Google Veo 3.1.',
-    capabilities: ['Dynamic Camera Tracking', 'Physical Consistency', 'Awaiting Public API']
-  },
-  {
-    id: 'luma',
-    name: 'Luma Dream Machine',
-    tag: 'Awaiting API Key',
-    badge: 'PERLU API KEY',
-    disabled: true,
-    color: 'border-slate-700 bg-slate-950/60 text-slate-500',
-    description: 'Memerlukan integrasi Luma API Key terpisah. Gunakan Google Veo 3.1 sebagai engine utama.',
-    capabilities: ['Smooth Object Physics', 'Low Latency', 'Looping Keyframes']
-  },
-  {
-    id: 'kling',
-    name: 'Kling AI 1.5 HD',
-    tag: 'Awaiting API Key',
-    badge: 'PERLU API KEY',
-    disabled: true,
-    color: 'border-slate-700 bg-slate-950/60 text-slate-500',
-    description: 'Memerlukan integrasi Kling API Key terpisah. Gunakan Google Veo 3.1 sebagai engine utama.',
-    capabilities: ['Character Rig Adherence', 'Anime/CGI Master', 'Prompt Precision']
+    color: 'border-purple-500/60 bg-purple-950/40 text-purple-300 font-bold',
+    description: 'Engine video MiniMax Hailuo untuk simulasi fisik presisi dan ekspresi karakter yang hidup.',
+    capabilities: ['Hailuo Motion Engine', 'Organic Movement', 'Facial Fidelity', 'Commercial Quality']
   }
 ];
 
@@ -140,7 +130,7 @@ export const ModelSelectorModal: React.FC<ModelSelectorModalProps> = ({
                 </span>
               </h2>
               <p className="text-xs text-slate-400">
-                Gambar T2I: <strong className="text-purple-300 font-mono">ChatGPT Image 2</strong> • Video I2V: <strong className="text-blue-300 font-mono">Google Veo 3.1 / Runway / Sora</strong> • Voiceover: TryAudio AI.
+                Gambar T2I: <strong className="text-purple-300 font-mono">ChatGPT Image 2</strong> • Video I2V: <strong className="text-blue-300 font-mono">Fal.ai Video Studio Engine</strong> • Voiceover: TryAudio AI.
               </p>
             </div>
           </div>
@@ -212,7 +202,7 @@ export const ModelSelectorModal: React.FC<ModelSelectorModalProps> = ({
                 </h3>
               </div>
               <span className="text-[10px] font-mono text-cyan-400">
-                Aktif: {VIDEO_MODELS.find(m => m.id === selectedVideoModel)?.name || 'Runway Gen-3 Alpha'}
+                Aktif: {VIDEO_MODELS.find(m => m.id === selectedVideoModel)?.name || 'Wan 2.1 Image-to-Video'}
               </span>
             </div>
 
@@ -224,10 +214,7 @@ export const ModelSelectorModal: React.FC<ModelSelectorModalProps> = ({
                   <div
                     key={model.id}
                     onClick={() => {
-                      if (isDisabled) {
-                        onSelectVideoModel('runway');
-                        neuronaVoice.playChime('CLICK');
-                      } else {
+                      if (!isDisabled) {
                         onSelectVideoModel(model.id);
                         neuronaVoice.playChime('CLICK');
                       }

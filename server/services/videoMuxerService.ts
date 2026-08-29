@@ -29,7 +29,7 @@ export interface MuxResult {
 
 export class VideoMuxerService {
   /**
-   * Muxes Veo Video and TTS Voiceover Audio with background audio ducking
+   * Muxes AI Video and TTS Voiceover Audio with background audio ducking
    * @param videoPath Local file path or accessible URL to source MP4 video
    * @param audioPath Local file path to source MP3/WAV narration audio
    * @param options Ducking ratio and destination

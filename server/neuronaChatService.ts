@@ -1,19 +1,12 @@
 import { GoogleGenAI } from '@google/genai';
 import { FounderService } from '../src/server/fcc/FounderService';
+import { keyRotator } from './keyRotator';
 
 export class NeuronaChatService {
   private static chatHistories = new Map<string, Array<{role: string, parts: any[]}>>();
 
   static async chat(userId: string, userMessage: string, history: any[] = []): Promise<{ message: string, action: string | null }> {
     try {
-      const apiKey = FounderService.getVeoConfig().apiKey || 
-                     FounderService.getGeminiBananaConfig().apiKey || 
-                     process.env.GEMINI_MANUAL_API_KEY || 
-                     process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error('API Key missing');
-
-      const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
-
       const systemInstruction = `Kamu adalah NEURONA, Asisten AI cerdas, proaktif, dan ramah (Creative Director) dari platform Neuronna Video Studio. Kamu memanggil pengguna dengan sebutan "Bos".
 Tugas utamamu:
 1. Memandu Bos membuat video: Affiliate, Animasi, atau Edukasi.
@@ -26,41 +19,41 @@ Tugas utamamu:
   "message": "Pesan balasanmu untuk Bos (gunakan bahasa Indonesia yang natural, hangat, dan agak gaul tapi sopan. Maks 3-4 kalimat ringkas agar cepat dibacakan TTS)",
   "action": null | "INIT_AFFILIATE" | "INIT_ANIMATION" | "INIT_EDUCATIONAL" | "REQUEST_IMAGE_UPLOAD"
 }
-
 Perhatian: 
 - Jangan pernah memberikan respon di luar format JSON.
-- Jika baru menyapa pertama kali, beri sambutan "Assalamu Alaikum boss, ada yang bisa saya bantu?".
-`;
+- Jika baru menyapa pertama kali, beri sambutan "Assalamu Alaikum boss, ada yang bisa saya bantu?".`;
 
       const formattedHistory = history.map((h: any) => ({
         role: h.role, // 'user' or 'model'
         parts: [{ text: h.text }]
       }));
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: [
-          ...formattedHistory,
-          { role: 'user', parts: [{ text: userMessage }] }
-        ],
-        config: {
-          systemInstruction,
-          responseMimeType: 'application/json',
-          temperature: 0.7
+      return await keyRotator.executeGeminiWithRotation(async (ai, apiKey) => {
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: [
+            ...formattedHistory,
+            { role: 'user', parts: [{ text: userMessage }] }
+          ],
+          config: {
+            systemInstruction,
+            responseMimeType: 'application/json',
+            temperature: 0.7
+          }
+        });
+
+        const responseText = response.text || '{}';
+        try {
+          const data = JSON.parse(responseText);
+          return {
+            message: data.message || 'Maaf Bos, saya kurang paham. Bisa diulangi?',
+            action: data.action || null
+          };
+        } catch (e) {
+          console.error("[NeuronaChat] JSON parse error:", responseText);
+          return { message: responseText, action: null };
         }
       });
-
-      const responseText = response.text || '{}';
-      try {
-        const data = JSON.parse(responseText);
-        return {
-          message: data.message || 'Maaf Bos, saya kurang paham. Bisa diulangi?',
-          action: data.action || null
-        };
-      } catch (e) {
-        console.error("[NeuronaChat] JSON parse error:", responseText);
-        return { message: responseText, action: null };
-      }
     } catch (err: any) {
       const errMsg = err?.message || '';
       console.error("[NeuronaChat] Error:", errMsg);

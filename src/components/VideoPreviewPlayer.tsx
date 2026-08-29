@@ -46,7 +46,7 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
   subtitle,
   voiceoverText,
   status = 'STANDBY',
-  activeAgent = 'GATOTKACA SORA',
+  activeAgent = 'GATOTKACA VIDEO DIRECTOR',
   videoModel,
   progressPercentage = 0,
   currentPhaseName,

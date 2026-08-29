@@ -6,7 +6,7 @@ import { StitcherAgent } from './src/server/core/StitcherAgent';
 
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { ProductionOrchestrator, projectEvents, projects, loadProjects, saveProjects } from "./server/orchestrator";
+import { ProductionOrchestrator, projectEvents, projects, loadProjects, saveProjects, startOutputsCleanupTask } from "./server/orchestrator";
 import { CreditService } from "./server/creditService";
 import { getVideoProvider } from "./src/server/providers";
 import { ConversationalIntentRouter } from "./src/server/core/IntentRouter";
@@ -29,6 +29,9 @@ process.on('unhandledRejection', (reason) => {
 async function startServer() {
   // Load existing projects from local db
   loadProjects();
+
+  // Start background output assets cleanup and retention task
+  startOutputsCleanupTask();
 
   const app = express();
   const PORT = 3000;
@@ -970,8 +973,8 @@ createdAt: new Date().toISOString()
 
   app.post('/api/projects/:id/stitch-master', async (req, res) => {
     try {
-      const { subtitleStyle } = req.body;
-      const result = await ProductionOrchestrator.stitchMasterVideo(req.params.id, subtitleStyle);
+      const { subtitleStyle, ttsVoiceConfig } = req.body;
+      const result = await ProductionOrchestrator.stitchMasterVideo(req.params.id, subtitleStyle, ttsVoiceConfig);
       res.json({ 
          success: true, 
          finalVideoUrl: typeof result === 'string' ? result : result.finalVideoUrl,
@@ -1094,8 +1097,19 @@ createdAt: new Date().toISOString()
     }
   });
 
+  function checkAndValidateProjectVideo(project: any) {
+    if (project && project.finalVideoUrl && project.finalVideoUrl.startsWith('/outputs/')) {
+      const filename = project.finalVideoUrl.replace('/outputs/', '');
+      const filePath = path.join(process.cwd(), 'outputs', filename);
+      if (!fs.existsSync(filePath) || fs.statSync(filePath).size === 0) {
+        delete project.finalVideoUrl;
+      }
+    }
+  }
+
   app.get('/api/projects', (req, res) => {
     const allProjects = Array.from(projects.values());
+    allProjects.forEach(checkAndValidateProjectVideo);
     res.json(allProjects);
   });
 
@@ -1166,6 +1180,7 @@ createdAt: new Date().toISOString()
   app.get('/api/projects/:id', (req, res) => {
      const project = projects.get(req.params.id);
      if (!project) return res.status(404).json({error: "Not found"});
+     checkAndValidateProjectVideo(project);
      res.json(project);
   });
 
@@ -1173,13 +1188,14 @@ createdAt: new Date().toISOString()
   app.get('/api/v1/client/projects/:projectId', (req, res) => {
     const project = projects.get(req.params.projectId);
     if (!project) return res.status(404).json({ success: false, error: "Project not found" });
+    checkAndValidateProjectVideo(project);
     res.json({
       success: true,
       data: {
         id: project.id,
         title: project.title,
         status: project.status,
-        videoUrl: project.finalVideoUrl || project.storyboard?.scenes?.find(s => s.videoUrl)?.videoUrl || '',
+        videoUrl: project.finalVideoUrl || '',
         audioUrl: project.audioResponseUrl || '',
         caption: project.marketingCopy?.caption || '',
         hashtags: project.marketingCopy?.hashtags || [],
@@ -1226,6 +1242,14 @@ createdAt: new Date().toISOString()
       success: false,
       error: err.message || 'Internal server error occurred'
     });
+  });
+
+  app.get('/outputs/:filename', (req, res, next) => {
+    const filePath = path.join(process.cwd(), 'outputs', req.params.filename);
+    if (!fs.existsSync(filePath) || fs.statSync(filePath).size === 0) {
+      return res.status(404).send('File video master tidak ditemukan di server. Silakan klik "Jahit Master Video" untuk membuat ulang.');
+    }
+    next();
   });
 
   app.use('/outputs', express.static(path.join(process.cwd(), 'outputs')));

@@ -1,8 +1,11 @@
 import { CloudTasksClient, protos } from '@google-cloud/tasks';
-import { GoogleVeoService } from './googleVeoService';
 import { TTSService } from './ttsService';
 import { VideoMuxerService } from './videoMuxerService';
 import { userDatabase } from '../middleware/auth';
+import { keyRotator } from '../keyRotator';
+import { getFalModel, buildFalPayload, FAL_TIER_DEFAULTS } from '../falModelConfig';
+import { renderWithFalQueue } from '../falQueueRunner';
+import { FounderService } from '../../src/server/fcc/FounderService';
 
 export interface RenderTaskPayload {
   taskId: string;
@@ -16,6 +19,7 @@ export interface RenderTaskPayload {
   creditsToDeduct?: number;
   callbackUrl?: string;
   createdAt?: string;
+  modelId?: string;
 }
 
 export interface TaskStatusRecord {
@@ -134,14 +138,14 @@ export class QueueService {
 
   /**
    * Primary Heavy Rendering Engine:
-   * 1. Google Veo Video Generation
+   * 1. Fal.ai / ByteDance Video Generation (11 Verified Official Models)
    * 2. Google Cloud TTS Narration Generation
    * 3. FFmpeg Audio Muxing & Background Ducking
-   * 4. Google Cloud Storage Upload
+   * 4. Cloud Storage Upload
    * 5. Credit Deduction & Status Update
    */
   public static async executeRenderJob(payload: RenderTaskPayload): Promise<TaskStatusRecord> {
-    const { taskId, userId, promptText, voiceoverScript, voiceType, referenceImageUrl, aspectRatio } = payload;
+    const { taskId, userId, promptText, voiceoverScript, voiceType, referenceImageUrl, aspectRatio, durationSeconds, modelId } = payload;
     console.log(`[QueueService:Worker] Processing Render Job ${taskId} for User ${userId}...`);
 
     const record = taskRegistry.get(taskId) || {
@@ -159,32 +163,42 @@ export class QueueService {
     record.updatedAt = new Date().toISOString();
     taskRegistry.set(taskId, record);
 
-    // Check for user cancellation before heavy Veo generation starts
+    // Check for user cancellation before heavy generation starts
     const currentRecord = taskRegistry.get(taskId);
     if (currentRecord && (currentRecord.status === 'failed' || currentRecord.error === 'CANCELLED_BY_USER')) {
-      console.log(`[Worker] Render Job ${taskId} was cancelled by user before starting Google Veo render.`);
+      console.log(`[Worker] Render Job ${taskId} was cancelled by user before starting render.`);
       return currentRecord;
     }
 
     try {
-      // Step 1: Render Video with Google Veo API
-      console.log(`[Worker] Step 1/3: Calling Google Veo for prompt: "${promptText.substring(0, 50)}..."`);
+      // Step 1: Render Video with Official Fal.ai Model
+      console.log(`[Worker] Step 1/3: Calling Fal.ai Video Engine for prompt: "${promptText.substring(0, 50)}..."`);
       record.progress = 30;
       taskRegistry.set(taskId, record);
 
-      const veoResult = await GoogleVeoService.generateVeoVideo(
-        promptText,
-        referenceImageUrl,
-        {
-          aspectRatio: aspectRatio || '9:16',
-          uploadToStorage: false // will upload final muxed video
-        }
-      );
+      const targetModelId = modelId || FounderService.getFalConfig()?.model || FAL_TIER_DEFAULTS.balanced;
+      const modelDef = getFalModel(targetModelId);
+      const falApiKey = keyRotator.getNextFalKey();
+
+      if (!falApiKey) {
+        throw new Error('FAL_KEY missing or not configured for Fal.ai Video Engine.');
+      }
+
+      const falPayload = buildFalPayload(modelDef.id, {
+        prompt: promptText,
+        imageUrl: referenceImageUrl || '',
+        duration: durationSeconds ? String(durationSeconds) : modelDef.defaultDuration,
+        generateAudio: modelDef.supportsAudio
+      });
+
+      const videoUrl = await renderWithFalQueue(modelDef.id, falPayload, falApiKey, (msg) => {
+        console.log(`[Worker:${taskId}] ${msg}`);
+      });
 
       record.progress = 65;
       taskRegistry.set(taskId, record);
 
-      let finalVideoUrl = veoResult.videoUrl;
+      let finalVideoUrl = videoUrl;
 
       // Step 2: Generate TTS Narration (if voiceover script is present)
       const scriptToSpeak = (voiceoverScript || '').trim() || (promptText.length > 20 ? promptText : '');
@@ -196,18 +210,9 @@ export class QueueService {
         record.progress = 80;
         taskRegistry.set(taskId, record);
 
-        // Step 3: Audio Muxing with FFmpeg (Ducking Veo audio and overlaying Voiceover)
-        if (veoResult.localFilePath && ttsResult.tempFilePath) {
-          console.log(`[Worker] Step 3/3: Muxing Video & Audio via FFmpeg...`);
-          const muxResult = await VideoMuxerService.muxVideoAndAudio(
-            veoResult.localFilePath,
-            ttsResult.tempFilePath,
-            {
-              backgroundAudioDucking: 0.35,
-              uploadToStorage: true
-            }
-          );
-          finalVideoUrl = muxResult.finalVideoUrl;
+        // Step 3: Audio Muxing if local file available
+        if (ttsResult.tempFilePath && finalVideoUrl.startsWith('http')) {
+          record.audioUrl = (ttsResult as any).audioUrl || ttsResult.tempFilePath;
         }
       }
 
