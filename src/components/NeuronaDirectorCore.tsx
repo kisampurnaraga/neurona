@@ -28,7 +28,10 @@ import {
   Eye,
   Lock,
   Key,
-  ArrowRight
+  ArrowRight,
+  Check,
+  PenLine,
+  Play
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { ProductionProject, ProductAsset } from '../shared/types';
@@ -42,7 +45,7 @@ interface NeuronaDirectorCoreProps {
   isThinking: boolean;
   onInteract: (customPrompt?: string) => void;
   onUploadAssets: (files: FileList | null) => void;
-  onOpenStoryboard: () => void;
+  handleOpenStoryboard: () => void;
   onOpenStudioSelector?: () => void;
   onOpenVisualStudio: () => void;
   onOpenScriptWriter: () => void;
@@ -56,6 +59,7 @@ interface NeuronaDirectorCoreProps {
   onOpenProfile?: () => void;
   currentUser?: any;
   userCredits?: number;
+  onResetProject?: () => void;
 }
 
 export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
@@ -78,7 +82,8 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
   onOpenFounder,
   onOpenProfile,
   currentUser,
-  userCredits = 37
+  userCredits = 37,
+  onResetProject
 }) => {
   const [activeTab, setActiveTab] = useState<'home' | 'studio' | 'storyboard' | 'video_os' | 'assets' | 'projects' | 'ai_agents' | 'analytics' | 'settings'>('home');
   const [activeMobileTab, setActiveMobileTab] = useState<'home' | 'studio' | 'projects' | 'profile'>('home');
@@ -96,15 +101,65 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
 
   const isFounder = currentUser?.role === 'founder';
 
+  // --- GRANULAR STATE MACHINE & REAL-TIME AUDIO ---
+  type HubState = 'IDLE' | 'THINKING' | 'WRITING' | 'STORYBOARDING' | 'READY' | 'COMPLETED';
+  const [hasDismissedBanner, setHasDismissedBanner] = useState(false);
+  const [showReadyBanner, setShowReadyBanner] = useState(false);
+  const [waveform, setWaveform] = useState<number[]>(Array(12).fill(0));
+
+  const handleOpenStoryboard = () => {
+    setHasDismissedBanner(true);
+    setShowReadyBanner(false);
+    onOpenStoryboard();
+  };
+
   // Determine active production phase for live orbital nodes
-  const isIdeating = isThinking || (project?.status === 'IN_PROGRESS' && (project?.currentStep === 'IDEA' || project?.currentStep === 'ANALYZING' || project?.currentStep === 'SCRIPT_GENERATION' || (project?.progress || 0) < 50));
-  const isStoryboardReady = project?.status === 'AWAITING_APPROVAL' || (project?.progress || 0) >= 50 || Boolean(project?.storyboard?.scenes && project.storyboard.scenes.length > 0);
+  let hubState: HubState = 'IDLE';
+  if (project?.status === 'COMPLETED') {
+    hubState = 'COMPLETED';
+  } else if (isThinking && !project) {
+    hubState = 'THINKING';
+  } else if (project) {
+    if (project.status === 'FAILED') {
+      hubState = 'IDLE';
+    } else if (project.status === 'STORYBOARDING') {
+      if (project.activeAgent === 'Creative Strategist') {
+        hubState = 'THINKING';
+      } else if (project.activeAgent === 'Storyboard Director') {
+        // If progress is near 50 but not AWAITING_APPROVAL, it's storyboarding scenes
+        if (project.overallProgress && project.overallProgress > 32) {
+          hubState = 'STORYBOARDING';
+        } else {
+          hubState = 'WRITING';
+        }
+      } else {
+        hubState = 'WRITING';
+      }
+    } else if (project.status === 'AWAITING_APPROVAL') {
+      hubState = 'READY';
+    } else if (project.status === 'PRODUCING' || project.status === 'ASSEMBLING' || project.status === 'AUDIO' || project.status === 'EDITING' || project.status === 'QA') {
+      hubState = 'STORYBOARDING';
+    } else {
+      hubState = 'THINKING';
+    }
+  }
+
   const isCompleted = project?.status === 'COMPLETED';
+  const isStoryboardReady = !isCompleted && (project?.status === 'AWAITING_APPROVAL' || (project?.progress || 0) >= 50 || Boolean(project?.storyboard?.scenes && project.storyboard.scenes.length > 0));
   const isVisualGenerating = project?.storyboard?.scenes?.some((s: any) => s.imageStatus === 'GENERATING') || false;
   const isVideoGenerating = project?.storyboard?.scenes?.some((s: any) => s.videoStatus === 'GENERATING') || false;
   const isRendering = (project?.status === 'IN_PROGRESS' && (project?.progress || 0) >= 50) || isVideoGenerating;
 
-  // Voice subscription & Voice rhythm simulation
+  // Show banner when storyboard is ready
+  useEffect(() => {
+    if (hubState === 'READY' && isStoryboardReady && !hasDismissedBanner) {
+      setShowReadyBanner(true);
+    } else {
+      setShowReadyBanner(false);
+    }
+  }, [hubState, isStoryboardReady]);
+
+  // Voice subscription & Voice waveform simulation
   useEffect(() => {
     const unsub = neuronaVoice.subscribeDetailed((state) => {
       setIsSpeaking(state.isSpeaking);
@@ -113,31 +168,26 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
         neuronaVoice.playChime('SUCCESS');
         setTimeout(() => {
           setIsHypeActive(false);
-          if (isStoryboardReady || project?.storyboard?.scenes?.length) {
-            onOpenStoryboard();
-          }
         }, 1200);
       }
     });
     return () => unsub();
-  }, [isStoryboardReady, project, onOpenStoryboard]);
+  }, []);
 
-  // Rhythm oscillator while Neurona is speaking (3-5Hz natural speech rhythm pulse)
+  // Real-time audio analyser loop
   useEffect(() => {
-    if (!isSpeaking) {
-      setVoiceRhythm(0);
-      return;
-    }
     let animId: number;
-    const start = performance.now();
-    const loop = (now: number) => {
-      const elapsed = (now - start) / 1000;
-      const r = Math.sin(elapsed * 24) * 0.45 + Math.sin(elapsed * 12) * 0.35 + Math.sin(elapsed * 36) * 0.2;
-      const normalized = Math.max(0.15, Math.min(1, (r + 1) / 2));
-      setVoiceRhythm(normalized);
-      animId = requestAnimationFrame(loop);
+    const updateWaveform = () => {
+      if (isSpeaking) {
+        const wf = neuronaVoice.getRealtimeWaveform();
+        setWaveform(wf);
+      } else {
+        // Decay to 0 when not speaking
+        setWaveform((prev) => prev.map(v => Math.max(0, v - 0.05)));
+      }
+      animId = requestAnimationFrame(updateWaveform);
     };
-    animId = requestAnimationFrame(loop);
+    animId = requestAnimationFrame(updateWaveform);
     return () => cancelAnimationFrame(animId);
   }, [isSpeaking]);
 
@@ -148,14 +198,11 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
       neuronaVoice.playChime('SUCCESS');
       const timer = setTimeout(() => {
         setIsHypeActive(false);
-        if (isStoryboardReady || project?.storyboard?.scenes?.length) {
-          onOpenStoryboard();
-        }
       }, 1200);
       return () => clearTimeout(timer);
     }
     prevSpeakingRef.current = isSpeaking;
-  }, [isSpeaking, isStoryboardReady, project, onOpenStoryboard, isHypeActive]);
+  }, [isSpeaking, isHypeActive]);
 
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -224,15 +271,16 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
     {
       id: 'idea',
       label: 'IDEA & NASKAH',
-      desc: isIdeating ? 'Agent 1 Menulis Naskah...' : 'Sutradara & Konsep',
+      desc: hubState === 'WRITING' ? 'SINTA Menulis Naskah...' : 'Sutradara & Konsep',
       color: '#f59e0b', // Amber/Yellow
-      glow: isIdeating ? 'rgba(245, 158, 11, 0.9)' : 'rgba(245, 158, 11, 0.5)',
-      border: isIdeating ? 'border-amber-400 ring-2 ring-amber-400 animate-pulse' : 'border-amber-400',
-      bg: isIdeating ? 'bg-amber-500/30 shadow-[0_0_30px_#f59e0b]' : 'bg-amber-500/15',
+      glow: (hubState === 'THINKING' || hubState === 'WRITING') ? 'rgba(245, 158, 11, 0.9)' : 'rgba(245, 158, 11, 0.5)',
+      border: (hubState === 'THINKING' || hubState === 'WRITING') ? 'border-amber-400 ring-2 ring-amber-400 animate-pulse' : 'border-amber-400',
+      bg: (hubState === 'THINKING' || hubState === 'WRITING') ? 'bg-amber-500/30 shadow-[0_0_30px_#f59e0b]' : 'bg-amber-500/15',
       icon: Lightbulb,
       angle: -90, // Top
-      isActive: isIdeating,
-      badge: isIdeating ? 'ACTIVE PRODUCING' : undefined,
+      isActive: hubState === 'THINKING' || hubState === 'WRITING',
+      isDone: hubState === 'STORYBOARDING' || hubState === 'READY' || isCompleted,
+      badge: hubState === 'WRITING' ? 'ACTIVE PRODUCING' : undefined,
       action: () => {
         const text = "Brainstorm 3 ide konsep video viral dan susun naskah sinematik lengkap";
         setPrompt(text);
@@ -243,16 +291,17 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
     {
       id: 'storyboard',
       label: 'STORYBOARD',
-      desc: isStoryboardReady ? '50% Selesai (Tinjau Adegan)' : 'Scene Planning',
+      desc: hubState === 'COMPLETED' ? '100% Selesai (Video Rendered)' : hubState === 'STORYBOARDING' ? 'GATOTKACA Scene Planning' : isStoryboardReady ? '50% Selesai (Tinjau Adegan)' : 'Scene Planning',
       color: '#c084fc', // Purple
-      glow: isStoryboardReady ? 'rgba(192, 132, 252, 0.9)' : 'rgba(192, 132, 252, 0.5)',
-      border: isStoryboardReady ? 'border-purple-400 ring-2 ring-purple-400 animate-pulse' : 'border-purple-400',
-      bg: isStoryboardReady ? 'bg-purple-500/30 shadow-[0_0_30px_#c084fc]' : 'bg-purple-500/15',
+      glow: hubState === 'STORYBOARDING' ? 'rgba(192, 132, 252, 0.9)' : 'rgba(192, 132, 252, 0.5)',
+      border: hubState === 'STORYBOARDING' ? 'border-purple-400 ring-2 ring-purple-400 animate-pulse' : 'border-purple-400',
+      bg: hubState === 'STORYBOARDING' ? 'bg-purple-500/30 shadow-[0_0_30px_#c084fc]' : 'bg-purple-500/15',
       icon: Layers,
       angle: -45, // Top Right
-      isActive: isStoryboardReady,
-      badge: isStoryboardReady ? 'READY (50%)' : undefined,
-      action: onOpenStoryboard
+      isActive: hubState === 'STORYBOARDING',
+      isDone: hubState === 'READY' || isCompleted,
+      badge: hubState === 'COMPLETED' ? 'FINAL (100%)' : isStoryboardReady ? 'READY (50%)' : undefined,
+      action: handleOpenStoryboard
     },
     {
       id: 'visual',
@@ -265,6 +314,7 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
       icon: ImageIcon,
       angle: 0, // Right
       isActive: isVisualGenerating,
+      isDone: project?.progress && project.progress >= 70,
       badge: isVisualGenerating ? 'GENERATING' : undefined,
       action: onOpenStudioSelector || onOpenVisualStudio
     },
@@ -318,6 +368,7 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
       icon: Rocket,
       angle: 180, // Left
       isActive: isRendering,
+      isDone: isCompleted,
       badge: isRendering ? 'RENDERING' : isCompleted ? 'DONE 100%' : undefined,
       action: onOpenRenderGallery
     },
@@ -386,7 +437,7 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
             {[
               { id: 'home', label: 'Home Matrix', icon: Home, action: () => setActiveTab('home') },
               { id: 'studio', label: '3 Studio Hub', icon: Clapperboard, action: onOpenStudioSelector || onOpenVisualStudio },
-              { id: 'storyboard', label: 'Storyboard', icon: Layers, action: onOpenStoryboard },
+              { id: 'storyboard', label: 'Storyboard', icon: Layers, action: handleOpenStoryboard },
               { id: 'video_os', label: 'Timeline Editor', icon: Scissors, action: onOpenTimeline },
               { id: 'assets', label: 'Upload Aset', icon: FolderGit2, action: () => fileInputRef.current?.click() },
               { id: 'projects', label: 'Daftar Proyek', icon: Film, action: onOpenTimeline },
@@ -475,7 +526,7 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
             </button>
 
             <button
-              onClick={onOpenStoryboard}
+              onClick={handleOpenStoryboard}
               className={`px-3.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
                 isStoryboardReady 
                   ? 'bg-purple-600/40 border-purple-400 text-purple-200 shadow-[0_0_15px_rgba(192,132,252,0.4)] animate-pulse'
@@ -581,13 +632,21 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                   <span>—•—</span>
                 </div>
                 <h2 className="text-xs sm:text-sm text-slate-400">
-                  {isIdeating ? (
+                  {hubState === 'THINKING' ? (
+                    <span className="text-indigo-400 font-semibold animate-pulse">
+                      ✨ Menyusun rencana produksi...
+                    </span>
+                  ) : hubState === 'WRITING' ? (
                     <span className="text-amber-400 font-semibold animate-pulse">
-                      ✨ Agent 1 Sedang Menyusun Naskah & Alur Adegan...
+                      ✍️ SINTA sedang menulis naskah...
+                    </span>
+                  ) : hubState === 'STORYBOARDING' ? (
+                    <span className="text-purple-400 font-semibold animate-pulse">
+                      🎬 GATOTKACA sedang menyusun storyboard...
                     </span>
                   ) : isStoryboardReady ? (
-                    <span className="text-purple-400 font-semibold animate-pulse">
-                      🎬 Storyboard Selesai (50%) — Klik Node Storyboard untuk Meninjau!
+                    <span className="text-emerald-400 font-semibold">
+                      ✅ Naskah & Storyboard siap!
                     </span>
                   ) : (
                     'AI Cinematic Production & Multi-Agent Matrix'
@@ -598,8 +657,35 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
               {/* Luminous Circular Orbital Network Graphic */}
               <div className="relative w-full max-w-[440px] aspect-square flex items-center justify-center my-2">
                 
+                {/* Connecting SVG Lines */}
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
+                  {orbitalNodes.map((node) => {
+                    const isActive = node.isActive;
+                    const isDone = node.isDone;
+                    if (!isActive && !isDone && !isHypeActive) return null;
+                    
+                    const rad = (node.angle * Math.PI) / 180;
+                    // Hub border is roughly at radius 70, Node border is roughly at radius 130
+                    const x1 = 220 + Math.cos(rad) * 70;
+                    const y1 = 220 + Math.sin(rad) * 70;
+                    const x2 = 220 + Math.cos(rad) * 130;
+                    const y2 = 220 + Math.sin(rad) * 130;
+
+                    return (
+                      <line 
+                        key={`line-${node.id}`}
+                        x1={x1} y1={y1} x2={x2} y2={y2}
+                        stroke={node.color}
+                        strokeWidth={isActive ? 3 : 1.5}
+                        strokeOpacity={isActive ? 0.8 : 0.3}
+                        className={isActive ? 'animate-pulse' : ''}
+                      />
+                    );
+                  })}
+                </svg>
+
                 {/* Background Rotating Orbit Rings */}
-                <div className={`absolute inset-4 rounded-full border ${isIdeating ? 'border-amber-500/40 shadow-[0_0_60px_rgba(245,158,11,0.3)]' : 'border-indigo-500/20 shadow-[0_0_60px_rgba(99,102,241,0.15)]'} animate-[spin_60s_linear_infinite]`} />
+                <div className={`absolute inset-4 rounded-full border ${(hubState === 'THINKING' || hubState === 'WRITING') ? 'border-amber-500/40 shadow-[0_0_60px_rgba(245,158,11,0.3)]' : hubState === 'STORYBOARDING' ? 'border-purple-500/40 shadow-[0_0_60px_rgba(192,132,252,0.3)]' : 'border-indigo-500/20 shadow-[0_0_60px_rgba(99,102,241,0.15)]'} animate-[spin_60s_linear_infinite]`} />
                 <div className="absolute inset-12 rounded-full border border-purple-500/20 border-dashed animate-[spin_40s_linear_infinite_reverse]" />
                 <div className="absolute inset-20 rounded-full border border-cyan-500/25" />
 
@@ -610,15 +696,17 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                     boxShadow: isHypeActive
                       ? '0 0 80px rgba(245, 158, 11, 0.95), 0 0 40px rgba(6, 182, 212, 0.8), 0 0 120px rgba(168, 85, 247, 0.6)'
                       : isSpeaking
-                      ? `0 0 ${35 + voiceRhythm * 45}px ${isIdeating ? '#f59e0b' : '#6366f1'}, 0 0 ${15 + voiceRhythm * 25}px #06b6d4`
+                      ? `0 0 ${35 + waveform[2] * 45}px ${(hubState === 'THINKING' || hubState === 'WRITING') ? '#f59e0b' : '#6366f1'}, 0 0 ${15 + waveform[5] * 25}px #06b6d4`
                       : undefined
                   }}
                   className={`relative z-10 w-36 h-36 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-[#0e1630] via-[#141d3d] to-[#1e143b] border-2 ${
                     isHypeActive
                       ? 'border-amber-300 scale-110 ring-4 ring-amber-400/80 transition-all duration-300'
-                      : isIdeating
+                      : hubState === 'COMPLETED'
+                      ? 'border-emerald-400 shadow-[0_0_50px_#10b981]'
+                      : (hubState === 'THINKING' || hubState === 'WRITING')
                       ? 'border-amber-400 shadow-[0_0_50px_#f59e0b]'
-                      : isStoryboardReady
+                      : hubState === 'STORYBOARDING'
                       ? 'border-purple-400 shadow-[0_0_50px_#c084fc]'
                       : isSpeaking
                       ? 'border-cyan-400'
@@ -638,8 +726,8 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                     <div 
                       className="absolute rounded-full border border-cyan-400/70 pointer-events-none"
                       style={{
-                        inset: -4 - voiceRhythm * 10,
-                        opacity: 0.3 + voiceRhythm * 0.7
+                        inset: -4 - waveform[0] * 15,
+                        opacity: 0.3 + waveform[3] * 0.7
                       }}
                     />
                   )}
@@ -647,14 +735,20 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                   <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${
                     isHypeActive
                       ? 'from-amber-400 via-orange-500 to-cyan-400 shadow-[0_0_30px_#f59e0b]'
-                      : isIdeating
+                      : hubState === 'COMPLETED'
+                      ? 'from-emerald-500 to-teal-600 shadow-[0_0_20px_#10b981]'
+                      : (hubState === 'THINKING' || hubState === 'WRITING')
                       ? 'from-amber-500 to-orange-600 shadow-[0_0_20px_#f59e0b]'
-                      : isStoryboardReady
+                      : hubState === 'STORYBOARDING'
                       ? 'from-purple-500 to-indigo-600 shadow-[0_0_20px_#c084fc]'
                       : 'from-indigo-500 to-purple-600'
                   } flex items-center justify-center shadow-lg mb-1.5 group-hover:shadow-[0_0_20px_#6366f1] transition`}>
-                    {isIdeating ? (
+                    {hubState === 'COMPLETED' ? (
+                      <Check className="w-5 h-5 text-white" />
+                    ) : hubState === 'THINKING' ? (
                       <RefreshCw className="w-5 h-5 text-white animate-spin" />
+                    ) : hubState === 'WRITING' ? (
+                      <PenLine className="w-5 h-5 text-white animate-pulse" />
                     ) : isHypeActive ? (
                       <Sparkles className="w-5 h-5 text-white animate-bounce" />
                     ) : (
@@ -662,34 +756,34 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                     )}
                   </div>
 
-                  <h3 className="text-xs font-black tracking-wide text-white uppercase">
-                    {isHypeActive ? 'STORYBOARD READY!' : isIdeating ? 'IDEATING SCRIPT' : isStoryboardReady ? 'STORYBOARD 50%' : isSpeaking ? 'NEURONA SPEAKING' : 'AI DIRECTOR CORE'}
+                  <h3 className="text-[10px] sm:text-xs font-black tracking-wide text-white uppercase leading-tight">
+                    {isHypeActive ? 'STORYBOARD READY!' : hubState === 'COMPLETED' ? 'VIDEO COMPLETED' : hubState === 'THINKING' ? 'IDEATING' : hubState === 'WRITING' ? 'WRITING SCRIPT' : hubState === 'STORYBOARDING' ? 'STORYBOARD 50%' : isSpeaking ? 'NEURONA SPEAKING' : 'AI DIRECTOR CORE'}
                   </h3>
 
                   {/* Audio Equalizer bars when speaking */}
                   {isSpeaking ? (
-                    <div className="flex items-center gap-0.5 my-1 h-3">
-                      {[0.6, 1, 0.4, 0.8, 0.5, 0.9, 0.7].map((factor, i) => (
+                    <div className="flex items-end gap-0.5 my-1 h-4">
+                      {waveform.slice(0, 7).map((val, i) => (
                         <div 
                           key={i}
                           className="w-1 bg-cyan-400 rounded-full transition-all duration-75"
                           style={{
-                            height: `${Math.max(3, 12 * Math.min(1, voiceRhythm * factor * 1.5))}px`
+                            height: `${Math.max(4, val * 16)}px`
                           }}
                         />
                       ))}
                     </div>
                   ) : (
                     <div className="flex items-center gap-1 mt-0.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${isHypeActive ? 'bg-cyan-400' : isIdeating ? 'bg-amber-400' : 'bg-emerald-400'} animate-pulse`} />
-                      <span className={`text-[9px] font-mono font-bold ${isHypeActive ? 'text-cyan-300' : isIdeating ? 'text-amber-400' : 'text-emerald-400'}`}>
-                        {isHypeActive ? 'HYPE SUCCESS' : isIdeating ? 'AGENT 1 ACTIVE' : isStoryboardReady ? 'REVIEW 50%' : 'READY'}
+                      <span className={`w-1.5 h-1.5 rounded-full ${isHypeActive ? 'bg-cyan-400' : (hubState === 'THINKING' || hubState === 'WRITING') ? 'bg-amber-400' : 'bg-emerald-400'} animate-pulse`} />
+                      <span className={`text-[9px] font-mono font-bold ${isHypeActive ? 'text-cyan-300' : (hubState === 'THINKING' || hubState === 'WRITING') ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {isHypeActive ? 'HYPE SUCCESS' : hubState === 'COMPLETED' ? '100% DONE' : hubState === 'WRITING' ? 'AGENT 1 ACTIVE' : isStoryboardReady ? 'REVIEW 50%' : 'READY'}
                       </span>
                     </div>
                   )}
 
                   <p className="text-[8px] text-slate-400 mt-0.5 max-w-[90px] leading-tight">
-                    {isHypeActive ? 'Membuka Storyboard...' : isIdeating ? 'Menyusun alur visual...' : isStoryboardReady ? 'Klik untuk tinjau' : 'What shall we create today?'}
+                    {isHypeActive ? 'Membuka Storyboard...' : hubState === 'COMPLETED' ? 'Video final siap ditonton.' : hubState === 'WRITING' ? 'SINTA menyusun naskah...' : isStoryboardReady ? 'Klik untuk tinjau' : 'What shall we create today?'}
                   </p>
                 </div>
 
@@ -701,7 +795,8 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                   const x = Math.cos(rad) * radius;
                   const y = Math.sin(rad) * radius;
 
-                  const isNodeSpeakingActive = (node.id === 'idea' && isIdeating && isSpeaking) || (node.id === 'storyboard' && isStoryboardReady && isSpeaking);
+                  const isNodeSpeakingActive = (node.isActive && isSpeaking);
+                  const isNodeDim = !node.isActive && !node.isDone && !isHypeActive && hubState !== 'IDLE';
 
                   return (
                     <motion.div
@@ -712,24 +807,32 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                       onMouseLeave={() => setHoveredNode(null)}
                       style={{
                         transform: `translate(${x}px, ${y}px)`,
+                        opacity: isNodeDim ? 0.35 : 1,
                       }}
-                      className="absolute z-20 flex flex-col items-center cursor-pointer group"
+                      className="absolute z-20 flex flex-col items-center cursor-pointer group transition-opacity duration-500"
                     >
                       {/* Node Circle Button */}
                       <div 
                         style={{
                           boxShadow: isNodeSpeakingActive
-                            ? `0 0 ${25 + voiceRhythm * 35}px ${node.color}`
-                            : isHypeActive && (node.id === 'idea' || node.id === 'storyboard')
-                            ? `0 0 35px #f59e0b`
+                            ? `0 0 ${25 + waveform[6] * 35}px ${node.color}`
+                            : (isHypeActive || node.isActive)
+                            ? `0 0 35px ${node.color}`
                             : `0 0 20px ${node.glow}`,
                           borderColor: node.color,
-                          transform: isNodeSpeakingActive ? `scale(${1 + voiceRhythm * 0.12})` : undefined
+                          transform: isNodeSpeakingActive ? `scale(${1 + waveform[4] * 0.12})` : undefined
                         }}
-                        className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full ${node.bg} border-2 flex items-center justify-center transition-all duration-200 group-hover:scale-115 relative`}
+                        className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full ${node.bg} border-2 flex items-center justify-center transition-all duration-200 ${!isNodeDim && 'group-hover:scale-110'} relative`}
                       >
                         <Icon size={18} style={{ color: node.color }} />
-                        {node.badge && (
+                        
+                        {/* Status Overlays */}
+                        {node.isDone && (
+                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center border border-emerald-300">
+                            <Check size={10} className="text-emerald-950 font-bold" />
+                          </div>
+                        )}
+                        {node.badge && !node.isDone && (
                           <span className="absolute -top-2 px-1.5 py-0.2 rounded-full bg-black/90 text-[7px] font-mono font-bold border border-amber-400 text-amber-300 whitespace-nowrap animate-bounce">
                             {node.badge}
                           </span>
@@ -755,14 +858,68 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                   );
                 })}
 
-                {/* Floating Loading Indicator for better visibility */}
-                {isIdeating && (
-                  <div className="absolute top-[75%] left-1/2 -translate-x-1/2 z-30 px-6 py-3 rounded-full bg-slate-900/90 border border-cyan-500/50 backdrop-blur-md shadow-[0_0_30px_rgba(6,182,212,0.3)] flex items-center gap-3 animate-in slide-in-from-bottom-4 fade-in duration-500">
-                     <RefreshCw className="w-5 h-5 text-cyan-400 animate-spin" />
-                     <div className="flex flex-col text-center">
-                       <span className="text-xs font-bold text-cyan-100 uppercase tracking-widest">Menyusun Naskah & Storyboard</span>
-                       <span className="text-[9px] text-cyan-400 font-mono animate-pulse">AI Agent sedang merancang adegan...</span>
+                {/* Completed Action Banner */}
+                {hubState === 'COMPLETED' && (
+                  <div className="absolute top-[80%] sm:top-[75%] left-1/2 -translate-x-1/2 z-30 px-6 py-3 rounded-2xl bg-emerald-950/90 border border-emerald-500/50 backdrop-blur-md flex items-center gap-4 animate-in slide-in-from-bottom-4 fade-in duration-500 shadow-[0_0_40px_rgba(16,185,129,0.3)]">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500 text-white">
+                      <Check className="w-5 h-5" />
+                    </div>
+                    <div className="flex flex-col text-left">
+                      <span className="text-xs font-bold uppercase tracking-widest text-emerald-100">
+                        Video Selesai Dibuat!
+                      </span>
+                      <span className="text-[9px] font-mono text-emerald-400">
+                        Seluruh scene berhasil dirender dan digabungkan.
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 ml-2">
+                      <button
+                        onClick={onOpenStoryboard}
+                        className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg shadow-lg transition-colors flex items-center gap-1"
+                      >
+                        <Play size={12} fill="currentColor" /> Lihat Hasil
+                      </button>
+                      {onResetProject && (
+                        <button
+                          onClick={onResetProject}
+                          className="px-3 py-1.5 bg-slate-900 border border-emerald-500/50 hover:bg-slate-800 text-emerald-400 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors"
+                        >
+                          Proyek Baru
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Floating Loading / Readiness Indicator */}
+                {(hubState === 'THINKING' || hubState === 'WRITING' || hubState === 'STORYBOARDING' || showReadyBanner) && (
+                  <div className={`absolute top-[80%] sm:top-[75%] left-1/2 -translate-x-1/2 z-30 px-6 py-3 rounded-full bg-slate-900/90 border backdrop-blur-md flex items-center gap-4 animate-in slide-in-from-bottom-4 fade-in duration-500 shadow-2xl ${
+                    showReadyBanner ? 'border-emerald-500/50 shadow-[0_0_40px_rgba(16,185,129,0.3)]' :
+                    hubState === 'STORYBOARDING' ? 'border-purple-500/50 shadow-[0_0_30px_rgba(192,132,252,0.3)]' :
+                    'border-amber-500/50 shadow-[0_0_30px_rgba(245,158,11,0.3)]'
+                  }`}>
+                     {showReadyBanner ? (
+                       <Check className="w-5 h-5 text-emerald-400" />
+                     ) : (
+                       <RefreshCw className={`w-5 h-5 animate-spin ${hubState === 'STORYBOARDING' ? 'text-purple-400' : 'text-amber-400'}`} />
+                     )}
+                     <div className="flex flex-col text-left">
+                       <span className={`text-xs font-bold uppercase tracking-widest ${showReadyBanner ? 'text-emerald-100' : hubState === 'STORYBOARDING' ? 'text-purple-100' : 'text-amber-100'}`}>
+                         {showReadyBanner ? 'Storyboard Siap' : hubState === 'STORYBOARDING' ? 'Menyusun Storyboard' : 'Menulis Naskah'}
+                       </span>
+                       <span className={`text-[9px] font-mono ${showReadyBanner ? 'text-emerald-400' : hubState === 'STORYBOARDING' ? 'text-purple-400 animate-pulse' : 'text-amber-400 animate-pulse'}`}>
+                         {showReadyBanner ? 'Visual siap ditinjau' : 'AI Agent sedang merancang adegan...'}
+                       </span>
                      </div>
+                     
+                     {showReadyBanner && (
+                        <button
+                          onClick={handleOpenStoryboard}
+                          className="ml-2 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wider rounded-full shadow-lg transition-colors"
+                        >
+                          Lihat Sekarang
+                        </button>
+                     )}
                   </div>
                 )}
               </div>
@@ -775,7 +932,7 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-white tracking-wide">NEURONA RESPONSE</span>
                     <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                      {isIdeating ? 'PRODUCING' : 'STANDBY'}
+                      {hubState === 'IDLE' ? 'STANDBY' : 'PRODUCING'}
                     </span>
                     <button 
                       onClick={() => neuronaVoice.speak("NEURONA Director Core Online. Saya adalah Asisten Sutradara AI Anda. Bersama kita dapat membuat video luar biasa dari ide Anda.")}
@@ -787,8 +944,12 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                   </div>
 
                   <p className="text-xs text-slate-300 leading-relaxed">
-                    {isIdeating 
-                      ? 'Agen 1 (Sutradara) sedang menyusun naskah, sudut kamera sinematik, dan prompt visual adegan...' 
+                    {(hubState === 'THINKING' || hubState === 'WRITING')
+                      ? 'SINTA sedang menyusun naskah, sudut kamera sinematik, dan prompt visual adegan...' 
+                      : hubState === 'STORYBOARDING'
+                      ? 'GATOTKACA sedang menyusun adegan (scene) storyboard...'
+                      : hubState === 'COMPLETED'
+                      ? 'Render keseluruhan telah selesai. Video master hasil jahitan orkestrator siap untuk ditonton dan diunduh. Silakan putar hasil akhir Anda.'
                       : isStoryboardReady 
                       ? 'Naskah dan Storyboard telah selesai disusun! Silakan periksa adegan dan setujui untuk merender video utuh.' 
                       : 'NEURONA Director Core Online. Pilih salah satu studio (Animasi, Affiliate, Edukasi) atau masukkan ide cerita Anda di bawah.'}
@@ -846,9 +1007,9 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                 <h3 className="text-xs font-bold text-white tracking-wider uppercase">AI DIRECTOR STATUS</h3>
                 
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-xs font-extrabold text-emerald-400 font-mono">
-                    {isIdeating ? 'ORCHESTRATING SCRIPT' : isStoryboardReady ? 'STORYBOARD 50%' : 'READY'}
+                  <span className={`w-2.5 h-2.5 rounded-full ${hubState !== 'IDLE' && !isStoryboardReady ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400 animate-pulse'}`} />
+                  <span className={`text-xs font-extrabold font-mono ${hubState !== 'IDLE' && !isStoryboardReady ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    {(hubState === 'COMPLETED') ? 'RENDERED 100%' : (hubState === 'THINKING' || hubState === 'WRITING') ? 'ORCHESTRATING SCRIPT' : hubState === 'STORYBOARDING' ? 'BUILDING SCENES' : isStoryboardReady ? 'STORYBOARD 50%' : 'READY'}
                   </span>
                 </div>
 
@@ -897,7 +1058,7 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                   </button>
 
                   <button
-                    onClick={onOpenStoryboard}
+                    onClick={handleOpenStoryboard}
                     className="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-purple-500/50 hover:bg-slate-800/50 transition cursor-pointer text-left group"
                   >
                     <div className="p-2 rounded-lg bg-purple-950 text-purple-400 group-hover:text-white group-hover:bg-purple-600 transition">

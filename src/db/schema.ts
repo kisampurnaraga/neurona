@@ -21,6 +21,8 @@ export const projects = sqliteTable('projects', {
   status: text('status'),
   videoType: text('video_type'),
   finalVideoUrl: text('final_video_url'),
+  showcaseEligible: integer('showcase_eligible', { mode: 'boolean' }).default(false),
+  showcaseOrder: integer('showcase_order'),
   data: text('data'),
   createdAt: text('created_at'),
 });

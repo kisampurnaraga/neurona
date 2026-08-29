@@ -101,7 +101,7 @@ const PaymentSettingsPanel = () => {
   return (
     <div className="bg-[#050508] border border-white/10 rounded-xl p-6 max-w-2xl text-slate-300 w-full space-y-5">
       <div>
-        <h3 className="text-xl font-bold text-white mb-1 font-mono">Payment, WhatsApp & Telegram Bot Configuration</h3>
+        <h3 className="text-xl font-bold text-white mb-1 font-sans">Payment, WhatsApp & Telegram Bot Configuration</h3>
         <p className="text-xs text-gray-400">Atur nomor WhatsApp admin dan integrasi Telegram Bot untuk otomatisasi konfirmasi transfer.</p>
       </div>
 
@@ -506,7 +506,7 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
                 RBAC & User Management
               </span>
             </div>
-            <p className="text-xs text-gray-400 font-mono">
+            <p className="text-xs text-gray-400">
               Kelola otorisasi hak akses, verifikasi pembayaran manual WhatsApp & aktivasi kredit instan.
             </p>
           </div>
@@ -524,10 +524,10 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-2 border-b border-white/10 mb-8">
+        <div className="flex flex-wrap md:flex-nowrap items-center gap-2 border-b border-white/10 mb-8 pb-1 overflow-x-auto whitespace-nowrap scrollbar-none">
           <button
             onClick={() => setActiveTab('users')}
-            className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
+            className={`shrink-0 flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
               activeTab === 'users'
                 ? 'border-cyan-400 text-cyan-400 font-bold bg-cyan-950/20'
                 : 'border-transparent text-gray-400 hover:text-white'
@@ -539,7 +539,7 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
 
           <button
             onClick={() => setActiveTab('activation_form')}
-            className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
+            className={`shrink-0 flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
               activeTab === 'activation_form'
                 ? 'border-amber-400 text-amber-300 font-bold bg-amber-950/20'
                 : 'border-transparent text-gray-400 hover:text-white'
@@ -551,7 +551,7 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
 
           <button
             onClick={() => setActiveTab('payment')}
-            className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
+            className={`shrink-0 flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
               activeTab === 'payment'
                 ? 'border-indigo-400 text-indigo-300 font-bold bg-indigo-950/20'
                 : 'border-transparent text-gray-400 hover:text-white'
@@ -564,7 +564,7 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
 
           <button
             onClick={() => setActiveTab('settings')}
-            className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
+            className={`shrink-0 flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
               activeTab === 'settings'
                 ? 'border-fuchsia-400 text-fuchsia-300 font-bold bg-fuchsia-950/20'
                 : 'border-transparent text-gray-400 hover:text-white'
@@ -575,7 +575,7 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
           </button>
           <button
             onClick={() => setActiveTab('inspector')}
-            className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
+            className={`shrink-0 flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
               activeTab === 'inspector'
                 ? 'border-fuchsia-400 text-fuchsia-300 font-bold bg-fuchsia-950/20'
                 : 'border-transparent text-gray-400 hover:text-white'
@@ -587,7 +587,7 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
 
           <button
             onClick={() => setIsRotatorModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 border border-cyan-500/40 text-cyan-300 font-mono text-xs uppercase font-bold tracking-wider hover:border-cyan-400 transition-all cursor-pointer ml-auto shadow-lg shadow-cyan-500/10"
+            className="shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 border border-cyan-500/40 text-cyan-300 font-mono text-xs uppercase font-bold tracking-wider hover:border-cyan-400 transition-all cursor-pointer md:ml-auto shadow-lg shadow-cyan-500/10"
           >
             <Key size={15} className="text-cyan-400 animate-pulse" />
             <span>🔑 API Key Rotator Pool</span>
@@ -675,7 +675,11 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
                             <td className="py-3.5 px-4 text-gray-300">
                               <div className="flex items-center gap-1.5 font-mono">
                                 <Phone size={12} className="text-emerald-400" />
-                                <span>+{user.phone_wa || '-'}</span>
+                                <span>
+                                  {user.phone_wa && user.phone_wa.trim() !== '' 
+                                    ? (user.phone_wa.startsWith('+') ? user.phone_wa : '+' + user.phone_wa) 
+                                    : 'Belum diisi'}
+                                </span>
                               </div>
                             </td>
 
@@ -784,13 +788,13 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
         {activeTab === 'settings' && (
           <div className="space-y-6">
             <div className="bg-[#111] border border-white/10 rounded-xl p-6">
-              <h2 className="text-lg font-bold text-white mb-2 font-mono uppercase">Neurona Audio Voice Engine</h2>
-              <p className="text-xs text-gray-400 mb-6 font-mono">Pilih model suara (TTS) yang digunakan untuk Asisten Neurona.</p>
+              <h2 className="text-lg font-bold text-white mb-2 font-sans uppercase">Neurona Audio Voice Engine</h2>
+              <p className="text-xs text-gray-400 mb-6">Pilih model suara (TTS) yang digunakan untuk Asisten Neurona.</p>
               
 
             <div className="bg-[#111] border border-white/10 rounded-xl p-6 mt-6">
-              <h2 className="text-lg font-bold text-white mb-2 font-mono uppercase">API Keys & Quota Management</h2>
-              <p className="text-xs text-gray-400 mb-6 font-mono">Gunakan Gemini API Key berbayar Anda untuk menghindari limit/quota exceeded saat chat & TTS.</p>
+              <h2 className="text-lg font-bold text-white mb-2 font-sans uppercase">API Keys & Quota Management</h2>
+              <p className="text-xs text-gray-400 mb-6">Gunakan Gemini API Key berbayar Anda untuk menghindari limit/quota exceeded saat chat & TTS.</p>
               
               <div className="space-y-4">
                 <div>

@@ -52,13 +52,13 @@ async function startServer() {
   
   app.post('/api/stitch', async (req, res) => {
     try {
-      const { projectId, scenes } = req.body;
+      const { projectId, scenes, subtitleStyle } = req.body;
       if (projectId) {
           const project = projects.get(projectId);
           if (!project) return res.status(404).json({ error: 'Project not found.' });
           
-          console.log(`[Stitcher API] Processing full project merge for project ${projectId}...`);
-          const orchestrationResult = await (await import('./server/VideoEditor')).VideoEditor.processProject(project);
+          console.log(`[Stitcher API] Processing full project merge for project ${projectId} with style ${subtitleStyle || 'Bold Pop'}...`);
+          const orchestrationResult = await (await import('./server/VideoEditor')).VideoEditor.processProject(project, subtitleStyle);
           res.json({ success: true, result: orchestrationResult, url: orchestrationResult.finalVideoUrl || orchestrationResult });
       } else {
           if (!scenes || !Array.isArray(scenes)) {
@@ -644,9 +644,14 @@ createdAt: new Date().toISOString()
      res.json({ success: reactivated, report: keyRotator.getHealthReport() });
   });
 
-  app.get('/api/fcc/config', (req, res) => {
+  app.get('/api/fcc/config', async (req, res) => {
      if (req.headers['x-role'] !== 'founder') return res.status(403).json({error: 'Forbidden. Founder access required.'});
-     res.json(FounderService.getPlatformConfig());
+     try {
+       const config = await FounderService.getPlatformConfig();
+       res.json(config);
+     } catch (e: any) {
+       res.status(500).json({ error: e.message || 'Internal server error' });
+     }
   });
 
   app.post('/api/fcc/providers/:id/config', (req, res) => {
@@ -857,6 +862,11 @@ createdAt: new Date().toISOString()
 
   app.post('/api/projects/:id/approve', async (req, res) => {
     try {
+      const { subtitleStyle } = req.body;
+      const project = require('./server/orchestrator').projects.get(req.params.id);
+      if (project) {
+        project.subtitleStyle = subtitleStyle;
+      }
       await ProductionOrchestrator.approveStoryboard(req.params.id);
       res.json({ success: true });
     } catch (e: any) {
@@ -960,7 +970,8 @@ createdAt: new Date().toISOString()
 
   app.post('/api/projects/:id/stitch-master', async (req, res) => {
     try {
-      const result = await ProductionOrchestrator.stitchMasterVideo(req.params.id);
+      const { subtitleStyle } = req.body;
+      const result = await ProductionOrchestrator.stitchMasterVideo(req.params.id, subtitleStyle);
       res.json({ 
          success: true, 
          finalVideoUrl: typeof result === 'string' ? result : result.finalVideoUrl,
@@ -1086,6 +1097,70 @@ createdAt: new Date().toISOString()
   app.get('/api/projects', (req, res) => {
     const allProjects = Array.from(projects.values());
     res.json(allProjects);
+  });
+
+  // Showcase API endpoint for Landing Page
+  app.get('/api/showcase/videos', (req, res) => {
+    const allProjects = Array.from(projects.values());
+    const showcaseProjects = allProjects.filter((p: any) => p.showcaseEligible === true && (p.finalVideoUrl || p.storyboard?.scenes?.some((s: any) => s.videoUrl)));
+    
+    // Sort by showcaseOrder if specified, otherwise by createdAt desc
+    showcaseProjects.sort((a: any, b: any) => {
+      if (typeof a.showcaseOrder === 'number' && typeof b.showcaseOrder === 'number') {
+        return a.showcaseOrder - b.showcaseOrder;
+      }
+      if (typeof a.showcaseOrder === 'number') return -1;
+      if (typeof b.showcaseOrder === 'number') return 1;
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
+
+    const items = showcaseProjects.map((p: any) => {
+      const firstSceneWithVideo = p.storyboard?.scenes?.find((s: any) => s.videoUrl);
+      const url = p.finalVideoUrl || firstSceneWithVideo?.videoUrl || '';
+      const totalSec = p.storyboard?.scenes?.reduce((acc: number, s: any) => acc + (Number(s.duration) || 5), 0) || 15;
+      const model = p.videoModel || (p.data && typeof p.data === 'string' && p.data.includes('wan') ? 'Wan 2.1' : 'AI Video Model');
+      return {
+        id: p.id,
+        projectId: p.id,
+        title: p.title || p.brief?.product || 'AI Masterpiece',
+        prompt: p.brief?.angle || p.storyboard?.scenes?.[0]?.visualDescription || 'Visual AI Video',
+        videoUrl: url,
+        aspectRatio: p.aspectRatio || '9:16',
+        duration: `${totalSec}s`,
+        niche: p.videoType || 'AFFILIATE',
+        videoModel: model,
+        showcaseEligible: true,
+        showcaseOrder: p.showcaseOrder ?? null,
+        createdAt: p.createdAt
+      };
+    });
+
+    res.json({ success: true, count: items.length, data: items });
+  });
+
+  // Toggle Showcase status for Founder Dashboard
+  app.post('/api/projects/:id/toggle-showcase', (req, res) => {
+    const project = projects.get(req.params.id);
+    if (!project) return res.status(404).json({ success: false, error: "Project not found" });
+
+    const { showcaseEligible, showcaseOrder } = req.body;
+    if (typeof showcaseEligible === 'boolean') {
+      (project as any).showcaseEligible = showcaseEligible;
+    } else {
+      (project as any).showcaseEligible = !(project as any).showcaseEligible;
+    }
+
+    if (typeof showcaseOrder === 'number') {
+      (project as any).showcaseOrder = showcaseOrder;
+    }
+
+    saveProjects();
+    res.json({
+      success: true,
+      projectId: project.id,
+      showcaseEligible: (project as any).showcaseEligible,
+      showcaseOrder: (project as any).showcaseOrder
+    });
   });
 
   app.get('/api/projects/:id', (req, res) => {

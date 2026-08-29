@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Download, Calendar, Activity, Info, Film } from 'lucide-react';
+import { Play, Download, Calendar, Activity, Info, Film, Star } from 'lucide-react';
 import { ProductionProject } from '../shared/types';
 
 interface GalleryVideo {
@@ -11,28 +11,45 @@ interface GalleryVideo {
   type: string;
   date: string;
   downloadName: string;
+  showcaseEligible?: boolean;
 }
 
 export const FounderGallery: React.FC = () => {
   const [projects, setProjects] = useState<ProductionProject[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchProjects = async () => {
-      try {
-        const res = await fetch('/api/projects');
-        if (res.ok) {
-          const data = await res.json();
-          setProjects(data.reverse());
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
+  const fetchProjects = async () => {
+    try {
+      const res = await fetch('/api/projects');
+      if (res.ok) {
+        const data = await res.json();
+        setProjects(data.reverse());
       }
-    };
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchProjects();
   }, []);
+
+  const handleToggleShowcase = async (projectId: string, currentEligible: boolean) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/toggle-showcase`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ showcaseEligible: !currentEligible })
+      });
+      if (res.ok) {
+        setProjects(prev => prev.map(p => p.id === projectId ? { ...p, showcaseEligible: !currentEligible } : p));
+      }
+    } catch (err) {
+      console.error('Failed to toggle showcase:', err);
+    }
+  };
 
   const allVideos: GalleryVideo[] = [];
 
@@ -47,7 +64,8 @@ export const FounderGallery: React.FC = () => {
         description: proj.brief?.angle || 'Master stitched video.',
         type: proj.videoType || 'MASTER',
         date: 'Completed',
-        downloadName: `master-${proj.id}.mp4`
+        downloadName: `master-${proj.id}.mp4`,
+        showcaseEligible: Boolean((proj as any).showcaseEligible)
       });
     }
 
@@ -63,7 +81,8 @@ export const FounderGallery: React.FC = () => {
             description: scene.visualDescription || scene.generationPrompt || 'Individual scene video.',
             type: 'SCENE CLIP',
             date: 'Rendered',
-            downloadName: `scene-${idx + 1}-${proj.id}.mp4`
+            downloadName: `scene-${idx + 1}-${proj.id}.mp4`,
+            showcaseEligible: Boolean((proj as any).showcaseEligible)
           });
         }
       });
@@ -124,15 +143,24 @@ export const FounderGallery: React.FC = () => {
                     {video.description}
                   </p>
                   
-                  <div className="flex items-center justify-between pt-3 border-t border-white/10">
-                    <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                      <Calendar size={12} />
-                      <span className="text-[10px] uppercase font-mono">{video.date}</span>
-                    </div>
+                  <div className="flex items-center justify-between pt-3 border-t border-white/10 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleShowcase(video.projectId, Boolean(video.showcaseEligible))}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono border transition cursor-pointer ${
+                        video.showcaseEligible
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 hover:bg-amber-500/30 font-bold'
+                          : 'bg-gray-900 text-gray-400 border-gray-700 hover:text-gray-200'
+                      }`}
+                      title="Tampilkan video ini sebagai Showcase di Landing Page"
+                    >
+                      <Star size={12} className={video.showcaseEligible ? 'fill-amber-400 text-amber-400' : ''} />
+                      <span className="text-[10px]">{video.showcaseEligible ? 'Tampil di Landing' : '+ Pajang di Landing'}</span>
+                    </button>
                     <a 
                       href={video.url} 
                       download={video.downloadName}
-                      className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-900/20 px-3 py-1.5 rounded-lg border border-emerald-500/20 transition-all cursor-pointer"
+                      className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-900/20 px-3 py-1.5 rounded-lg border border-emerald-500/20 transition-all cursor-pointer shrink-0"
                     >
                       <Download size={14} />
                       Unduh

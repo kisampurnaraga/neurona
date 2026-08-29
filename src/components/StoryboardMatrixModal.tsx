@@ -38,7 +38,8 @@ import {
   EyeOff,
   ChevronRight,
   HelpCircle,
-  Upload
+  Upload,
+  Bot
 } from 'lucide-react';
 import type { ProductionProject, Scene } from '../shared/types';
 import { neuronaVoice } from '../utils/speechSynthesis';
@@ -50,7 +51,7 @@ interface StoryboardMatrixModalProps {
   onClose: () => void;
   project: ProductionProject | null;
   currentCredits: number;
-  onApproveAndPay: (creditsCost: number) => void;
+  onApproveAndPay: (creditsCost: number, subtitleStyle?: string) => void;
   onOpenTopUp: () => void;
   onGenerateSceneImage?: (sceneId: string, cost: number, imageEngine?: string, allowFallbackToFlux?: boolean) => Promise<void>;
   onGenerateAllImages?: (totalCost: number, imageEngine?: string, allowFallbackToFlux?: boolean) => Promise<void>;
@@ -160,11 +161,13 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [showPlaylistPreview, setShowPlaylistPreview] = useState(false);
   const [playlistIndex, setPlaylistIndex] = useState(0);
   const [socialPlatform, setSocialPlatform] = useState<'tiktok' | 'instagram' | 'youtube'>('tiktok');
+  const [subtitleStyle, setSubtitleStyle] = useState<'Bold Pop' | 'Clean Minimal' | 'Neon Glow'>('Bold Pop');
 
   const [stitchProgress, setStitchProgress] = useState<number>(0);
   const [stitchLogs, setStitchLogs] = useState<string[]>([]);
   const [activeStitchStep, setActiveStitchStep] = useState<string>('');
   const [showStitchModal, setShowStitchModal] = useState<boolean>(false);
+  const [showStitchStylePopup, setShowStitchStylePopup] = useState<boolean>(false);
 
   const [selectedSceneIndex, setSelectedSceneIndex] = useState<number>(0);
   const [musicVolume, setMusicVolume] = useState<number>(75);
@@ -384,10 +387,10 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
         text: s.subtitle || s.voiceOver || s.textOverlay || s.dialogue || ''
       }));
 
-      const res = await fetch('/api/stitch', {
+      const res = await fetch(`/api/projects/${project.id}/stitch-master`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: project.id, scenes: scenesPayload })
+        body: JSON.stringify({ subtitleStyle })
       });
       const data = await res.json();
 
@@ -397,7 +400,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
       neuronaVoice.speak("Selamat! Proses penggabungan video telah berhasil diselesaikan secara utuh");
 
       if (data.success) {
-        setFinalVideoUrl(data.url);
+        setFinalVideoUrl(data.finalVideoUrl || data.url);
       } else {
         // Fallback to demo output if api has minor error
         setFinalVideoUrl('https://assets.mixkit.co/videos/preview/mixkit-futuristic-subway-station-with-neon-lights-44102-large.mp4');
@@ -1931,10 +1934,10 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   <p className="text-[11px] text-slate-300 mt-2 leading-relaxed">
                     Render multi-shot video dengan model pilihan ({project.videoModel || 'SORA_TURBO'}), subtitle dinamis & audio master.
                   </p>
-                </div>
-
+                  
+                  </div>
                 <button
-                  onClick={() => onApproveAndPay(videoCreditsTotal)}
+                  onClick={() => onApproveAndPay(videoCreditsTotal, undefined)}
                   className="w-full py-2.5 px-3 rounded-lg bg-gradient-to-r from-amber-400 via-rose-500 to-purple-600 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-bold text-[11px] shadow-lg shadow-amber-500/25 flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
                   <Play size={13} fill="currentColor" />
@@ -1976,7 +1979,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
             {scenes.length > 0 && (
               <div className="flex flex-col sm:flex-row gap-2">
                 <button
-                  onClick={handleStitchVideos}
+                  onClick={() => setShowStitchStylePopup(true)}
                   disabled={isStitching}
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 hover:from-emerald-400 hover:to-cyan-500 text-white font-bold text-xs shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
@@ -1998,7 +2001,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
             {isAwaiting && (
               <button
-                onClick={() => onApproveAndPay(videoCreditsTotal)}
+                onClick={() => onApproveAndPay(videoCreditsTotal, undefined)}
                 className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-rose-500 to-purple-600 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/30 flex items-center gap-1.5 transition cursor-pointer"
               >
                 <Play size={13} fill="currentColor" />
@@ -2127,610 +2130,184 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
         </div>
       )}
 
-      {/* Stitching Orchestrator Terminal Modal */}
-      {showStitchModal && (
+            {/* Stitching Orchestrator Terminal Modal (Replaced Timeline) */}
+      
+      {/* Stitch Style Selection Popup */}
+      {showStitchStylePopup && (
+        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-300">
+            <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+              <Film size={20} className="text-cyan-400" /> Pengaturan Final Video
+            </h3>
+            <p className="text-slate-400 text-sm mb-6">Pilih gaya subtitle animasi yang akan disatukan dengan video. Proses ini tidak membutuhkan kredit.</p>
+            
+            <div className="space-y-3 mb-6">
+              {['Bold Pop', 'Clean Minimal', 'Neon Glow'].map((style) => (
+                <button
+                  key={style}
+                  onClick={() => setSubtitleStyle(style as any)}
+                  className={`w-full p-4 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
+                    subtitleStyle === style 
+                    ? 'bg-cyan-950/40 border-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.3)]' 
+                    : 'bg-slate-800/50 border-slate-700 hover:border-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                      subtitleStyle === style ? 'border-cyan-400' : 'border-slate-500'
+                    }`}>
+                      {subtitleStyle === style && <div className="w-2.5 h-2.5 rounded-full bg-cyan-400" />}
+                    </div>
+                    <span className={`font-bold ${subtitleStyle === style ? 'text-cyan-300' : 'text-slate-300'}`}>{style}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowStitchStylePopup(false)}
+                className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold transition"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={() => {
+                  setShowStitchStylePopup(false);
+                  handleStitchVideos();
+                }}
+                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold transition shadow-lg shadow-emerald-500/25"
+              >
+                Mulai Gabung
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+{showStitchModal && (
         <div className="fixed inset-0 z-[80] bg-[#0c0d12] text-slate-200 flex flex-col font-sans select-none overflow-hidden h-screen w-screen animate-in fade-in duration-300">
           
           {/* TOP NAV BAR */}
           <div className="h-14 border-b border-white/5 bg-[#0e0f14] px-4 flex items-center justify-between shrink-0">
-            {/* Left controls */}
             <div className="flex items-center gap-3">
               <button 
                 onClick={() => setShowStitchModal(false)}
-                className="flex items-center gap-1 text-slate-400 hover:text-white transition px-2 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer text-xs font-semibold"
+                className="flex items-center gap-1 text-slate-400 hover:text-white transition px-3 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer text-xs font-semibold border border-transparent hover:border-white/10"
               >
                 <ArrowRight size={14} className="rotate-180" />
-                <span>Back</span>
-              </button>
-              <div className="h-4 w-[1px] bg-white/10" />
-              <button className="p-1.5 text-slate-400 hover:text-white transition rounded-lg hover:bg-white/5 cursor-pointer">
-                <Undo size={14} />
-              </button>
-              <button className="p-1.5 text-slate-400 hover:text-white transition rounded-lg hover:bg-white/5 cursor-pointer">
-                <Redo size={14} />
+                <span>Tutup Orchestrator</span>
               </button>
             </div>
-
-            {/* Center Tab Pills */}
-            <div className="flex items-center bg-black/40 border border-white/5 p-0.5 rounded-full">
-              <button className="px-3 py-1.5 rounded-full bg-[#1b1c24] text-purple-400 text-[10px] font-bold flex items-center gap-1.5 shadow">
-                <Film size={12} />
-                <span>Video Editor</span>
-              </button>
-              <button className="px-3 py-1.5 rounded-full text-slate-400 hover:text-slate-200 text-[10px] font-semibold flex items-center gap-1.5">
-                <FileText size={12} />
-                <span>Text Overlay</span>
-              </button>
-              <button className="px-3 py-1.5 rounded-full text-slate-400 hover:text-slate-200 text-[10px] font-semibold flex items-center gap-1.5">
-                <Music size={12} />
-                <span>Sound Master</span>
-              </button>
+            
+            <div className="text-xs font-bold text-slate-300 uppercase tracking-widest flex items-center gap-2">
+               <Bot size={14} className="text-purple-400" />
+               Orchestrator AI
             </div>
 
-            {/* Right Controls */}
             <div className="flex items-center gap-3">
-              {/* Avatars */}
-              <div className="flex items-center -space-x-1.5">
-                <div className="w-6 h-6 rounded-full border border-purple-500 bg-purple-600 flex items-center justify-center text-[9px] font-bold text-white shadow-sm shadow-purple-500/20">
-                  JN
-                </div>
-                <div className="w-6 h-6 rounded-full border border-cyan-500 bg-cyan-600 flex items-center justify-center text-[9px] font-bold text-slate-950 shadow-sm shadow-cyan-500/20">
-                  MK
-                </div>
-              </div>
-              
-              {/* Export Button */}
-              <button 
-                onClick={() => {
-                  if (finalVideoUrl) {
-                    const a = document.createElement('a');
-                    a.href = finalVideoUrl;
-                    a.download = `stitched-film-${project?.id.substring(0,6) || 'movie'}.mp4`;
-                    a.target = '_blank';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                  } else {
-                    alert("Video belum selesai dijahit! Mohon tunggu beberapa saat.");
-                  }
-                }}
-                className="px-4 py-1.5 bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-500/20 flex items-center gap-1.5 cursor-pointer transition active:scale-95"
-              >
-                <Download size={13} />
-                <span>Export Film</span>
-              </button>
+               {/* Avatars */}
+               <div className="flex items-center -space-x-1.5">
+                 <div className="w-7 h-7 rounded-full border border-purple-500 bg-purple-600 flex items-center justify-center text-[10px] font-bold text-white shadow-sm shadow-purple-500/20">
+                   JN
+                 </div>
+               </div>
             </div>
           </div>
 
-          {/* MAIN COLUMN BODY LAYOUT */}
-          <div className="flex-1 flex overflow-hidden">
-            
-            {/* LEFT SIDEBAR: Media Bin */}
-            <div className="w-[260px] border-r border-white/5 bg-[#0e0f14] flex flex-col overflow-y-auto shrink-0 select-none">
-              <div className="p-4 border-b border-white/5">
-                <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Project Video</h3>
-                <div className="relative">
-                  <input 
-                    type="text" 
-                    readOnly
-                    placeholder="Search scene assets..." 
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-[11px] text-slate-300 placeholder-slate-600 outline-none focus:border-purple-500/50"
-                  />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 text-[10px]">🔍</div>
-                </div>
-              </div>
-
-              {/* Media Lists */}
-              <div className="p-2.5 space-y-2">
-                {scenes.map((scene, idx) => {
-                  const isActive = selectedSceneIndex === idx;
-                  const isCompleted = scene.videoStatus === 'COMPLETED' && scene.videoUrl;
-                  const thumb = scene.assetUrl || scene.imageUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=200&auto=format&fit=crop';
-                  return (
-                    <div 
-                      key={scene.id}
-                      onClick={() => setSelectedSceneIndex(idx)}
-                      className={`p-2 rounded-2xl cursor-pointer transition flex items-start gap-3 border ${
-                        isActive 
-                          ? 'bg-[#1b1c24] border-purple-500/50 shadow-md shadow-purple-500/5' 
-                          : 'bg-black/20 border-white/5 hover:bg-white/5'
-                      }`}
-                    >
-                      <div className="w-16 h-12 bg-black rounded-lg overflow-hidden shrink-0 relative border border-white/10">
-                        <img 
-                          src={thumb} 
-                          alt="Thumbnail" 
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                        />
-                        <div className="absolute bottom-1 right-1 px-1 py-[1px] bg-black/70 text-[8px] font-mono font-bold rounded text-slate-300">
-                          05s
-                        </div>
+          <div className="flex-1 flex flex-col items-center justify-center relative p-6">
+             {/* Central Hub Status */}
+             <div className="max-w-xl w-full flex flex-col items-center">
+                {stitchProgress === 100 && finalVideoUrl ? (
+                   <div className="flex flex-col items-center w-full animate-in zoom-in-95 duration-500">
+                      <div className={`w-full max-w-xs ${getProjectAspectRatioClass(project)} rounded-2xl overflow-hidden border-2 border-emerald-500/50 shadow-[0_0_40px_rgba(16,185,129,0.2)] mb-6`}>
+                        <video src={finalVideoUrl} controls autoPlay loop playsInline className="w-full h-full object-contain bg-black" />
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-bold text-slate-200 truncate flex items-center gap-1.5">
-                          <span>Scene {idx + 1}</span>
-                          {isCompleted ? (
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          ) : (
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                          )}
-                        </div>
-                        <p className="text-[9px] text-slate-500 truncate mt-1">
-                          {scene.subtitle || scene.voiceOver || 'No Script'}
-                        </p>
-                        <div className="text-[8px] text-purple-400 font-mono mt-1.5 uppercase font-semibold">
-                          {isCompleted ? 'READY' : 'GENERATING'}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* CENTER PANEL: Main Interactive Canvas Player */}
-            <div className="flex-1 bg-[#090a0d] flex flex-col items-center justify-between p-4 relative overflow-hidden">
-              <div className="flex-1 w-full flex flex-col items-center justify-center max-w-2xl">
-                {/* Big Monitor Frame */}
-                <div className={`w-full ${getProjectAspectRatioClass(project)} max-h-[50vh] rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative bg-[#000]`}>
-                  {/* Glowing background halo */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-purple-500/5 to-transparent pointer-events-none" />
-                  
-                  {stitchProgress === 100 && finalVideoUrl ? (
-                    <video 
-                      src={finalVideoUrl}
-                      controls
-                      autoPlay
-                      loop
-                      playsInline
-                      className="w-full h-full object-contain"
-                    />
-                  ) : (
-                    <div className="w-full h-full relative flex items-center justify-center">
-                      {scenes[selectedSceneIndex]?.videoUrl ? (
-                        <video 
-                          src={scenes[selectedSceneIndex].videoUrl}
-                          autoPlay
-                          loop
-                          muted
-                          playsInline
-                          className="w-full h-full object-contain"
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center justify-center text-center p-6 space-y-3">
-                          <img 
-                            src={scenes[selectedSceneIndex]?.assetUrl || scenes[selectedSceneIndex]?.imageUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=400&auto=format&fit=crop'} 
-                            alt="Static Visual Reference" 
-                            referrerPolicy="no-referrer"
-                            className="absolute inset-0 w-full h-full object-cover opacity-30 blur-sm"
-                          />
-                          <div className="relative z-10 w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/40 flex items-center justify-center text-amber-400 animate-pulse">
-                            <Clock size={28} />
-                          </div>
-                          <span className="relative z-10 text-xs font-bold text-amber-400">MEMPROSES VIDEO SCENE {selectedSceneIndex + 1}</span>
-                          <p className="relative z-10 text-[10px] text-slate-400 max-w-xs leading-relaxed">
-                            Video generator Veo 3.1 sedang berjalan pada server paralel Cloud Run. Tampilan visual saat ini diambil dari keyframe gambar statis.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Top Header info */}
-                  <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-20 pointer-events-none">
-                    <div className="px-3 py-1 rounded-full bg-black/80 backdrop-blur-md border border-white/10 text-[9px] font-mono text-slate-300">
-                      🔒 ASPECT RATIO: {project?.aspectRatio || '16:9'}
-                    </div>
-                    {stitchProgress < 100 && (
-                      <div className="px-3 py-1 rounded-full bg-purple-950/80 backdrop-blur-md border border-purple-500/40 text-[9px] font-mono text-purple-300 animate-pulse">
-                        ⚡ STITCHING COMPILING...
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Video controls console */}
-                <div className="w-full max-w-2xl bg-[#0e0f14] border border-white/5 rounded-2xl p-3.5 mt-4 flex items-center justify-between shadow-lg">
-                  <div className="text-[10px] font-mono text-slate-400">
-                    <span className="text-purple-400 font-bold">00:01:38</span> / 00:05:00
-                  </div>
-                  
-                  {/* Player button pack */}
-                  <div className="flex items-center gap-3">
-                    <button className="p-1.5 text-slate-500 hover:text-white transition rounded-full hover:bg-white/5 cursor-pointer">
-                      <span className="text-xs">⏮</span>
-                    </button>
-                    <button 
-                      onClick={() => setIsNlePlaying(!isNlePlaying)}
-                      className="w-8 h-8 rounded-full bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center shadow shadow-purple-600/30 cursor-pointer transition"
-                    >
-                      {isNlePlaying ? <span className="text-xs">⏸</span> : <Play size={12} fill="currentColor" />}
-                    </button>
-                    <button className="p-1.5 text-slate-500 hover:text-white transition rounded-full hover:bg-white/5 cursor-pointer">
-                      <span className="text-xs">⏭</span>
-                    </button>
-                  </div>
-
-                  {/* Controls side */}
-                  <div className="flex items-center gap-3">
-                    <button className="p-1 text-slate-400 hover:text-white transition">
-                      <Maximize2 size={13} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* RIGHT PANEL: AI Director & Property Panel */}
-            <div className="w-[320px] border-l border-white/5 bg-[#0e0f14] flex flex-col shrink-0 select-none">
-              
-              {/* Tab Header */}
-              <div className="grid grid-cols-3 border-b border-white/5 text-[10px] text-center font-bold font-mono">
-                {['Video', 'Animation', 'Tracking'].map((tab) => {
-                  const isActive = activeInspectorTab === tab;
-                  return (
-                    <button 
-                      key={tab}
-                      onClick={() => setActiveInspectorTab(tab as any)}
-                      className={`py-3 transition cursor-pointer ${
-                        isActive ? 'text-purple-400 border-b-2 border-purple-500 bg-[#1b1c24]/20' : 'text-slate-500 hover:text-slate-300'
-                      }`}
-                    >
-                      {tab}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Inspector Content container */}
-              <div className="p-4 space-y-4 flex-1 overflow-y-auto">
-                {/* Volume slider exactly like image */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[11px] font-bold">
-                    <span className="text-slate-400">Volume Musik Latar</span>
-                    <span className="text-purple-400 font-mono">{musicVolume}%</span>
-                  </div>
-                  <input 
-                    type="range" 
-                    min="0" 
-                    max="100" 
-                    value={musicVolume} 
-                    onChange={(e) => setMusicVolume(Number(e.target.value))}
-                    className="w-full accent-purple-500 h-1 bg-slate-800 rounded-lg outline-none cursor-pointer"
-                  />
-                  <select className="w-full bg-black/40 border border-white/5 rounded-xl px-3 py-1.5 text-[10px] font-semibold text-slate-300 focus:outline-none focus:border-purple-500/40">
-                    <option>Study Chill Relax Rep...</option>
-                    <option>Cinematic Epic Orchestral</option>
-                    <option>Cyberpunk Neon Beats</option>
-                    <option>Acoustic Guitar Soft</option>
-                  </select>
-                </div>
-
-                {/* Background color curves exactly like image */}
-                <div className="p-3 bg-black/40 border border-white/5 rounded-2xl space-y-2.5">
-                  <div className="flex items-center justify-between text-[10px] font-bold">
-                    <span className="text-slate-400 uppercase tracking-wider">Background Curves</span>
-                    <span className="text-slate-600 text-[9px] font-mono">Curves | HSL | Basic</span>
-                  </div>
-                  {/* Curved Vector SVG representing the color curves exactly like image */}
-                  <div className="h-16 w-full bg-slate-950/80 rounded-xl relative overflow-hidden border border-white/5 flex items-center justify-center">
-                    <svg className="w-full h-full" viewBox="0 0 100 40">
-                      <path 
-                        d="M0,35 Q20,5 50,20 T100,5" 
-                        fill="none" 
-                        stroke="url(#purpleGrad)" 
-                        strokeWidth="1.5" 
-                        className="animate-pulse"
-                      />
-                      <circle cx="20" cy="12" r="2" fill="#c084fc" />
-                      <circle cx="50" cy="20" r="2" fill="#22d3ee" />
-                      <circle cx="80" cy="9" r="2" fill="#fb7185" />
+                      <h2 className="text-2xl font-bold text-white mb-2 text-center">Video Berhasil Dijahit!</h2>
+                      <p className="text-slate-400 text-sm text-center mb-6">
+                        Semua adegan, subtitle bergaya <strong className="text-amber-400">"{subtitleStyle}"</strong>, dan audio latar telah digabungkan dengan sempurna.
+                      </p>
                       
-                      <defs>
-                        <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                          <stop offset="0%" stopColor="#c084fc" />
-                          <stop offset="50%" stopColor="#22d3ee" stopOpacity="0.8" />
-                          <stop offset="100%" stopColor="#fb7185" />
-                        </linearGradient>
-                      </defs>
-                    </svg>
-                  </div>
-                </div>
-
-                {/* AI AGENT CHAT SECTION: Hi Mike! How can I help you? */}
-                <div className="border-t border-white/5 pt-3.5 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center text-[10px] font-bold text-white shadow shadow-purple-600/30">
-                      JN
-                    </div>
-                    <div className="text-[11px] font-bold">
-                      <span className="text-slate-300">Asisten Director: </span>
-                      <span className="text-purple-400">Jane</span>
-                    </div>
-                  </div>
-
-                  {/* Chat message box */}
-                  <div className="h-[180px] bg-black/60 rounded-2xl border border-white/5 p-3 overflow-y-auto space-y-2.5 flex flex-col justify-start">
-                    {chatHistory.map((chat, i) => (
-                      <div key={i} className={`flex flex-col ${chat.sender === 'user' ? 'items-end' : 'items-start'}`}>
-                        <div className={`p-2.5 rounded-2xl max-w-[90%] text-[10px] leading-relaxed break-all ${
-                          chat.sender === 'user' 
-                            ? 'bg-purple-600 text-white rounded-tr-none' 
-                            : 'bg-slate-900 border border-white/5 text-slate-300 rounded-tl-none'
-                        }`}>
-                          {chat.message}
-                        </div>
-                        <span className="text-[8px] text-slate-600 font-mono mt-1 px-1">{chat.timestamp}</span>
+                      <button 
+                        onClick={() => {
+                          const a = document.createElement('a');
+                          a.href = finalVideoUrl;
+                          a.download = `stitched-film-${project?.id.substring(0,6) || 'movie'}.mp4`;
+                          a.target = '_blank';
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                        }}
+                        className="px-8 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/30 flex items-center gap-2 transition hover:scale-105 active:scale-95"
+                      >
+                        <Download size={18} /> Unduh File MP4
+                      </button>
+                   </div>
+                ) : (
+                   <div className="flex flex-col items-center w-full">
+                      <div className="w-24 h-24 rounded-full bg-purple-900/30 border-2 border-purple-500/50 flex items-center justify-center mb-6 relative shadow-[0_0_50px_rgba(168,85,247,0.3)]">
+                         <div className="absolute inset-0 rounded-full border border-purple-400 animate-ping opacity-20"></div>
+                         <Bot size={40} className="text-purple-400 animate-bounce" />
+                         {/* Floating active agent tooltip bubble named "Jane" */}
+                         <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-purple-500 text-white text-[10px] font-bold shadow-lg flex items-center gap-1.5 whitespace-nowrap">
+                           <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                           <span>Jane</span>
+                         </div>
                       </div>
-                    ))}
-                    <div ref={chatEndRef} />
-                  </div>
+                      
+                      <h2 className="text-xl sm:text-2xl font-bold text-white mb-2 text-center">Jane sedang menjahit video kamu...</h2>
+                      
+                      <div className="w-full max-w-md h-2 bg-slate-900 rounded-full overflow-hidden mb-2 mt-4">
+                        <div className="h-full bg-gradient-to-r from-purple-600 to-cyan-400 transition-all duration-500" style={{ width: `${stitchProgress}%` }}></div>
+                      </div>
+                      <div className="text-xs font-mono text-purple-400 mb-8">{stitchProgress}% Selesai</div>
 
-                  {/* Interactive suggested tags */}
-                  <div className="flex flex-wrap gap-1.5">
-                    <button 
-                      onClick={() => handleSendChat("Buatkan teks penutup otomatis")}
-                      className="px-2 py-1 rounded-full bg-slate-900 hover:bg-slate-800 border border-white/5 text-[9px] text-slate-400 font-medium transition cursor-pointer"
-                    >
-                      Generate Text
-                    </button>
-                    <button 
-                      onClick={() => handleSendChat("Regenerasi keyframe visual untuk transisi")}
-                      className="px-2 py-1 rounded-full bg-slate-900 hover:bg-slate-800 border border-white/5 text-[9px] text-slate-400 font-medium transition cursor-pointer"
-                    >
-                      Generate Images
-                    </button>
-                    <button 
-                      onClick={() => handleSendChat("Masukkan avatar presenter AI")}
-                      className="px-2 py-1 rounded-full bg-slate-900 hover:bg-slate-800 border border-white/5 text-[9px] text-slate-400 font-medium transition cursor-pointer"
-                    >
-                      Generate Avatar
-                    </button>
-                  </div>
+                      {/* Task Checklist */}
+                      <div className="w-full max-w-md space-y-3">
+                         <div className={`p-3.5 rounded-xl border flex items-center gap-3 transition-colors duration-500 ${stitchProgress >= 25 ? 'bg-emerald-950/40 border-emerald-500/30' : stitchProgress > 0 ? 'bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]' : 'bg-slate-900/50 border-slate-800'}`}>
+                            {stitchProgress >= 25 ? <CheckCircle2 className="text-emerald-400 w-5 h-5 shrink-0" /> : stitchProgress > 0 ? <Loader2 className="text-purple-400 w-5 h-5 animate-spin shrink-0" /> : <div className="w-5 h-5 rounded-full border border-slate-700 shrink-0" />}
+                            <span className={`text-sm font-semibold truncate ${stitchProgress >= 25 ? 'text-emerald-100' : stitchProgress > 0 ? 'text-purple-100' : 'text-slate-500'}`}>🎬 Menggabungkan {scenes.length} scene video</span>
+                         </div>
+                         <div className={`p-3.5 rounded-xl border flex items-center gap-3 transition-colors duration-500 ${stitchProgress >= 50 ? 'bg-emerald-950/40 border-emerald-500/30' : stitchProgress >= 25 ? 'bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]' : 'bg-slate-900/50 border-slate-800'}`}>
+                            {stitchProgress >= 50 ? <CheckCircle2 className="text-emerald-400 w-5 h-5 shrink-0" /> : stitchProgress >= 25 ? <Loader2 className="text-purple-400 w-5 h-5 animate-spin shrink-0" /> : <div className="w-5 h-5 rounded-full border border-slate-700 shrink-0" />}
+                            <span className={`text-sm font-semibold truncate ${stitchProgress >= 50 ? 'text-emerald-100' : stitchProgress >= 25 ? 'text-purple-100' : 'text-slate-500'}`}>🎵 Menyelaraskan audio & BGM</span>
+                         </div>
+                         <div className={`p-3.5 rounded-xl border flex items-center gap-3 transition-colors duration-500 ${stitchProgress >= 80 ? 'bg-emerald-950/40 border-emerald-500/30' : stitchProgress >= 50 ? 'bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]' : 'bg-slate-900/50 border-slate-800'}`}>
+                            {stitchProgress >= 80 ? <CheckCircle2 className="text-emerald-400 w-5 h-5 shrink-0" /> : stitchProgress >= 50 ? <Loader2 className="text-purple-400 w-5 h-5 animate-spin shrink-0" /> : <div className="w-5 h-5 rounded-full border border-slate-700 shrink-0" />}
+                            <span className={`text-sm font-semibold truncate ${stitchProgress >= 80 ? 'text-emerald-100' : stitchProgress >= 50 ? 'text-purple-100' : 'text-slate-500'}`}>✍️ Menyusun subtitle (Gaya: {subtitleStyle})</span>
+                         </div>
+                         <div className={`p-3.5 rounded-xl border flex items-center gap-3 transition-colors duration-500 ${stitchProgress >= 100 ? 'bg-emerald-950/40 border-emerald-500/30' : stitchProgress >= 80 ? 'bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]' : 'bg-slate-900/50 border-slate-800'}`}>
+                            {stitchProgress >= 100 ? <CheckCircle2 className="text-emerald-400 w-5 h-5 shrink-0" /> : stitchProgress >= 80 ? <Loader2 className="text-purple-400 w-5 h-5 animate-spin shrink-0" /> : <div className="w-5 h-5 rounded-full border border-slate-700 shrink-0" />}
+                            <span className={`text-sm font-semibold truncate ${stitchProgress >= 100 ? 'text-emerald-100' : stitchProgress >= 80 ? 'text-purple-100' : 'text-slate-500'}`}>📦 Finalisasi ekspor MP4</span>
+                         </div>
+                      </div>
+                   </div>
+                )}
+             </div>
 
-                  {/* Chat input form */}
-                  <form 
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleSendChat(chatInput);
-                    }}
-                    className="flex items-center gap-1.5"
-                  >
-                    <input 
-                      type="text" 
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="Start typing..." 
-                      className="flex-1 bg-black/40 border border-white/5 rounded-xl px-3 py-2 text-[10px] text-slate-300 placeholder-slate-600 outline-none focus:border-purple-500/50"
-                    />
-                    <button 
-                      type="submit"
-                      className="w-8 h-8 rounded-xl bg-[#1b1c24] hover:bg-purple-600 hover:text-white transition flex items-center justify-center text-purple-400 cursor-pointer shadow-sm border border-white/10"
-                    >
-                      <Send size={12} />
-                    </button>
-                  </form>
-                </div>
-              </div>
-            </div>
+             {/* Tech Logs Panel (Hidden by Default) */}
+             <div className="absolute bottom-6 left-6 right-6 flex justify-center">
+                <details className="group w-full max-w-2xl bg-black/60 border border-white/5 rounded-xl overflow-hidden backdrop-blur-md shadow-2xl">
+                   <summary className="p-3 cursor-pointer text-xs font-mono text-slate-400 hover:text-slate-200 flex items-center gap-2 select-none outline-none">
+                      <Bot size={14} className="text-slate-500" />
+                      <span>Log Teknis (Asisten Director: Jane)</span>
+                      <ArrowRight size={12} className="ml-auto transition-transform group-open:rotate-90" />
+                   </summary>
+                   <div className="p-3 border-t border-white/5 max-h-48 overflow-y-auto space-y-2 bg-black/80">
+                     {stitchLogs.length === 0 ? (
+                       <div className="text-[10px] text-slate-600 font-mono italic">Menunggu log sistem...</div>
+                     ) : (
+                       stitchLogs.map((log, i) => (
+                         <div key={i} className="text-[10px] text-slate-400 font-mono flex items-start gap-2">
+                           <span className="text-slate-600 shrink-0">[{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}]</span>
+                           <span>{log}</span>
+                         </div>
+                       ))
+                     )}
+                   </div>
+                </details>
+             </div>
           </div>
-
-          {/* BOTTOM REGION: MULTI-TRACK TIMELINE CANVAS */}
-          <div className="h-[280px] bg-[#0c0d12] border-t border-white/5 flex flex-col shrink-0 select-none overflow-hidden">
-            
-            {/* 1. Time Ruler ticks precisely like picture */}
-            <div className="h-8 border-b border-white/5 flex items-center bg-black/20 shrink-0 font-mono text-[9px] text-slate-600">
-              <div className="w-[180px] px-4 font-bold border-r border-white/5 text-slate-500 shrink-0 uppercase tracking-wider text-[8px]">
-                ⏱ TIMELINE MASTER
-              </div>
-              <div className="flex-1 flex justify-between px-6 overflow-x-auto select-none pointer-events-none">
-                <span>00:01:40</span>
-                <span>00:00:10</span>
-                <span>00:00:15</span>
-                <span>00:00:20</span>
-                <span>00:00:25</span>
-                <span>00:00:30</span>
-                <span>00:00:35</span>
-                <span>00:00:40</span>
-                <span>00:00:45</span>
-                <span>00:00:50</span>
-              </div>
-            </div>
-
-            {/* 2. Scrollable track rows */}
-            <div className="flex-1 overflow-y-auto space-y-[2px] bg-black/10">
-              
-              {/* TRACK 1: Text Overlay (Subtitle) */}
-              <div className="h-[64px] flex items-center">
-                {/* Track header */}
-                <div className="w-[180px] h-full bg-[#0e0f14] border-r border-white/5 px-4 flex items-center justify-between shrink-0 text-slate-400">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-[10px] font-bold text-slate-300 truncate">💬 Subtitle Track</span>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button 
-                      onClick={() => setTrackVisibility(p => ({ ...p, text: !p.text }))}
-                      className="p-1 hover:bg-white/5 rounded text-slate-500 hover:text-white transition cursor-pointer"
-                    >
-                      {trackVisibility.text ? <Eye size={12} /> : <EyeOff size={12} />}
-                    </button>
-                    <button 
-                      onClick={() => setTrackLocked(p => ({ ...p, text: !p.text }))}
-                      className="p-1 hover:bg-white/5 rounded text-slate-500 hover:text-white transition cursor-pointer"
-                    >
-                      {trackLocked.text ? <Lock size={12} className="text-amber-500" /> : <Unlock size={12} />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Track canvas area */}
-                <div className="flex-1 h-full px-6 flex items-center relative overflow-x-auto bg-black/5">
-                  {trackVisibility.text && (
-                    <div className="flex items-center gap-4 w-full">
-                      {scenes.map((scene, idx) => {
-                        const isFocused = selectedSceneIndex === idx;
-                        return (
-                          <div 
-                            key={`text-track-${scene.id}`}
-                            onClick={() => setSelectedSceneIndex(idx)}
-                            className={`px-3 py-1.5 rounded-full border text-[9px] font-semibold flex items-center gap-1 cursor-pointer transition select-none ${
-                              isFocused 
-                                ? 'bg-[#1b1c24] border-purple-500/50 text-purple-300 shadow shadow-purple-500/10' 
-                                : 'bg-slate-900/60 border-white/5 text-slate-400 hover:text-slate-200'
-                            }`}
-                          >
-                            <span className="w-1 h-1 rounded-full bg-purple-400 shrink-0" />
-                            <span className="truncate max-w-[150px]">
-                              {scene.subtitle || scene.voiceOver || 'Default Intro...'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {/* Decorative anchor curve strings connecting down to video timeline track */}
-                  <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-40">
-                    <path d="M 220 30 Q 240 60 260 64" fill="none" stroke="#c084fc" strokeWidth="1" strokeDasharray="3,3" />
-                    <path d="M 400 30 Q 420 60 440 64" fill="none" stroke="#22d3ee" strokeWidth="1" strokeDasharray="3,3" />
-                  </svg>
-                </div>
-              </div>
-
-              {/* TRACK 2: Video Track (The main storyboard frames) */}
-              <div className="h-[96px] flex items-center border-y border-white/5">
-                {/* Track header */}
-                <div className="w-[180px] h-full bg-[#0e0f14] border-r border-white/5 px-4 flex items-center justify-between shrink-0 text-slate-400">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-[10px] font-bold text-slate-300 truncate">🎬 Video Track</span>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button 
-                      onClick={() => setTrackVisibility(p => ({ ...p, video: !p.video }))}
-                      className="p-1 hover:bg-white/5 rounded text-slate-500 hover:text-white transition cursor-pointer"
-                    >
-                      {trackVisibility.video ? <Eye size={12} /> : <EyeOff size={12} />}
-                    </button>
-                    <button 
-                      onClick={() => setTrackLocked(p => ({ ...p, video: !p.video }))}
-                      className="p-1 hover:bg-white/5 rounded text-slate-500 hover:text-white transition cursor-pointer"
-                    >
-                      {trackLocked.video ? <Lock size={12} className="text-amber-500" /> : <Unlock size={12} />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Track canvas layout (Video Cards) */}
-                <div className="flex-1 h-full px-6 flex items-center overflow-x-auto relative bg-[#090a0d]/60">
-                  {trackVisibility.video && (
-                    <div className="flex items-center gap-3 py-1">
-                      {scenes.map((scene, idx) => {
-                        const isFocused = selectedSceneIndex === idx;
-                        const poster = scene.assetUrl || scene.imageUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=200&auto=format&fit=crop';
-                        return (
-                          <div 
-                            key={`vid-track-${scene.id}`}
-                            onClick={() => setSelectedSceneIndex(idx)}
-                            className={`w-32 h-16 rounded-xl bg-black overflow-hidden relative cursor-pointer select-none border transition ${
-                              isFocused 
-                                ? 'border-purple-500 ring-2 ring-purple-500/20 shadow-lg shadow-purple-500/10' 
-                                : 'border-white/5 opacity-70 hover:opacity-100'
-                            }`}
-                          >
-                            {/* Inner Poster visual */}
-                            <img 
-                              src={poster} 
-                              alt="Scene thumbnail" 
-                              referrerPolicy="no-referrer"
-                              className="w-full h-full object-cover"
-                            />
-                            
-                            {/* Selected highlight handles exactly like picture */}
-                            {isFocused && (
-                              <>
-                                <div className="absolute top-0 bottom-0 left-0 w-1.5 bg-purple-500 flex items-center justify-center">
-                                  <div className="w-[2px] h-3 bg-white rounded-full" />
-                                </div>
-                                <div className="absolute top-0 bottom-0 right-0 w-1.5 bg-purple-500 flex items-center justify-center">
-                                  <div className="w-[2px] h-3 bg-white rounded-full" />
-                                </div>
-                                {/* Floating active agent tooltip bubble named "Jane" */}
-                                <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded bg-purple-500 text-white text-[8px] font-bold shadow flex items-center gap-1 animate-bounce">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                                  <span>Jane</span>
-                                </div>
-                              </>
-                            )}
-
-                            {/* Badge overlays */}
-                            <div className="absolute bottom-1 right-1 px-1 py-0.5 bg-black/60 rounded text-[7px] font-bold text-slate-300">
-                              05s
-                            </div>
-                            <div className="absolute top-1 left-1 px-1 py-0.5 bg-black/60 rounded text-[7px] font-bold text-slate-300">
-                              #{idx + 1}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* TRACK 3: Audio Track (Audio wave generator exactly like image) */}
-              <div className="h-[64px] flex items-center">
-                {/* Track header */}
-                <div className="w-[180px] h-full bg-[#0e0f14] border-r border-white/5 px-4 flex items-center justify-between shrink-0 text-slate-400">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-[10px] font-bold text-slate-300 truncate">🎙️ Audio Track</span>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button 
-                      onClick={() => setTrackVisibility(p => ({ ...p, audio: !p.audio }))}
-                      className="p-1 hover:bg-white/5 rounded text-slate-500 hover:text-white transition cursor-pointer"
-                    >
-                      {trackVisibility.audio ? <Eye size={12} /> : <EyeOff size={12} />}
-                    </button>
-                    <button 
-                      onClick={() => setTrackLocked(p => ({ ...p, audio: !p.audio }))}
-                      className="p-1 hover:bg-white/5 rounded text-slate-500 hover:text-white transition cursor-pointer"
-                    >
-                      {trackLocked.audio ? <Lock size={12} className="text-amber-500" /> : <Unlock size={12} />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Track audio wave graphic */}
-                <div className="flex-1 h-full px-6 flex items-center overflow-x-auto relative bg-[#090a0d]/40">
-                  {trackVisibility.audio && (
-                    <div className="w-full flex items-center gap-[3px] py-1 opacity-80 h-10 overflow-hidden">
-                      {/* Generates a stylized live audio waveform graph */}
-                      {Array.from({ length: 90 }).map((_, waveIdx) => {
-                        const hVal = 4 + Math.sin(waveIdx * 0.2) * 16 + Math.cos(waveIdx * 0.1) * 8 + (isStitching ? Math.random() * 8 : 0);
-                        const isGlow = waveIdx % 6 === 0;
-                        return (
-                          <div 
-                            key={waveIdx}
-                            className={`w-[2px] rounded-full transition-all duration-300 ${
-                              isStitching 
-                                ? 'bg-gradient-to-t from-emerald-500 to-teal-400' 
-                                : 'bg-gradient-to-t from-purple-500 to-indigo-400'
-                            }`}
-                            style={{ 
-                              height: `${Math.max(4, Math.min(32, hVal))}px`,
-                              opacity: isGlow ? 1 : 0.6
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-            </div>
-          </div>
-
         </div>
       )}
 

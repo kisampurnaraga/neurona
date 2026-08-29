@@ -208,6 +208,8 @@ class NeuronaVoiceEngine {
   private isMuted: boolean = false;
   private disableRoboticTTS: boolean = true; // ROBOTIC TTS DISABLED PERMANENTLY
   private audioCtx: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private sourceNode: MediaElementAudioSourceNode | null = null;
   private isSpeaking: boolean = false;
   private isPlayingAI: boolean = false;
   private currentVoice: VoiceOption = AVAILABLE_VOICES[0]; // default ChatGPT Nova
@@ -257,6 +259,40 @@ class NeuronaVoiceEngine {
 
   getDisableRoboticTTS(): boolean {
     return this.disableRoboticTTS;
+  }
+
+  private setupAnalyser(audio: HTMLAudioElement) {
+    try {
+      const ctx = this.getAudioContext();
+      this.analyser = ctx.createAnalyser();
+      this.analyser.fftSize = 64; // Small fft for waveform animation
+      
+      this.sourceNode = ctx.createMediaElementSource(audio);
+      this.sourceNode.connect(this.analyser);
+      this.analyser.connect(ctx.destination);
+    } catch (e) {
+      console.warn("[TTS Analyser] Failed to initialize Web Audio analyser:", e);
+      this.analyser = null;
+    }
+  }
+
+  getRealtimeWaveform(): number[] {
+    if (!this.analyser || !this.isSpeaking) {
+      return Array(12).fill(0);
+    }
+    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+    this.analyser.getByteFrequencyData(dataArray);
+    
+    // Normalize and return an array of 12 values
+    const result: number[] = [];
+    const step = Math.max(1, Math.floor(dataArray.length / 12));
+    for (let i = 0; i < 12; i++) {
+      const idx = Math.min(dataArray.length - 1, i * step);
+      const val = dataArray[idx] || 0;
+      // Scale to 0-1 range
+      result.push(val / 255);
+    }
+    return result;
   }
 
   private getAudioContext(): AudioContext {
@@ -367,6 +403,8 @@ class NeuronaVoiceEngine {
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         this.currentAudio = new Audio(url);
+        this.currentAudio.crossOrigin = "anonymous";
+        this.setupAnalyser(this.currentAudio);
         
         return new Promise((resolve) => {
           if (!this.currentAudio) {

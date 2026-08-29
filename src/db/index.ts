@@ -33,11 +33,27 @@ function initTables(sqliteInstance: InstanceType<typeof Database>) {
       status TEXT,
       video_type TEXT,
       final_video_url TEXT,
+      showcase_eligible INTEGER DEFAULT 0,
+      showcase_order INTEGER,
       data TEXT,
       created_at TEXT,
       FOREIGN KEY (user_id) REFERENCES users(uid)
     );
   `);
+
+  // Ensure columns exist on older database instances
+  try {
+    const cols = sqliteInstance.pragma('table_info(projects)') as Array<{ name: string }>;
+    const colNames = cols.map(c => c.name);
+    if (!colNames.includes('showcase_eligible')) {
+      sqliteInstance.exec('ALTER TABLE projects ADD COLUMN showcase_eligible INTEGER DEFAULT 0;');
+    }
+    if (!colNames.includes('showcase_order')) {
+      sqliteInstance.exec('ALTER TABLE projects ADD COLUMN showcase_order INTEGER;');
+    }
+  } catch (e) {
+    console.warn('[SQLite Migration Warning] Could not verify showcase columns on projects table:', e);
+  }
 }
 
 function removeCorruptedDbFiles() {

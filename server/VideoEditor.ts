@@ -8,6 +8,67 @@ import { TTSService } from './ttsService';
 
 const execAsync = promisify(exec);
 
+
+function formatAssTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const cs = Math.floor((seconds % 1) * 100);
+  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+}
+
+function getAssHeader(style: string, targetW: number, targetH: number) {
+  let fontName = 'Arial';
+  let primaryColor = '&H00FFFFFF';
+  let outlineColor = '&H00000000';
+  let shadowColor = '&H00000000';
+  let outline = '3';
+  let shadow = '0';
+  let baseFontSize = 24;
+  let bold = '-1'; 
+  
+  if (style === 'Bold Pop') {
+    fontName = 'Arial Black';
+    primaryColor = '&H0000FFFF'; 
+    outlineColor = '&H00000000'; 
+    outline = '4';
+    shadow = '2';
+    baseFontSize = 48;
+  } else if (style === 'Clean Minimal') {
+    fontName = 'Helvetica';
+    primaryColor = '&H00FFFFFF'; 
+    outlineColor = '&H00444444'; 
+    outline = '1';
+    shadow = '0';
+    baseFontSize = 36;
+    bold = '0'; 
+  } else if (style === 'Neon Glow') {
+    fontName = 'Courier New';
+    primaryColor = '&H00FFFFFF'; 
+    outlineColor = '&H00FF00FF'; 
+    outline = '3';
+    shadow = '5';
+    shadowColor = '&H00FF00FF';
+    baseFontSize = 42;
+  }
+
+  let fontSize = Math.floor(baseFontSize * (targetH / 720)).toString();
+  let marginV = Math.floor(targetH * 0.15);
+  return `[Script Info]
+ScriptType: v4.00+
+PlayResX: ${targetW}
+PlayResY: ${targetH}
+WrapStyle: 1
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,${fontName},${fontSize},${primaryColor},&H000000FF,${outlineColor},${shadowColor},${bold},0,0,0,100,100,0,0,1,${outline},${shadow},2,20,20,${marginV},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+}
+
 function formatSrtTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -44,7 +105,7 @@ async function downloadFile(url: string, dest: string): Promise<void> {
 }
 
 export class VideoEditor {
-  static async processProject(project: ProductionProject): Promise<any> {
+  static async processProject(project: ProductionProject, subtitleStyle?: string): Promise<any> {
     const projectId = project.id;
     const scenes = project.storyboard?.scenes?.filter(s => (s.status === 'COMPLETED' || s.videoUrl || s.assetUrl || s.imageUrl) && (s.videoUrl || s.assetUrl || s.imageUrl)) || [];
     
@@ -57,7 +118,12 @@ export class VideoEditor {
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
     try {
-      const SCENE_DURATION = 5; 
+      const SCENE_DURATION = 5;
+
+    const aspectRatio = project.aspectRatio || (project.videoType === 'EDUCATIONAL' ? '16:9' : '9:16');
+    const [targetW, targetH] = aspectRatio === '16:9' ? [1920, 1080] : aspectRatio === '1:1' ? [1080, 1080] : [1080, 1920];
+    // Safe scale filter with blurred background to avoid cropping important parts
+    const scaleFilter = `split[m][a];[a]scale=${targetW}:${targetH},boxblur=40:20[b];[m]scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease[v2];[b][v2]overlay=(W-w)/2:(H-h)/2`; 
 
       // ------------------------------------------------------------------
       // FASE 1: PERSIAPAN ASET PARALEL (Video, TTS, BGM, dan Early Mixing)
@@ -119,9 +185,9 @@ export class VideoEditor {
 
           // 1c. Mixing per scene (Video + TTS)
           if (hasTts) {
-              await execAsync(`ffmpeg -y -i "scene_${i}.mp4" -i "tts_${i}.mp3" -filter_complex "[1:a]apad[a]" -map 0:v:0 -map "[a]" -c:v copy -c:a aac -shortest "scene_mixed_${i}.mp4"`, { cwd: tempDir });
+              await execAsync(`ffmpeg -y -i "scene_${i}.mp4" -i "tts_${i}.mp3" -filter_complex "[0:v]${scaleFilter},setsar=1[v];[1:a]apad[a]" -map "[v]" -map "[a]" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest "scene_mixed_${i}.mp4"`, { cwd: tempDir });
           } else {
-              await execAsync(`ffmpeg -y -i "scene_${i}.mp4" -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -shortest "scene_mixed_${i}.mp4"`, { cwd: tempDir });
+              await execAsync(`ffmpeg -y -i "scene_${i}.mp4" -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -filter_complex "[0:v]${scaleFilter},setsar=1[v]" -map "[v]" -map 1:a:0 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest "scene_mixed_${i}.mp4"`, { cwd: tempDir });
           }
           
           return { index: i, success: true, text, hasTts };
@@ -162,7 +228,7 @@ export class VideoEditor {
       // ------------------------------------------------------------------
       console.log(`[VideoEditor] Membangun urutan playlist dan file subtitle...`);
       let listContent = '';
-      let srtContent = '';
+      let assContent = getAssHeader(subtitleStyle || 'Bold Pop', targetW, targetH);
       let currentTime = 0;
 
       // Urutkan ulang berdasarkan index (karena eksekusi paralel tidak menjamin urutan selesai)
@@ -175,9 +241,9 @@ export class VideoEditor {
         listContent += `file 'scene_mixed_${i}.mp4'\n`;
 
         if (res.text) {
-           const startTime = formatSrtTime(currentTime + 0.2);
-           const endTime = formatSrtTime(currentTime + SCENE_DURATION - 0.2);
-           srtContent += `${i + 1}\n${startTime} --> ${endTime}\n${res.text}\n\n`;
+           const assStart = formatAssTime(currentTime + 0.2);
+           const assEnd = formatAssTime(currentTime + SCENE_DURATION - 0.2);
+           assContent += `Dialogue: 0,${assStart},${assEnd},Default,,0,0,0,,{\\fscx120\\fscy120\\t(0,200,\\fscx100\\fscy100)}${res.text}\n`;
         }
         currentTime += SCENE_DURATION;
       }
@@ -185,8 +251,8 @@ export class VideoEditor {
       const listFilePath = path.join(tempDir, 'list.txt');
       fs.writeFileSync(listFilePath, listContent.replace(/\\n/g, '\n'));
       
-      const srtPath = path.join(tempDir, 'subs.srt');
-      fs.writeFileSync(srtPath, srtContent.replace(/\\n/g, '\n'));
+      const assPath = path.join(tempDir, 'subs.ass');
+      fs.writeFileSync(assPath, assContent.replace(/\\n/g, '\n'));
 
       // ------------------------------------------------------------------
       // FASE 3: RENDERING FFmpeg (PENJAHITAN AKHIR)
@@ -198,11 +264,11 @@ export class VideoEditor {
       await execAsync(`ffmpeg -y -f concat -safe 0 -i list.txt -c copy concat.mp4`, { cwd: tempDir });
 
       console.log(`[VideoEditor] Menerapkan gaya teks ala CapCut dan Audio BGM...`);
-      const style = "FontName=Arial,FontSize=22,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2.5,Shadow=1.5,Alignment=2,MarginV=25";
+      
       
       // TODO: Implementasi background job queue (seperti BullMQ) atau worker threads untuk proses rendering ini 
       // di masa depan, agar tidak memblokir event loop Node.js dan menaikkan skalabilitas server.
-      const ffmpegCmd = `ffmpeg -y -i concat.mp4 -i bgm.mp3 -filter_complex "[0:v]scale=trunc(iw/2)*2:trunc(ih/2)*2,subtitles=subs.srt:force_style='${style}'[v];[1:a]volume=0.3[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]" -map "[v]" -map "[a]" -c:v libx264 -pix_fmt yuv420p -preset fast -crf 23 -c:a aac -b:a 128k -shortest "${finalVideoPath}"`;
+      const ffmpegCmd = `ffmpeg -y -i concat.mp4 -i bgm.mp3 -filter_complex "[0:v]subtitles=subs.ass[v];[1:a]volume=0.3[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]" -map "[v]" -map "[a]" -c:v libx264 -pix_fmt yuv420p -preset fast -crf 23 -c:a aac -b:a 128k -shortest "${finalVideoPath}"`;
       
       await execAsync(ffmpegCmd, { cwd: tempDir });
 

@@ -7,6 +7,8 @@ import { projects } from "../../../server/orchestrator";
 import { FAL_MODELS, FAL_TIER_META, FAL_TIER_DEFAULTS, getFalModel, FalTier } from "../../../server/falModelConfig";
 import { CreditService } from "../../../server/creditService";
 import { keyRotator } from "../../../server/keyRotator";
+import { db } from '../../db/index';
+import { users, projects as projectsTable } from '../../db/schema';
 
 interface ProviderConfig {
   id: string;
@@ -126,7 +128,7 @@ export class FounderService {
   private static llmEngine: LlmEngineOption = 'gemini-1.5-pro';
   private static primaryVideoEngine: VideoEngineOption = (process.env.PRIMARY_VIDEO_ENGINE as VideoEngineOption) || 'byteplus';
   private static flags: Record<string, boolean> = {
-    ambient_clap_activation: true,
+    ambient_clap_activation: false,
     voice_output: true,
     production_mock_provider: true,
     hermes_intelligence: true,
@@ -183,10 +185,10 @@ export class FounderService {
     lastTested?: string;
     status?: 'READY' | 'NOT_CONFIGURED' | 'ERROR';
   } = {
-    apiKey: process.env.GEMINI_API_KEY || '',
-    model: 'gemini-3.1-flash-image',
-    endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateImages',
-    status: process.env.GEMINI_API_KEY ? 'READY' : 'NOT_CONFIGURED'
+    apiKey: process.env.FAL_KEY || '',
+    model: 'fal-ai/nano-banana-2',
+    endpoint: 'https://api.fal.ai/v1',
+    status: process.env.FAL_KEY ? 'READY' : 'NOT_CONFIGURED'
   };
 
   private static customVeoConfig: {
@@ -302,11 +304,11 @@ export class FounderService {
   }
 
   static getGeminiBananaConfig() {
-    const key = process.env.GEMINI_API_KEY || process.env.GEMINI_MANUAL_API_KEY || (this.customGeminiBananaConfig.apiKey?.startsWith('AQ.') ? '' : this.customGeminiBananaConfig.apiKey) || '';
+    const key = process.env.FAL_KEY || (this.customGeminiBananaConfig.apiKey?.startsWith('AQ.') ? '' : this.customGeminiBananaConfig.apiKey) || '';
     return {
       apiKey: key,
-      model: this.customGeminiBananaConfig.model || 'gemini-3.1-flash-image',
-      endpoint: this.customGeminiBananaConfig.endpoint || 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateImages',
+      model: this.customGeminiBananaConfig.model || 'fal-ai/nano-banana-2',
+      endpoint: this.customGeminiBananaConfig.endpoint || 'https://api.fal.ai/v1',
       status: key ? 'READY' : 'NOT_CONFIGURED'
     };
   }
@@ -398,7 +400,7 @@ export class FounderService {
     return { success: true, engine: this.customGptImage2Config.engine };
   }
 
-  static getPlatformConfig() {
+  static async getPlatformConfig() {
     const soraConfigured = !!(this.customSoraConfig.apiKey || process.env.SORA_API_KEY);
     const soraStatus = this.customSoraConfig.status || (soraConfigured ? 'READY' : 'NOT_CONFIGURED');
     
@@ -426,13 +428,13 @@ export class FounderService {
       },
       {
         id: 'gemini_banana',
-        name: 'Google Gemini Banana (Imagen 3)',
+        name: 'Nano Banana 2 (Google Gemini / Imagen 3)',
         type: 'IMAGE_GEN',
-        status: this.customGeminiBananaConfig.status || (process.env.GEMINI_API_KEY ? 'READY' : 'NOT_CONFIGURED'),
-        configured: !!(this.customGeminiBananaConfig.apiKey || process.env.GEMINI_API_KEY),
-        maskedKey: this.maskKey(this.customGeminiBananaConfig.apiKey || process.env.GEMINI_API_KEY),
-        model: this.customGeminiBananaConfig.model || 'gemini-3.1-flash-image',
-        endpoint: this.customGeminiBananaConfig.endpoint || 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateImages',
+        status: this.customGeminiBananaConfig.status || (process.env.FAL_KEY ? 'READY' : 'NOT_CONFIGURED'),
+        configured: !!(this.customGeminiBananaConfig.apiKey || process.env.FAL_KEY),
+        maskedKey: this.maskKey(this.customGeminiBananaConfig.apiKey || process.env.FAL_KEY),
+        model: this.customGeminiBananaConfig.model || 'fal-ai/nano-banana-2',
+        endpoint: this.customGeminiBananaConfig.endpoint || 'https://api.fal.ai/v1',
         lastTested: this.customGeminiBananaConfig.lastTested
       },
       {
@@ -567,18 +569,86 @@ export class FounderService {
       },
     ];
 
+    // Fetch real database records to compute real metrics
+    const usersList = await db.select().from(users);
+    const projectsList = await db.select().from(projectsTable);
+
+    const totalUsers = usersList.length;
+
+    // Calculate growth percent week-over-week
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    let usersThisWeek = 0;
+    let usersPrevWeek = 0;
+    let usersBeforeTwoWeeks = 0;
+
+    for (const u of usersList) {
+      const created = u.createdAt ? new Date(u.createdAt) : null;
+      if (!created) {
+        usersBeforeTwoWeeks++;
+        continue;
+      }
+      if (created >= oneWeekAgo) {
+        usersThisWeek++;
+      } else if (created >= twoWeeksAgo) {
+        usersPrevWeek++;
+      } else {
+        usersBeforeTwoWeeks++;
+      }
+    }
+
+    const totalUsersBeforeThisWeek = usersPrevWeek + usersBeforeTwoWeeks;
+    let userGrowthPercent: number | null = null;
+    if (totalUsersBeforeThisWeek > 0) {
+      userGrowthPercent = (usersThisWeek / totalUsersBeforeThisWeek) * 100;
+    }
+
+    // Active Render Jobs count
     let activeRenderJobs = 0;
     for (const project of projects.values()) {
       if ((project.status as string) === 'RENDERING' || (project.status as string) === 'PRODUCING') {
         activeRenderJobs++;
       }
     }
+    // Also include DB status
+    for (const p of projectsList) {
+      if (p.status === 'RENDERING' || p.status === 'PRODUCING') {
+        if (!projects.has(p.id)) {
+          activeRenderJobs++;
+        }
+      }
+    }
+
+    // Calculate dynamic revenue in IDR based on real active credits & packages
+    let totalCreditsCurrentlyHeld = 0;
+    for (const u of usersList) {
+      if (u.role !== 'founder') {
+        totalCreditsCurrentlyHeld += (u.credits || 0);
+      }
+    }
+    let totalRenders = 0;
+    for (const p of projectsList) {
+      if (p.status === 'COMPLETED' || p.status === 'RENDERING' || p.status === 'PRODUCING') {
+        totalRenders++;
+      }
+    }
+    const totalCreditsSpent = totalRenders * 60; // Estimated 60 credits average spent per rendered video
+    const totalCreditsIssued = totalCreditsCurrentlyHeld + totalCreditsSpent;
+    const totalRevenueIDR = totalCreditsIssued * 460; // Average IDR rate of Rp 460 per credit
+
+    // Calculate dynamic fal.ai API cost in USD (average $0.80 per rendered video)
+    const apiCostFalUSD = totalRenders * 0.80;
+    // Calculate dynamic Gemini API cost estimation ($0.01 per user + $0.05 per render)
+    const apiCostGeminiUSD = (totalUsers * 0.01) + (totalRenders * 0.05);
 
     const metrics = {
-      totalUsers: 1420 + projects.size,
-      totalRevenueUSD: 3450.00 + (projects.size * 1.5),
-      apiCostRunwayUSD: 412.50 + (projects.size * 0.8),
-      apiCostGeminiUSD: 45.20 + (projects.size * 0.1),
+      totalUsers,
+      userGrowthPercent,
+      totalRevenueIDR,
+      apiCostFalUSD,
+      apiCostGeminiUSD,
       activeRenderJobs
     };
 

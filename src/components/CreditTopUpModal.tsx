@@ -40,11 +40,11 @@ interface CreditTopUpModalProps {
 }
 
 /**
- * STRUKTUR HARGA & EKONOMI KREDIT SEHAT (VEODOC & KEYFRAME)
- * 1 Kredit = Rp 500
- * Biaya Imagen / Keyframe = 1-2 Kredit (Rp 500 - Rp 1.000)
- * Biaya Veo AI Scene Video 5-10s = 8-10 Kredit (Rp 4.000 - Rp 5.000 per scene)
- * 1 Video Lengkap (4 Scene) = 32-40 Kredit (Rp 16.000 - Rp 20.000)
+ * STRUKTUR HARGA & EKONOMI KREDIT SEHAT NEURONA AI
+ * 1 Kredit = Rp 420 - Rp 500 (tergantung paket)
+ * Biaya Gambar Tier Standard (Nano Banana 2 / Flux) = 15 Kredit / gambar
+ * Biaya Scene Video AI (Wan 2.1 / Kling / MiniMax) = 45 Kredit / scene (5 detik)
+ * 1 Proyek Studio Complete (4 Scene: 4 Gambar + 4 Video) = ~240 - 280 Kredit
  */
 export const PRICING_PACKAGES = [
   {
@@ -55,11 +55,11 @@ export const PRICING_PACKAGES = [
     priceIdr: 'Rp 50.000',
     priceNumber: 50000,
     costPerCredit: 'Rp 500/kredit',
-    description: 'Cukup untuk 100 Keyframe Gambar atau ~10-12 Scene Video Veo.',
+    description: 'Estimasi ~6 Gambar HD (15 CR) ATAU ~2 Scene Video AI (45 CR).',
     features: [
-      '100 Saldo Kredit Veo & Imagen',
-      'Storyboard & Naskah Bebas Pulsa (Gratis)',
-      'Konsistensi Karakter Wajah & Seed',
+      '100 Saldo Kredit AI Video & Image',
+      'Storyboard & Naskah Gratis Tanpa Batas',
+      'Estimasi ~6 Gambar ATAU ~2 Scene Video',
       'Download Video Full HD 1080p'
     ],
     popular: false,
@@ -73,11 +73,11 @@ export const PRICING_PACKAGES = [
     priceIdr: 'Rp 115.000',
     priceNumber: 115000,
     costPerCredit: 'Rp 460/kredit (Diskon 8%)',
-    description: 'Pilihan pas untuk Affiliate & Content Creator harian (6-8 Video Full).',
+    description: 'Pilihan pas untuk Affiliate & Content Creator (~16 Gambar ATAU ~5 Scene Video).',
     features: [
-      '250 Saldo Kredit Video Generatif',
-      'Estimasi 25-30 Scene Video Veo / Runway',
-      'Prioritas Antrean Render Server',
+      '250 Saldo Kredit AI Video & Image',
+      'Estimasi ~16 Gambar ATAU ~5 Scene Video',
+      'Cukup ~1 Proyek Studio Animasi/Edukasi (4 Scene) ATAU sebagian proyek Affiliate (~3-4 scene, +30 CR untuk lengkap)',
       'Voiceover TryAudio & Subtitle Otomatis'
     ],
     popular: true,
@@ -91,12 +91,12 @@ export const PRICING_PACKAGES = [
     priceIdr: 'Rp 210.000',
     priceNumber: 210000,
     costPerCredit: 'Rp 420/kredit (Diskon 16%)',
-    description: 'Untuk produksi film pendek, seri animasi TikTok & video iklan masif.',
+    description: 'Untuk produksi seri animasi, konten edukasi, & iklan masif (~33 Gambar ATAU ~11 Scene Video).',
     features: [
       '500 Saldo Kredit High-Speed',
-      'Estimasi 55-65 Scene Video Cinematic',
-      'Direct Multi-Scene Rendering Cluster',
-      'Lisensi Komersial & Resolusi Ultra 4K'
+      'Estimasi ~33 Gambar ATAU ~11 Scene Video',
+      'Cukup ~2 Proyek Animasi/Edukasi (4 Scene) ATAU ~1 Proyek Affiliate Complete + sisa kredit',
+      'Lisensi Komersial & Resolusi Ultra 1080p/4K'
     ],
     popular: false,
     color: 'border-purple-500/50 bg-purple-950/20 text-purple-300'
@@ -115,6 +115,9 @@ export const CreditTopUpModal: React.FC<CreditTopUpModalProps> = ({
   const [step, setStep] = useState<'select' | 'payment'>('select');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isSuccessToast, setIsSuccessToast] = useState(false);
+  const [showCompareTable, setShowCompareTable] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState<boolean>(false);
+  const [showRefundModal, setShowRefundModal] = useState<boolean>(false);
 
   // Payment config from server
   const [paymentConfig, setPaymentConfig] = useState<PaymentConfigData>({
@@ -204,11 +207,11 @@ Mohon bantuannya untuk menambahkan kredit ke akun saya. Terima kasih! 🚀`;
                 <h2 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider font-mono">
                   Top Up Saldo Kredit NEURONA AI
                 </h2>
-                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-mono font-bold">
-                  VEO ENGINE
+                <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-[10px] font-mono font-bold">
+                  AI VIDEO & IMAGE ENGINE
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-300">
                 Storyboard naskah gratis sepuasnya. Kredit hanya terpotong saat generate gambar & scene video AI.
               </p>
             </div>
@@ -234,15 +237,15 @@ Mohon bantuannya untuk menambahkan kredit ke akun saya. Terima kasih! 🚀`;
           {step === 'select' ? (
             <>
               {/* Cost Transparency Banner */}
-              <div className="p-3.5 rounded-xl bg-cyan-950/30 border border-cyan-500/30 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-cyan-200 gap-2">
-                <div className="flex items-center gap-2">
-                  <Sparkles size={16} className="text-cyan-400 shrink-0" />
-                  <span>
-                    <strong>Kalkulasi Sehat:</strong> 1 Scene Video Veo AI = <strong>~8-10 Kredit</strong> (Rp 4.000 - Rp 5.000). Sangat hemat & efisien untuk kreator.
+              <div className="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-500/40 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-cyan-200 gap-2">
+                <div className="flex items-start sm:items-center gap-2">
+                  <Sparkles size={16} className="text-cyan-400 shrink-0 mt-0.5 sm:mt-0" />
+                  <span className="leading-relaxed">
+                    <strong>Kalkulasi Realistis:</strong> 1 Gambar HD (15 CR) = Rp 3.000 | 1 Scene Video AI (45 CR) = Rp 9.000. <strong>Storyboard & Naskah Gratis Tanpa Batas!</strong>
                   </span>
                 </div>
-                <div className="text-[10px] font-mono text-cyan-400/80 shrink-0">
-                  Rate: Rp 500 / Kredit
+                <div className="text-[10px] font-mono text-cyan-300 font-bold bg-cyan-900/60 px-2.5 py-1 rounded border border-cyan-500/30 shrink-0">
+                  Rate: Rp 420 - Rp 500 / Kredit
                 </div>
               </div>
 
@@ -261,7 +264,7 @@ Mohon bantuannya untuk menambahkan kredit ke akun saya. Terima kasih! 🚀`;
                       }`}
                     >
                       {pkg.popular && (
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-rose-500 text-slate-950 text-[9px] font-black tracking-widest uppercase shadow">
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 text-[9px] font-black tracking-widest uppercase shadow-md shadow-amber-500/20 z-10">
                           {pkg.badge}
                         </div>
                       )}
@@ -269,23 +272,23 @@ Mohon bantuannya untuk menambahkan kredit ke akun saya. Terima kasih! 🚀`;
                       <div className="space-y-3">
                         <div className="flex items-center justify-between pt-1">
                           <span className="text-xs font-bold text-white uppercase font-mono">{pkg.name}</span>
-                          <span className="px-2 py-0.5 rounded bg-black/40 text-[10px] font-mono text-amber-400 border border-amber-500/20">
+                          <span className="px-2 py-0.5 rounded bg-black/40 text-[10px] font-mono text-amber-400 border border-amber-500/20 font-bold">
                             +{pkg.credits} CR
                           </span>
                         </div>
 
                         <div>
                           <div className="text-xl font-black text-white font-mono">{pkg.priceIdr}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">{pkg.costPerCredit}</div>
+                          <div className="text-[10px] text-slate-300 font-mono font-semibold">{pkg.costPerCredit}</div>
                         </div>
 
-                        <p className="text-[11px] text-slate-300 leading-snug">{pkg.description}</p>
+                        <p className="text-[11px] text-slate-200 leading-snug">{pkg.description}</p>
 
-                        <div className="border-t border-white/5 pt-2.5 space-y-1.5 text-[10px] text-slate-300">
+                        <div className="border-t border-white/10 pt-2.5 space-y-1.5 text-[10px] text-slate-200">
                           {pkg.features.map((feat, idx) => (
                             <div key={idx} className="flex items-start gap-1.5">
                               <Check size={12} className="text-emerald-400 shrink-0 mt-0.5" />
-                              <span>{feat}</span>
+                              <span className="leading-tight">{feat}</span>
                             </div>
                           ))}
                         </div>
@@ -312,28 +315,118 @@ Mohon bantuannya untuk menambahkan kredit ke akun saya. Terima kasih! 🚀`;
                 })}
               </div>
 
-              {/* Demo test button for immediate preview */}
-              <div className="pt-2 flex items-center justify-between border-t border-white/5 text-[11px] text-gray-400">
-                <div className="flex items-center gap-1.5">
-                  <ShieldCheck size={14} className="text-emerald-400" />
-                  <span>Jaminan saldo kredit masuk instan setelah konfirmasi</span>
-                </div>
+              {/* Side-by-Side Comparison Toggle */}
+              <div className="pt-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    onAddCredits(100);
-                    setIsSuccessToast(true);
-                    neuronaVoice.playChime('SUCCESS');
-                    neuronaVoice.speak('Demo top up 100 kredit berhasil ditambahkan!');
-                    setTimeout(() => {
-                      setIsSuccessToast(false);
-                      onClose();
-                    }, 1200);
-                  }}
-                  className="text-cyan-400 hover:text-cyan-300 font-mono text-[10px] underline cursor-pointer"
+                  onClick={() => setShowCompareTable(!showCompareTable)}
+                  className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-850 border border-white/10 text-xs font-mono text-cyan-300 flex items-center justify-center gap-2 transition cursor-pointer"
                 >
-                  [Mode Demo: +100 Kredit Langsung]
+                  <Info size={14} />
+                  <span>{showCompareTable ? 'Sembunyikan Tabel Perbandingan Paket' : 'Lihat Tabel Perbandingan Semua Paket (Side-by-Side)'}</span>
                 </button>
+
+                {showCompareTable && (
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-white/10 bg-slate-950/80 p-3 animate-in fade-in duration-200">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead>
+                        <tr className="border-b border-white/10 text-slate-400 uppercase text-[10px]">
+                          <th className="p-2">Fitur / Parameter</th>
+                          <th className="p-2 text-cyan-300">Top Up Mini</th>
+                          <th className="p-2 text-amber-300">Kreator Aktif</th>
+                          <th className="p-2 text-purple-300">Studio Master</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 text-slate-200 text-[11px]">
+                        <tr>
+                          <td className="p-2 font-bold">Total Kredit</td>
+                          <td className="p-2">100 CR</td>
+                          <td className="p-2 text-amber-300 font-bold">250 CR</td>
+                          <td className="p-2 text-purple-300 font-bold">500 CR</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 font-bold">Harga Paket</td>
+                          <td className="p-2">Rp 50.000</td>
+                          <td className="p-2">Rp 115.000</td>
+                          <td className="p-2">Rp 210.000</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 font-bold">Biaya per Kredit</td>
+                          <td className="p-2">Rp 500/CR</td>
+                          <td className="p-2 text-emerald-400">Rp 460/CR (-8%)</td>
+                          <td className="p-2 text-emerald-400">Rp 420/CR (-16%)</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 font-bold">Estimasi Gambar HD (15 CR)</td>
+                          <td className="p-2">~6 Gambar</td>
+                          <td className="p-2">~16 Gambar</td>
+                          <td className="p-2">~33 Gambar</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 font-bold">Estimasi Video Scene (45 CR)</td>
+                          <td className="p-2">~2 Scene</td>
+                          <td className="p-2">~5 Scene</td>
+                          <td className="p-2">~11 Scene</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 font-bold text-cyan-400">Studio Animasi (60 CR/Scene)</td>
+                          <td className="p-2 text-slate-400">~1.6 Scene</td>
+                          <td className="p-2 text-emerald-400 font-bold">1 Proyek Complete (Sisa 10 CR)</td>
+                          <td className="p-2 text-emerald-400 font-bold">2 Proyek Complete (Sisa 20 CR)</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 font-bold text-violet-400">Studio Edukasi (60 CR/Scene)</td>
+                          <td className="p-2 text-slate-400">~1.6 Scene</td>
+                          <td className="p-2 text-emerald-400 font-bold">1 Proyek Complete (Sisa 10 CR)</td>
+                          <td className="p-2 text-emerald-400 font-bold">2 Proyek Complete (Sisa 20 CR)</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 font-bold text-amber-400">Studio Affiliate (70 CR/Scene)</td>
+                          <td className="p-2 text-slate-400">~1.4 Scene</td>
+                          <td className="p-2 text-amber-300 font-semibold">~3.5 Scene (Butuh +30 CR)</td>
+                          <td className="p-2 text-emerald-400 font-bold">1 Proyek Complete (Sisa 220 CR)</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 font-bold">Storyboard & Naskah AI</td>
+                          <td className="p-2 text-emerald-400">Gratis Sepuasnya</td>
+                          <td className="p-2 text-emerald-400">Gratis Sepuasnya</td>
+                          <td className="p-2 text-emerald-400">Gratis Sepuasnya</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 font-bold">Masa Berlaku Kredit</td>
+                          <td className="p-2 text-cyan-300">Tanpa Hangus (Selamanya)</td>
+                          <td className="p-2 text-cyan-300">Tanpa Hangus (Selamanya)</td>
+                          <td className="p-2 text-cyan-300">Tanpa Hangus (Selamanya)</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Guarantees & Footer Policies */}
+              <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-300 gap-2">
+                <div className="flex items-center gap-1.5">
+                  <ShieldCheck size={14} className="text-emerald-400 shrink-0" />
+                  <span>Jaminan saldo kredit masuk instan setelah konfirmasi admin</span>
+                </div>
+                <div className="flex items-center gap-3 font-mono text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setShowTermsModal(true)}
+                    className="text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+                  >
+                    Syarat & Ketentuan
+                  </button>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowRefundModal(true)}
+                    className="text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+                  >
+                    Kebijakan Refund
+                  </button>
+                </div>
               </div>
             </>
           ) : (
@@ -424,6 +517,53 @@ Mohon bantuannya untuk menambahkan kredit ke akun saya. Terima kasih! 🚀`;
           )}
 
         </div>
+
+        {/* Terms & Conditions Modal */}
+        {showTermsModal && (
+          <div className="fixed inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 text-slate-200 space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <h3 className="font-bold text-white font-mono text-sm uppercase">Syarat & Ketentuan Kredit Neurona AI</h3>
+                <button onClick={() => setShowTermsModal(false)} className="text-gray-400 hover:text-white"><X size={18} /></button>
+              </div>
+              <div className="space-y-3 text-xs leading-relaxed max-h-[60vh] overflow-y-auto">
+                <p><strong>1. Penggunaan Kredit:</strong> Kredit yang dibeli dapat digunakan untuk semua model AI (Wan 2.1, Kling, MiniMax, Nano Banana 2) di platform Neurona AI.</p>
+                <p><strong>2. Masa Berlaku:</strong> Kredit Neurona AI <strong>TIDAK MEMILIKI MASA HANGUS (Tanpa Expiry Date)</strong>. Saldo kredit yang belum terpakai akan tetap aman di akun Anda selamanya.</p>
+                <p><strong>3. Biaya Layanan:</strong> Penulisan naskah & pembuatan storyboard AI adalah <strong>100% Gratis Tanpa Batas</strong>. Kredit hanya terpotong saat memproses pembuatan gambar keyframe atau render video final.</p>
+                <p><strong>4. Akses Fitur:</strong> Semua fitur studio (Affiliate, Animasi 3D, Edukasi) tersedia untuk seluruh pemegang saldo kredit aktif.</p>
+              </div>
+              <button 
+                onClick={() => setShowTermsModal(false)} 
+                className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 font-bold font-mono text-xs text-white rounded-xl"
+              >
+                Saya Mengerti
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Refund Policy Modal */}
+        {showRefundModal && (
+          <div className="fixed inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 text-slate-200 space-y-4 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <h3 className="font-bold text-white font-mono text-sm uppercase">Kebijakan Garansi Refund Kredit</h3>
+                <button onClick={() => setShowRefundModal(false)} className="text-gray-400 hover:text-white"><X size={18} /></button>
+              </div>
+              <div className="space-y-3 text-xs leading-relaxed max-h-[60vh] overflow-y-auto">
+                <p><strong>1. Garansi Gagal Render:</strong> Jika proses render video atau pembuatan gambar mengalami error dari sisi server/API model AI, saldo kredit Anda akan <strong>Otomatis Di-refund (Dikembalikan 100%)</strong> ke akun Anda.</p>
+                <p><strong>2. Pembatalan Pembelian:</strong> Pembelian paket kredit yang sudah berhasil dikonfirmasi dan ditambahkan ke akun bersifat final dan tidak dapat diuangkan kembali (non-refundable to cash), namun kredit tidak akan pernah hangus.</p>
+                <p><strong>3. Bantuan Kendala:</strong> Jika terdapat ketidaksesuaian saldo kredit, tim Customer Support kami siap membantu 24/7 melalui WhatsApp Admin.</p>
+              </div>
+              <button 
+                onClick={() => setShowRefundModal(false)} 
+                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 font-bold font-mono text-xs text-white rounded-xl"
+              >
+                Paham & Setuju
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Success Toast */}
         {isSuccessToast && (

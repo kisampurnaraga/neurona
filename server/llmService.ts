@@ -771,7 +771,8 @@ Kembalikan JSON dengan struktur baku:
       "prompt_video_runway": "Character identity locked: ... Setting locked: ... Visual Scene: ...",
       "promptTextToImage": "Character identity locked: ... Setting locked: ... Visual Scene: ...",
       "voiceover_script": "Naskah narasi suara adegan...",
-      "text_overlay": "TEKS HOOK DI LAYAR"
+      "text_overlay": "TEKS HOOK DI LAYAR",
+      "featuresProduct": true
     }
   ]
 }
@@ -790,7 +791,7 @@ FORMAT OUTPUT MUTLAK: JSON`;
               messages: [
                 { 
                   role: "system", 
-                  content: `You are SINTA, NEURONA Master Storyboard & Product/Character Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' (caption, hashtags, voiceProfile) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[] }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with an Action-Driven Anchor linking subject and product in the first 20 tokens: 'Photorealistic 35mm commercial photo of hands holding [Product name and physical details] at chest level, presented by [Model description], medium close-up product shot, 50mm lens f/2.8, authentic skin texture with pores, clean dark backdrop, cool blue accent edge lighting, sharp focus, 8k resolution'. DO NOT include negative phrases like 'preserve exact', 'do not alter', or 'no distortion' in the positive prompt.` 
+                  content: `You are SINTA, NEURONA Master Storyboard & Product/Character Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' (caption, hashtags, voiceProfile) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[], featuresProduct: boolean }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with an Action-Driven Anchor linking subject and product in the first 20 tokens: 'Photorealistic 35mm commercial photo of hands holding [Product name and physical details] at chest level, presented by [Model description], medium close-up product shot, 50mm lens f/2.8, authentic skin texture with pores, clean dark backdrop, cool blue accent edge lighting, sharp focus, 8k resolution'. DO NOT include negative phrases like 'preserve exact', 'do not alter', or 'no distortion' in the positive prompt.` 
                 },
                 { role: "user", content: storyboardPrompt }
               ],
@@ -1038,7 +1039,7 @@ FORMAT OUTPUT MUTLAK: JSON`;
                   messages: [
                     { 
                       role: "system", 
-                      content: `You are SINTA, NEURONA Master Storyboard & Product Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' ({ caption, hashtags, tiktok_caption, instagram_caption, youtube_caption, hashtags_tiktok, hashtags_instagram, hashtags_youtube, voiceProfile }) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[] }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with an Action-Driven Anchor linking subject and product in the first 20 tokens: 'Photorealistic 35mm commercial photo of hands holding [Product name and physical details] at chest level, presented by [Model description], medium close-up product shot, 50mm lens f/2.8, authentic skin texture with pores, clean dark backdrop, cool blue accent edge lighting, sharp focus, 8k resolution'. DO NOT include negative phrases like 'preserve exact', 'do not alter', or 'no distortion' in the positive prompt.` 
+                      content: `You are SINTA, NEURONA Master Storyboard & Product Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' ({ caption, hashtags, tiktok_caption, instagram_caption, youtube_caption, hashtags_tiktok, hashtags_instagram, hashtags_youtube, voiceProfile }) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[], featuresProduct: boolean }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with an Action-Driven Anchor linking subject and product in the first 20 tokens: 'Photorealistic 35mm commercial photo of hands holding [Product name and physical details] at chest level, presented by [Model description], medium close-up product shot, 50mm lens f/2.8, authentic skin texture with pores, clean dark backdrop, cool blue accent edge lighting, sharp focus, 8k resolution'. DO NOT include negative phrases like 'preserve exact', 'do not alter', or 'no distortion' in the positive prompt.` 
                     },
                     { role: "user", content: storyboardPrompt }
                   ],

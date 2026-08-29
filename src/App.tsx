@@ -70,6 +70,7 @@ import { HolographicHudNode } from './components/HolographicHudNode';
 import { LandingPage } from './components/LandingPage';
 import { AuthModal, UserSessionData } from './components/AuthModal';
 import { UserProfileModal } from './components/UserProfileModal';
+import { CaptionStyleSelectorModal } from './components/CaptionStyleSelectorModal';
 import { neuronaVoice } from './utils/speechSynthesis';
 
 type CoreState = 'IDLE' | 'AWAKENING' | 'LISTENING' | 'THINKING' | 'EXECUTING' | 'WAITING_FOR_USER' | 'SUCCESS' | 'ERROR';
@@ -367,6 +368,7 @@ export default function App() {
     }
   }, [project, isStoryboardMatrixOpen]);
   const [isFinalDashboardOpen, setIsFinalDashboardOpen] = useState(false);
+  const [showCaptionModal, setShowCaptionModal] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [copiedScript, setCopiedScript] = useState(false);
   const [socialPlatformTab, setSocialPlatformTab] = useState<'tiktok' | 'instagram' | 'youtube'>('tiktok');
@@ -527,25 +529,80 @@ export default function App() {
     document.body.removeChild(a);
   };
 
-  const handleFileUpload = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-
-    Array.from(files).forEach(file => {
-      const isVideo = file.type.startsWith('video/');
+  const resizeImageFile = (file: File, maxWidth = 1024, maxHeight = 1024, quality = 0.7): Promise<string> => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
-        const url = e.target?.result as string;
-        const newAsset: ProductAsset = {
-          id: Math.random().toString(36).substring(2, 9),
-          type: isVideo ? 'VIDEO' : 'IMAGE',
-          url,
-          name: file.name,
-          size: file.size
+        const img = new Image();
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > maxWidth || height > maxHeight) {
+            const ratio = Math.min(maxWidth / width, maxHeight / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+          
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return resolve(e.target?.result as string);
+          
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
         };
-        setAttachedAssets(prev => [...prev, newAsset]);
+        img.onerror = () => resolve(e.target?.result as string);
+        img.src = e.target?.result as string;
       };
+      reader.onerror = reject;
       reader.readAsDataURL(file);
     });
+  };
+
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    for (const file of Array.from(files)) {
+      const isVideo = file.type.startsWith('video/');
+      
+      if (isVideo) {
+        if (file.size > 800 * 1024) {
+           alert(`Video ${file.name} is too large. Max 800KB due to proxy limits for videos.`);
+           continue;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const url = e.target?.result as string;
+          const newAsset: ProductAsset = {
+            id: Math.random().toString(36).substring(2, 9),
+            type: 'VIDEO',
+            url,
+            name: file.name,
+            size: file.size
+          };
+          setAttachedAssets(prev => [...prev, newAsset]);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        try {
+          // Resize image heavily to avoid 413 Payload Too Large on Nginx
+          const url = await resizeImageFile(file, 800, 800, 0.7);
+          const newAsset: ProductAsset = {
+            id: Math.random().toString(36).substring(2, 9),
+            type: 'IMAGE',
+            url,
+            name: file.name,
+            size: Math.round(url.length * 0.75) // approximate new size
+          };
+          setAttachedAssets(prev => [...prev, newAsset]);
+        } catch (e) {
+          console.error("Failed to resize image", e);
+        }
+      }
+    }
   };
 
   const removeAttachedAsset = (id: string) => {
@@ -627,11 +684,11 @@ export default function App() {
     }
   };
 
-  const handleApprove = async () => {
+  const handleApprove = async (subtitleStyle?: string) => {
     if (!projectId) return;
     setIsThinking(true);
     try {
-      await fetch(`/api/projects/${projectId}/approve`, { method: 'POST' });
+      await fetch(`/api/projects/${projectId}/approve`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({subtitleStyle}) });
       neuronaVoice.speak("Izin disetujui. Tim Agen AI Indonesia sedang merender video.");
     } catch (e) {
       console.error(e);
@@ -795,10 +852,9 @@ export default function App() {
           setProject(update);
           setIsDraftingNewProject(false);
 
-          // Auto open Storyboard Matrix when storyboard is ready (50% milestone)
+          // Storyboard readiness tracked, auto-open delegated to the home hub interactive transition banner
           if ((update.status === 'AWAITING_APPROVAL' || (update.progress >= 50 && update.storyboard?.scenes?.length)) && hasAutoOpenedStoryboardRef.current !== update.id) {
             hasAutoOpenedStoryboardRef.current = update.id;
-            setIsStoryboardMatrixOpen(true);
           }
 
           // Vocal alert on key milestones
@@ -1110,6 +1166,7 @@ export default function App() {
               setPrompt("Tuliskan naskah video cinematic lengkap dengan hook, visual direction, dan voiceover");
               handleInteract("Tuliskan naskah video cinematic lengkap dengan hook, visual direction, dan voiceover");
             }}
+            onResetProject={() => { setProject(null); setProjectId(null); setIsStoryboardMatrixOpen(false); }}
             onOpenAudioStudio={() => {
               window.history.pushState({}, '', '/founder');
               setCurrentRoute('/founder');
@@ -1135,9 +1192,13 @@ export default function App() {
             onClose={() => setIsStoryboardMatrixOpen(false)}
             project={project}
             currentCredits={userCredits}
-            onApproveAndPay={() => {
+            onApproveAndPay={(cost, subtitleStyle) => {
               setIsStoryboardMatrixOpen(false);
-              handleApprove();
+              if (subtitleStyle) {
+                handleApprove(subtitleStyle);
+              } else {
+                setShowCaptionModal(true);
+              }
             }}
             onOpenTopUp={() => setIsCreditModalOpen(true)}
             onGenerateSceneImage={handleGenerateSceneImage}
@@ -1600,7 +1661,7 @@ export default function App() {
                     </button>
                     <button
                       id="btn-approve-storyboard"
-                      onClick={() => handleInteract("lanjut")}
+                      onClick={() => setShowCaptionModal(true)}
                       className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-indigo-500 hover:from-amber-300 hover:to-indigo-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 flex items-center gap-1.5 transition cursor-pointer"
                     >
                       <Play size={13} fill="currentColor" />

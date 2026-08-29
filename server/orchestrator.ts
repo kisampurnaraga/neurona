@@ -401,11 +401,13 @@ export function ensureStoryboardExists(project: ProductionProject): void {
 }
 
 export function saveProjects() {
-  // Sync map to PostgreSQL
+  // Sync map to SQLite
   (async () => {
     try {
       for (const [id, project] of projects.entries()) {
         const userId = (project as any).userId || 'default';
+        const showcaseEligible = (project as any).showcaseEligible ? true : false;
+        const showcaseOrder = typeof (project as any).showcaseOrder === 'number' ? (project as any).showcaseOrder : null;
         await db.insert(dbProjects).values({
           id,
           userId: userId,
@@ -413,6 +415,8 @@ export function saveProjects() {
           status: project.status || 'PENDING',
           videoType: project.videoType || 'AFFILIATE',
           finalVideoUrl: project.finalVideoUrl || null,
+          showcaseEligible,
+          showcaseOrder,
           data: JSON.stringify(project)
         }).onConflictDoUpdate({
           target: dbProjects.id,
@@ -421,6 +425,8 @@ export function saveProjects() {
             status: project.status || 'PENDING',
             videoType: project.videoType || 'AFFILIATE',
             finalVideoUrl: project.finalVideoUrl || null,
+            showcaseEligible,
+            showcaseOrder,
             data: JSON.stringify(project)
           }
         }).catch(err => console.error("DB Save Error (Project " + id + "):", err));
@@ -460,6 +466,8 @@ export function loadProjects() {
                 if (!s.qaIssues) s.qaIssues = [];
               });
             }
+            (parsed as any).showcaseEligible = row.showcaseEligible === true || (row.showcaseEligible as any) === 1 || Boolean((parsed as any).showcaseEligible);
+            (parsed as any).showcaseOrder = typeof row.showcaseOrder === 'number' ? row.showcaseOrder : (parsed as any).showcaseOrder ?? null;
             projects.set(row.id, parsed);
           } catch(e) {}
         }
@@ -937,6 +945,13 @@ export class ProductionOrchestrator {
         onLog: (source, msg, level) => appendLog(project, source, msg, level || 'INFO')
       });
 
+      // Transition to STORYBOARDING in UI
+      project.overallProgress = 35;
+      project.currentPhaseName = 'GATOTKACA: Menyusun visual adegan storyboard...';
+      updateTelemetry(project, 'SINTA', { status: 'ACTIVE', currentTask: 'Menyusun visual adegan storyboard...', progress: 60 });
+      projectEvents.emit(`update:${id}`, project);
+
+
       // If LLM returned custom profile and we do not have an explicit uploaded photo, merge it
       if (sbResult.data?.characterProfile && !charImg && !charVision) {
         project.characterProfile = sbResult.data.characterProfile;
@@ -1002,6 +1017,7 @@ export class ProductionOrchestrator {
             voiceOver: s.voiceOver || s.voiceover_script || '',
             promptTextToImage: lockedT2IPrompt,
             promptImageToVideo: lockedI2VPrompt,
+            featuresProduct: s.featuresProduct || s.features_product || false,
             styleKeywords: s.styleKeywords || [],
             status: 'PENDING',
             imageStatus: 'PENDING',
@@ -1646,7 +1662,7 @@ export class ProductionOrchestrator {
       projectEvents.emit(`update:${id}`, project);
       if (project.videoType === 'AFFILIATE') {
         scene.metadata = scene.metadata || {};
-        if (project.affiliateConfig?.productImages?.[0]) {
+        if (project.affiliateConfig?.productImages?.[0] && scene.featuresProduct) {
           scene.metadata.productImage = project.affiliateConfig.productImages[0];
         }
         if (project.characterProfile?.referenceImageUrl) {
@@ -1783,9 +1799,9 @@ export class ProductionOrchestrator {
                 projectEvents.emit(`update:${id}`, project);
                 if (project.videoType === 'AFFILIATE') {
                   scene.metadata = scene.metadata || {};
-                  if (project.affiliateConfig?.productImages?.[0]) {
-                    scene.metadata.productImage = project.affiliateConfig.productImages[0];
-                  }
+                  if (project.affiliateConfig?.productImages?.[0] && scene.featuresProduct) {
+          scene.metadata.productImage = project.affiliateConfig.productImages[0];
+        }
                   if (project.characterProfile?.referenceImageUrl) {
                     scene.metadata.characterImage = project.characterProfile.referenceImageUrl;
                   }
@@ -2065,13 +2081,14 @@ export class ProductionOrchestrator {
     }
   }
 
-  static async stitchMasterVideo(projectId: string): Promise<any> {
+  static async stitchMasterVideo(projectId: string, subtitleStyle?: string): Promise<any> {
     const project = projects.get(projectId);
     if (!project) throw new Error(`Project ${projectId} tidak ditemukan`);
 
     appendLog(project, 'TIMELINE', `Memulai fast re-stitch kesatuan video dari aset timeline...`, 'INFO');
     try {
-      const processResult = await VideoEditor.processProject(project);
+      const processStyle = subtitleStyle || (project as any).subtitleStyle;
+      const processResult = await VideoEditor.processProject(project, processStyle);
       const finalUrl = typeof processResult === 'string' ? processResult : processResult.finalVideoUrl;
       
       project.finalVideoUrl = finalUrl;

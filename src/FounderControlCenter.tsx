@@ -309,7 +309,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
     );
   }
 
-  const soraProvider = config.providers.find(p => p.id === 'sora');
+  const falProvider = config.providers.find(p => p.id === 'fal');
 
   return (
     <div className="relative flex flex-col md:flex-row h-screen w-full bg-[#050505] text-[#E0E0E0] font-sans overflow-hidden selection:bg-indigo-500/30">
@@ -361,7 +361,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
           />
           <MobileNavItem 
             icon={<Server size={16} />} 
-            label="Providers & Sora API" 
+            label="Providers & Fal.ai API" 
             active={activeTab === 'providers'} 
             onClick={() => { setActiveTab('providers'); setMobileMenuOpen(false); }} 
           />
@@ -429,7 +429,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
             icon={<Server size={16}/>} 
             label="Konfigurasi Agen AI" 
             active={activeTab === 'providers'} 
-            badge={!soraProvider?.configured ? "Setup Sora" : undefined}
+            badge={!falProvider?.configured ? "Setup Fal.ai" : undefined}
             onClick={() => setActiveTab('providers')} 
           />
           <NavItem 
@@ -518,21 +518,21 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
         {/* Scrollable View Area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6">
           
-          {/* Quick Notice Banner if Sora is not configured */}
-          {!soraProvider?.configured && (
+          {/* Quick Notice Banner if Fal.ai is not configured */}
+          {!falProvider?.configured && (
             <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="flex items-start sm:items-center gap-3">
                 <Film className="text-amber-400 shrink-0 mt-0.5 sm:mt-0" size={18} />
                 <div>
-                  <div className="text-xs font-bold text-amber-200">Sora Video API Belum Dikonfigurasi</div>
-                  <div className="text-[11px] text-amber-400/80">Masukkan API Key Sora agar Factory dapat beralih dari mode mock ke video generasi riil.</div>
+                  <div className="text-xs font-bold text-amber-200">Fal.ai Universal Video API Belum Dikonfigurasi</div>
+                  <div className="text-[11px] text-amber-400/80">Masukkan API Key Fal.ai agar sistem dapat beralih dari mode mock ke video generasi riil (Wan, Kling, Seedance).</div>
                 </div>
               </div>
               <button 
-                onClick={() => soraProvider && handleOpenConfigure(soraProvider)}
+                onClick={() => falProvider && handleOpenConfigure(falProvider)}
                 className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-lg uppercase tracking-wider transition-colors shrink-0 cursor-pointer"
               >
-                Konfigurasi Sora
+                Konfigurasi Fal.ai
               </button>
             </div>
           )}
@@ -546,16 +546,24 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                 <div className="bg-[#080808] border border-[#1a1a1a] p-4 rounded-xl">
                   <p className="text-[10px] text-gray-500 mb-1 font-bold uppercase tracking-widest">Total Pengguna</p>
                   <h3 className="text-xl font-bold font-mono text-white">{config.metrics?.totalUsers ?? 0}</h3>
-                  <span className="text-[10px] text-emerald-400 mt-1 inline-block">+12% minggu ini</span>
+                  {config.metrics?.userGrowthPercent !== undefined && config.metrics?.userGrowthPercent !== null ? (
+                    <span className="text-[10px] text-emerald-400 mt-1 inline-block">+{config.metrics.userGrowthPercent.toFixed(1)}% minggu ini</span>
+                  ) : (
+                    <span className="text-[10px] text-gray-500 mt-1 inline-block">Akun real aktif</span>
+                  )}
                 </div>
                 <div className="bg-[#080808] border border-[#1a1a1a] p-4 rounded-xl">
                   <p className="text-[10px] text-gray-500 mb-1 font-bold uppercase tracking-widest">Total Pendapatan</p>
-                  <h3 className="text-xl font-bold font-mono text-emerald-400">${(config.metrics?.totalRevenueUSD ?? 0).toFixed(2)}</h3>
-                  <span className="text-[10px] text-gray-500 mt-1 inline-block">Kredit dibeli</span>
+                  <h3 className="text-xl font-bold font-mono text-emerald-400">
+                    Rp {(config.metrics?.totalRevenueIDR ?? 0).toLocaleString('id-ID')}
+                  </h3>
+                  <span className="text-[10px] text-gray-500 mt-1 inline-block">Kredit top up real</span>
                 </div>
                 <div className="bg-[#080808] border border-[#1a1a1a] p-4 rounded-xl">
-                  <p className="text-[10px] text-gray-500 mb-1 font-bold uppercase tracking-widest">Cost API Runway</p>
-                  <h3 className="text-xl font-bold font-mono text-amber-400">${(config.metrics?.apiCostRunwayUSD ?? 0).toFixed(2)}</h3>
+                  <p className="text-[10px] text-gray-500 mb-1 font-bold uppercase tracking-widest">Cost API Fal & Gemini</p>
+                  <h3 className="text-xl font-bold font-mono text-amber-400">
+                    ${((config.metrics?.apiCostFalUSD ?? 0) + (config.metrics?.apiCostGeminiUSD ?? 0)).toFixed(2)}
+                  </h3>
                   <span className="text-[10px] text-red-400/80 mt-1 inline-block">Beban server render</span>
                 </div>
                 <div className="bg-[#080808] border border-[#1a1a1a] p-4 rounded-xl">
@@ -569,7 +577,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                 <MetricCard label="System Health" value={config.health.system} positive />
                 <MetricCard label="Database" value={config.health.database} positive />
-                <MetricCard label="Video Pipeline" value={soraProvider?.configured ? "SORA ACTIVE" : "MOCK ACTIVE"} />
+                <MetricCard label="Video Pipeline" value={config.primaryVideoEngine ? `${config.primaryVideoEngine.toUpperCase()} ACTIVE` : "MOCK ACTIVE"} />
                 <MetricCard label="Orchestrator" value={config.health.orchestrator} positive />
               </div>
 
@@ -638,7 +646,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                       <div>
                         <div className="text-xs font-mono text-gray-300">{key}</div>
                         <div className="text-[10px] text-gray-500 mt-0.5">
-                          {key === 'production_mock_provider' ? 'Simulate rendering without deducting Sora tokens' : 'System runtime execution flag'}
+                          {key === 'production_mock_provider' ? 'Simulate rendering without deducting real video API tokens' : 'System runtime execution flag'}
                         </div>
                       </div>
                       <button 
@@ -877,13 +885,13 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
                   {[
                     { 
                       id: 'fal', 
                       label: 'Fal.ai Universal API', 
                       badge: 'FAL.AI READY', 
-                      desc: 'Akses ke semua model video top-tier (Wan, Seedance, Sora, Kling).' 
+                      desc: 'Akses ke semua model video top-tier (Wan, Seedance, Kling).' 
                     },
                     { 
                       id: 'byteplus', 
@@ -902,22 +910,14 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                       label: 'Runway Gen-3 Alpha', 
                       badge: 'FALLBACK TIER 1', 
                       desc: 'Sinematik dolly, pan & motion brush Runway Gen-3.' 
-                    },
-                    { 
-                      id: 'sora', 
-                      label: 'OpenAI Sora Direct', 
-                      badge: 'DISABLED (USE FAL)', 
-                      desc: 'Gunakan Fal.ai untuk akses Sora via API.' 
                     }
                   ].map(eng => {
                     const activeModelId = config.primaryVideoEngine || localStorage.getItem('neurona_video_model') || 'byteplus';
                     const isSelected = activeModelId === eng.id || (eng.id === 'fal' && activeModelId.startsWith('fal-'));
-                    const isSora = eng.id === 'sora';
                     
                     return (
                       <div key={eng.id} className="relative flex flex-col gap-1.5">
                         <button
-                          disabled={isSora}
                           onClick={() => {
                             if (eng.id === 'fal') {
                               handleSetVideoEngine('fal-wan21' as any);
@@ -928,9 +928,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                             }
                           }}
                           className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-2.5 h-full ${
-                            isSora 
-                              ? 'opacity-50 cursor-not-allowed bg-[#0d0d0d] border-[#1f1f1f] text-gray-500'
-                              : isSelected 
+                            isSelected 
                               ? 'bg-blue-950/60 border-blue-500 shadow-[0_0_18px_rgba(59,130,246,0.35)] text-white cursor-pointer ring-1 ring-blue-400/50' 
                               : 'bg-[#0f0f0f] border-[#222] hover:border-gray-600 text-gray-400 hover:text-gray-200 cursor-pointer hover:bg-slate-900/60'
                           }`}
@@ -943,7 +941,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                             <div className="text-[10px] opacity-80 mt-1 leading-relaxed">{eng.desc}</div>
                           </div>
                           <span className={`text-[9px] font-mono px-2 py-0.5 rounded w-fit uppercase font-semibold ${
-                            isSelected ? 'bg-blue-600 text-white shadow-sm' : isSora ? 'bg-[#181818] text-gray-600' : 'bg-[#1e1e1e] text-gray-400'
+                            isSelected ? 'bg-blue-600 text-white shadow-sm' : 'bg-[#1e1e1e] text-gray-400'
                           }`}>
                             {eng.badge}
                           </span>
@@ -1152,7 +1150,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                       <div>
                         <div className="text-xs font-mono font-bold text-gray-200">{key}</div>
                         <div className="text-[11px] text-gray-500 mt-0.5">
-                          {key === 'production_mock_provider' && 'Saat aktif, Factory menggunakan video simulasi cepat tanpa memakan kuota Sora API.'}
+                          {key === 'production_mock_provider' && 'Saat aktif, Factory menggunakan video simulasi cepat tanpa memakan kuota Video API asli.'}
                           {key === 'ambient_clap_activation' && 'Deteksi tepuk tangan lokal mikrofon untuk membangunkan NEURONA.'}
                           {key === 'voice_output' && 'Menghasilkan respon suara natural untuk dialog OS.'}
                           {key === 'hermes_intelligence' && 'Aktifkan layer Hermes untuk penalaran conversational lanjutan.'}

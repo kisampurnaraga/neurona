@@ -818,10 +818,14 @@ export class ImageGenerationService {
 
     if (videoType === 'AFFILIATE') {
       // AFFILIATE STUDIO: Product Image (index 0) + User Face Image (index 1)
-      const rawProd = masterProductImageUrl 
-        || affiliateConfig?.productImages?.[0] 
-        || affiliateConfig?.productImage 
+      let rawProd = masterProductImageUrl 
+        || (scene.metadata && scene.metadata.productImage) 
         || (scene.assetUrl && !scene.assetUrl.includes('pollinations') ? scene.assetUrl : undefined);
+
+      // Explicit flag check from LLM
+      if (!rawProd && scene.featuresProduct && (affiliateConfig?.productImages?.[0] || affiliateConfig?.productImage)) {
+        rawProd = affiliateConfig.productImages?.[0] || affiliateConfig.productImage;
+      }
 
       const rawFace = masterCharacterImageUrl 
         || characterProfile?.referenceImageUrl 

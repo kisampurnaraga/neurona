@@ -31,6 +31,7 @@ export interface CharacterProfile {
 }
 
 export interface Scene {
+  featuresProduct?: boolean;
   videoProgress?: string;
   prompt_video_runway?: string;
   id: string;
@@ -198,6 +199,7 @@ export interface ProductionProject {
   userChoice?: 'STORYBOARD_ONLY' | 'GENERATE_IMAGES' | 'FULL_PRODUCTION';
   activeProductionStage?: 'STORYBOARD' | 'IMAGES' | 'VIDEOS' | 'COMPLETED';
   finalVideoUrl?: string;
+  subtitleStyle?: string;
   brandLogoUrl?: string;
   extraVideoUrl?: string;
   error?: string;

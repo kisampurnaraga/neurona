@@ -30,7 +30,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { UserSessionData, BankAccountItem, PaymentConfigData } from './AuthModal';
 
-export interface VeoShowcaseItem {
+export interface ShowcaseVideoItem {
   id: string;
   title: string;
   prompt: string;
@@ -38,60 +38,45 @@ export interface VeoShowcaseItem {
   aspectRatio: string;
   duration: string;
   niche: string;
+  videoModel?: string;
   isCustom?: boolean;
+  isPlaceholder?: boolean;
   poster?: string;
 }
 
-const CURATED_VEO_VIDEOS: VeoShowcaseItem[] = [
+const FALLBACK_SHOWCASE_PLACEHOLDERS: ShowcaseVideoItem[] = [
   {
-    id: 'curated-1',
-    title: 'Neon Cyberpunk Explorer',
-    prompt: 'Cinematic tracking shot of a cyberpunk protagonist walking through a neon-lit futuristic street, rain pouring down, volumetric lighting, photorealistic, 8k resolution, Google Veo 3.1 style, dramatic shadow play.',
-    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-futuristic-subway-station-with-neon-lights-44102-large.mp4',
+    id: 'placeholder-affiliate',
+    title: 'Studio Affiliate Produk AI',
+    prompt: 'Promosi produk otomatis dengan dubbing suara manusia, subtitle dinamis, dan efek video promosi sinematik.',
+    videoUrl: '',
     aspectRatio: '9:16',
-    duration: '5s',
-    niche: 'Animasi 3D',
-    poster: 'https://images.pexels.com/photos/8386440/pexels-photo-8386440.jpeg?auto=compress&cs=tinysrgb&w=600'
+    duration: '15s',
+    niche: 'AFFILIATE PRODUK',
+    videoModel: 'Wan 2.1 / Kling 2.1 Standard',
+    isPlaceholder: true
   },
   {
-    id: 'curated-2',
-    title: 'Futuristic AI Hologram Hub',
-    prompt: 'Hyper-realistic hologram brain floating in a high-tech science lab, cyan and amber energy waves pulsing, intricate digital circuits glowing in the background, unreal engine 5 render, cinematic lighting.',
-    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-a-brain-with-glowing-circuits-44104-large.mp4',
-    aspectRatio: '16:9',
-    duration: '6s',
-    niche: 'Edukasi / Sci-Fi',
-    poster: 'https://images.pexels.com/photos/2088170/pexels-photo-2088170.jpeg?auto=compress&cs=tinysrgb&w=600'
-  },
-  {
-    id: 'curated-3',
-    title: 'Luxury Celestial Watch Rotation',
-    prompt: 'Ultra high-end luxury watch floating in a celestial nebula, galaxies rotating slowly in the polished glass reflections, macro close-up of intricate mechanical gears ticking, golden ratio composition.',
-    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-watchmaker-assembling-a-watch-44105-large.mp4',
-    aspectRatio: '16:9',
-    duration: '5s',
-    niche: 'Affiliate Produk',
-    poster: 'https://images.pexels.com/photos/15286/pexels-photo.jpg?auto=compress&cs=tinysrgb&w=600'
-  },
-  {
-    id: 'curated-4',
-    title: 'Cinematic Mountain Peak Flight',
-    prompt: 'FPV drone shot sweeping through snow-capped epic mountain range under golden hour sunset, clouds swirling below the peaks, majestic natural landscape, extreme detail, breathtaking cinematography.',
-    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-drone-shot-of-snowy-mountains-under-golden-sun-44106-large.mp4',
-    aspectRatio: '16:9',
-    duration: '7s',
-    niche: 'Travel & Lifestyle',
-    poster: 'https://images.pexels.com/photos/3408744/pexels-photo-3408744.jpeg?auto=compress&cs=tinysrgb&w=600'
-  },
-  {
-    id: 'curated-5',
-    title: 'Cyberpunk Portrait Grid Close-up',
-    prompt: 'Close-up studio portrait of a futuristic robotic female character with bio-luminescent skin details, soft focus background with glowing dust particles, photorealistic 8k, extreme detail.',
-    videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-robot-face-with-neon-details-close-up-44107-large.mp4',
+    id: 'placeholder-animasi',
+    title: 'Studio Animasi 3D Sinematik',
+    prompt: 'Cerita serial animasi TikTok/Reels dengan konsistensi karakter wajah, seed terkunci, dan adegan dramatis.',
+    videoUrl: '',
     aspectRatio: '9:16',
-    duration: '5s',
-    niche: 'Karakter AI',
-    poster: 'https://images.pexels.com/photos/1181671/pexels-photo-1181671.jpeg?auto=compress&cs=tinysrgb&w=600'
+    duration: '20s',
+    niche: 'ANIMASI 3D',
+    videoModel: 'MiniMax / Wan 2.1',
+    isPlaceholder: true
+  },
+  {
+    id: 'placeholder-edukasi',
+    title: 'Studio Edukasi & Pengetahuan AI',
+    prompt: 'Penjelasan topik ilmiah dan fakta menarik dengan visualisasi AI berkualitas tinggi dan narasi terstruktur.',
+    videoUrl: '',
+    aspectRatio: '16:9',
+    duration: '15s',
+    niche: 'EDUKASI AI',
+    videoModel: 'Seedance / Wan 2.1',
+    isPlaceholder: true
   }
 ];
 
@@ -120,8 +105,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   const [heroVideoError, setHeroVideoError] = useState<boolean>(false);
 
   // Showcase video states
-  const [veoVideos, setVeoVideos] = useState<VeoShowcaseItem[]>(CURATED_VEO_VIDEOS);
-  const [selectedShowcaseVideo, setSelectedShowcaseVideo] = useState<VeoShowcaseItem | null>(null);
+  const [showcaseVideos, setShowcaseVideos] = useState<ShowcaseVideoItem[]>(FALLBACK_SHOWCASE_PLACEHOLDERS);
+  const [selectedShowcaseVideo, setSelectedShowcaseVideo] = useState<ShowcaseVideoItem | null>(null);
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
 
   const handleCopyPrompt = (text: string, id: string) => {
@@ -131,42 +116,22 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   };
 
   useEffect(() => {
-    // Check if there is a rendered Veo video in history
-    fetch('/api/v1/projects')
-      .then(res => {
-        if (!res.ok) return null;
-        return res.json().catch(() => null);
-      })
+    // Fetch active showcase videos from server
+    fetch('/api/showcase/videos')
+      .then(res => res.ok ? res.json() : null)
       .then(data => {
-        if (data?.success && Array.isArray(data.projects)) {
-          const veoProjects = data.projects.filter((p: any) => 
-            p.status === 'COMPLETED' && 
-            p.videoEngine === 'veo' && 
-            p.finalVideoUrl
-          );
-          if (veoProjects.length > 0) {
-            // Sort to get the latest one
-            veoProjects.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            setHeroVideoUrl(veoProjects[0].finalVideoUrl);
-
-            // Map and combine custom generated user videos
-            const mappedUserVideos: VeoShowcaseItem[] = veoProjects.map((p: any, idx: number) => ({
-              id: p.id || `user-veo-${idx}`,
-              title: p.title || `Masterpiece #${idx + 1}`,
-              prompt: p.brief?.productPrompt || p.brief?.storyboardPrompt || p.promptText || 'Generated autonomously with Google Veo 3.1.',
-              videoUrl: p.finalVideoUrl,
-              aspectRatio: p.aspectRatio || '9:16',
-              duration: p.durationSeconds ? `${p.durationSeconds}s` : '5s',
-              niche: p.videoType || 'Kreatif',
-              isCustom: true
-            }));
-
-            setVeoVideos([...mappedUserVideos, ...CURATED_VEO_VIDEOS]);
+        if (data?.success && Array.isArray(data.data) && data.data.length > 0) {
+          setShowcaseVideos(data.data);
+          if (data.data[0]?.videoUrl) {
+            setHeroVideoUrl(data.data[0].videoUrl);
           }
+        } else {
+          setShowcaseVideos(FALLBACK_SHOWCASE_PLACEHOLDERS);
         }
       })
       .catch(err => {
-        console.warn('Projects fetch warning in landing page:', err);
+        console.warn('Showcase fetch warning in landing page:', err);
+        setShowcaseVideos(FALLBACK_SHOWCASE_PLACEHOLDERS);
       });
   }, []);
 
@@ -244,7 +209,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     },
     {
       q: "Kapan kredit saya akan dipotong?",
-      a: "Kredit hanya dipotong saat Anda memutuskan untuk merender Gambar Keyframe HD (1-2 kredit) atau merender Video AI Utuh menggunakan Google Veo 3.1, Runway Gen-3, atau BytePlus (10-15 kredit per adegan)."
+      a: "Kredit hanya dipotong saat Anda merender Gambar Keyframe HD (15 CR/gambar) atau merender Video AI Utuh (Wan 2.1, Kling, MiniMax, ~45 CR/scene). Penulisan naskah & storyboard 100% GRATIS tanpa batas!"
     },
     {
       q: "Bagaimana cara aktivasi akun setelah saya melakukan transfer Rp 150.000?",
@@ -457,7 +422,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 {/* Main Video View */}
                 <div 
                   onClick={() => {
-                    const matched = veoVideos.find(v => v.videoUrl === heroVideoUrl);
+                    const matched = showcaseVideos.find(v => v.videoUrl === heroVideoUrl);
                     if (matched) setSelectedShowcaseVideo(matched);
                   }}
                   className="col-span-2 row-span-2 bg-black/50 border border-white/5 rounded-2xl overflow-hidden relative group cursor-pointer"
@@ -605,7 +570,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 {activeStudioTab === 'EDUCATIONAL' && 'Diagram animasi 3D interaktif menjelaskan inti masalah secara visual.'}
               </p>
               <div className="text-[10px] font-mono text-gray-500">
-                Engine: Google Veo 3.1 / Runway Gen-3
+                Engine: Wan 2.1 / Kling / MiniMax AI
               </div>
             </div>
 
@@ -629,12 +594,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
-      {/* GOOGLE VEO 3.1 MASTERPIECE SHOWCASE GALLERY */}
+      {/* MASTERPIECE SHOWCASE GALLERY */}
       <section className="py-20 px-6 max-w-7xl mx-auto relative z-10 border-t border-white/5">
         <div className="text-center max-w-3xl mx-auto mb-16 animate-fade-in">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-mono text-xs uppercase mb-3">
             <Film size={12} className="text-cyan-400" />
-            <span>Koleksi Masterpiece Google Veo 3.1</span>
+            <span>Koleksi Masterpiece AI Video & Image Engine</span>
           </div>
           <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-4">
             Galeri Kreasi Video AI Premium
@@ -646,8 +611,49 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
         {/* Video Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {veoVideos.map((video) => {
+          {showcaseVideos.map((video) => {
             const isCopied = copiedPromptId === video.id;
+
+            if (video.isPlaceholder) {
+              return (
+                <motion.div
+                  key={video.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.4 }}
+                  className="group relative rounded-2xl border border-dashed border-cyan-500/30 bg-[#090912]/80 p-5 flex flex-col justify-between transition-all duration-300 min-h-[320px] shadow-lg"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="px-2.5 py-1 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[10px] font-bold uppercase border border-cyan-500/30">
+                        {video.niche}
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] border border-amber-500/30">
+                        {video.videoModel}
+                      </span>
+                    </div>
+
+                    <div className="aspect-[16/9] rounded-xl bg-black/60 border border-white/5 flex flex-col items-center justify-center p-4 mb-4 text-center group-hover:border-cyan-500/40 transition">
+                      <div className="w-10 h-10 rounded-full bg-cyan-500/10 flex items-center justify-center text-cyan-400 mb-2 border border-cyan-500/20 animate-pulse">
+                        <Play size={18} />
+                      </div>
+                      <span className="text-xs font-bold text-slate-200 font-mono">Contoh Showcase Segera Hadir</span>
+                      <span className="text-[10px] text-slate-400 mt-1">Dapat diaktifkan via Founder Dashboard</span>
+                    </div>
+
+                    <h3 className="text-sm font-bold text-white mb-1.5">{video.title}</h3>
+                    <p className="text-xs text-gray-400 leading-relaxed line-clamp-3">{video.prompt}</p>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-gray-500">
+                    <span>Estimasi: {video.duration}</span>
+                    <span className="text-cyan-400">Status: Standby</span>
+                  </div>
+                </motion.div>
+              );
+            }
+
             return (
               <motion.div
                 key={video.id}
@@ -659,12 +665,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               >
                 {/* Badge (Custom / User-Generated vs Curated) */}
                 <div className="absolute top-4 left-4 z-20 flex flex-wrap gap-2">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider ${
-                    video.isCustom 
-                      ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-black' 
-                      : 'bg-white/10 text-gray-300'
-                  }`}>
-                    {video.isCustom ? '🔥 Hasil Render Anda' : '✨ Curated Demo'}
+                  <span className="px-2 py-0.5 rounded bg-gradient-to-r from-emerald-500 to-teal-500 text-black text-[10px] font-mono font-bold uppercase tracking-wider">
+                    🔥 Showcase Aktif
                   </span>
                   <span className="px-2 py-0.5 rounded bg-black/60 backdrop-blur-md text-white font-mono text-[10px] border border-white/5">
                     {video.aspectRatio} • {video.duration}
@@ -795,9 +797,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <div className="inline-block px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold uppercase mb-2">
               Multi-AI Integration
             </div>
-            <h3 className="text-lg font-bold mb-2 text-white">Google Veo 3.1 & Runway Gen-3</h3>
+            <h3 className="text-lg font-bold mb-2 text-white">Wan 2.1 & Kling 2.1/3.0 Pro</h3>
             <p className="text-sm text-gray-400 leading-relaxed">
-              Pilih engine video kelas dunia langsung dari satu dashboard. Dilengkapi fitur Product Consistency Lock untuk menjaga keaslian detail produk affiliate.
+              Pilih engine AI video kelas dunia (Wan 2.1, Kling, MiniMax, Seedance) langsung dari satu dashboard. Dilengkapi fitur Product Consistency Lock untuk menjaga keaslian detail produk affiliate.
             </p>
           </div>
         </div>
@@ -864,7 +866,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </li>
                 <li className="flex items-start gap-3">
                   <CheckCircle2 size={16} className="text-cyan-400 shrink-0 mt-0.5" />
-                  <span><strong>Multi-Engine AI</strong>: Google Veo 3.1, Runway Gen-3, BytePlus PixelDance</span>
+                  <span><strong>Multi-Engine AI Premium</strong>: Wan 2.1, Kling 2.1/3.0 Pro, MiniMax, Seedance & Nano Banana 2 Pro</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <CheckCircle2 size={16} className="text-indigo-400 shrink-0 mt-0.5" />
@@ -1081,7 +1083,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                     {selectedShowcaseVideo.niche}
                   </span>
                   <span className="px-2 py-0.5 rounded bg-white/5 text-gray-300 text-[10px] font-mono">
-                    Engine: Google Veo 3.1
+                    Engine: {selectedShowcaseVideo.videoModel || 'Wan 2.1 / Kling / MiniMax AI'}
                   </span>
                   <span className="px-2 py-0.5 rounded bg-white/5 text-gray-300 text-[10px] font-mono">
                     {selectedShowcaseVideo.aspectRatio} • {selectedShowcaseVideo.duration}
