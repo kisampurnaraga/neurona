@@ -25,6 +25,7 @@ import {
   Film,
   Sparkles,
   RefreshCw,
+  RotateCcw,
   Eye,
   Lock,
   Key,
@@ -89,6 +90,7 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
   const [activeMobileTab, setActiveMobileTab] = useState<'home' | 'studio' | 'projects' | 'profile'>('home');
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [isRotatorOpen, setIsRotatorOpen] = useState(false);
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
 
   // Speech Recognition (Voice Input) & Voice State
   const [isListening, setIsListening] = useState(false);
@@ -574,6 +576,17 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
               <Volume2 size={16} className={isSpeaking ? 'text-indigo-400 animate-bounce' : ''} />
             </button>
 
+            {/* Manual Reset Hub State Button */}
+            <button
+              id="header-hub-reset-btn"
+              onClick={() => setShowResetConfirmModal(true)}
+              className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-amber-400 hover:border-amber-500/40 transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
+              title="Reset Tampilan Hub ke Kondisi Awal (IDLE)"
+            >
+              <RotateCcw size={15} className="text-slate-400 hover:text-amber-400" />
+              <span className="hidden xl:inline text-xs">Reset Hub</span>
+            </button>
+
             {/* User Profile Button (Opens UserProfileModal, NOT Founder Dashboard) */}
             <button
               id="header-user-profile-btn"
@@ -934,6 +947,16 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                     <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                       {hubState === 'IDLE' ? 'STANDBY' : 'PRODUCING'}
                     </span>
+                    {hubState !== 'IDLE' && (
+                      <button
+                        onClick={() => setShowResetConfirmModal(true)}
+                        className="text-[10px] text-amber-400/80 hover:text-amber-300 hover:underline flex items-center gap-1 ml-1 cursor-pointer font-mono"
+                        title="Reset tampilan Hub ke IDLE"
+                      >
+                        <RotateCcw size={10} />
+                        <span>Reset Status</span>
+                      </button>
+                    )}
                     <button 
                       onClick={() => neuronaVoice.speak("NEURONA Director Core Online. Saya adalah Asisten Sutradara AI Anda. Bersama kita dapat membuat video luar biasa dari ide Anda.")}
                       className="flex items-center gap-1 text-[10px] text-cyan-400 hover:text-cyan-300 ml-auto cursor-pointer"
@@ -1268,6 +1291,59 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
         isOpen={isRotatorOpen}
         onClose={() => setIsRotatorOpen(false)}
       />
+
+      {/* Reset Confirmation Dialog Modal */}
+      {showResetConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#0B1021] border border-slate-700/80 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 text-amber-400">
+                <RotateCcw size={20} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-white">Reset Tampilan Hub</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Reset tampilan Hub ke kondisi awal? Ini tidak akan menghapus project/data Anda, hanya mengembalikan status Hub ke 'Siap Membuat' (IDLE).
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-950/60 rounded-xl p-3 border border-slate-800/80 text-[11px] text-slate-400 space-y-1">
+              <div className="flex items-center gap-2 text-emerald-400 font-semibold">
+                <Check size={13} />
+                <span>Data Proyek Aman</span>
+              </div>
+              <p>
+                Seluruh naskah, adegan storyboard, dan video yang sudah dibuat tetap tersimpan dan dapat dibuka kembali kapan saja lewat menu Timeline Editor atau Daftar Proyek.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                id="cancel-hub-reset-btn"
+                onClick={() => setShowResetConfirmModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                id="confirm-hub-reset-btn"
+                onClick={() => {
+                  setShowResetConfirmModal(false);
+                  setHasDismissedBanner(true);
+                  setShowReadyBanner(false);
+                  onResetProject?.();
+                  neuronaVoice.speak("Tampilan Hub berhasil direset ke kondisi awal.");
+                }}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-bold shadow-lg shadow-amber-500/20 transition cursor-pointer flex items-center gap-1.5"
+              >
+                <RotateCcw size={14} />
+                <span>Ya, Reset</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

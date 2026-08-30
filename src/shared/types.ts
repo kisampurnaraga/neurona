@@ -1,4 +1,4 @@
-export type ProductionState = 'DRAFT' | 'BRIEFING' | 'STORYBOARDING' | 'AWAITING_APPROVAL' | 'PRODUCING' | 'ASSEMBLING' | 'AUDIO' | 'EDITING' | 'QA' | 'COMPLETED' | 'FAILED';
+export type ProductionState = 'DRAFT' | 'BRIEFING' | 'STORYBOARDING' | 'AWAITING_APPROVAL' | 'PRODUCING' | 'ASSEMBLING' | 'AUDIO' | 'EDITING' | 'QA' | 'COMPLETED' | 'FAILED' | 'deleted';
 
 export type ProviderStatus = 'NOT_CONFIGURED' | 'READY' | 'DEGRADED' | 'UNAVAILABLE' | 'AUTH_ERROR' | 'QUOTA_EXCEEDED' | 'TIMEOUT' | 'ERROR';
 
@@ -96,6 +96,8 @@ export interface AffiliateConfig {
   productVisualAnalysis?: string;
   characterVisualAnalysis?: string;
   sceneCount?: number;
+  imageEngine?: string;
+  videoEngine?: string;
 }
 
 export interface User {
@@ -205,13 +207,17 @@ export interface ProductionProject {
   subtitleStyle?: string;
   brandLogoUrl?: string;
   extraVideoUrl?: string;
+
   error?: string;
   providerError?: ProviderError;
   activeAgent?: string;
   agentStatus: Record<string, 'WAITING' | 'WORKING' | 'COMPLETE' | 'FAILED'>;
   telemetry?: AgentTelemetry[];
+  showcaseEligible?: boolean;
+  deletedAt?: string;
+
   logs?: TerminalLog[];
   audioResponseUrl?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
 }

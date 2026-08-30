@@ -104,6 +104,31 @@ export class CreditService {
       };
     }
 
+    // Google Veo Asli video models
+    if (modelId.startsWith('veo-asli') || modelId === 'veo-lite' || modelId === 'veo-pro' || modelId.includes('veo-2') || modelId.includes('veo-3')) {
+      let costUsd = 0.15;
+      let credits = 15;
+      if (modelId.includes('lite') || modelId.includes('fast') || modelId === 'veo-asli-lite') {
+        costUsd = 0.08;
+        credits = 10;
+      } else if (modelId.includes('pro') || modelId.includes('ultra') || modelId === 'veo-asli-pro') {
+        costUsd = 0.30;
+        credits = 25;
+      } else {
+        costUsd = 0.15;
+        credits = 15;
+      }
+      return {
+        credits,
+        costUsd,
+        idrCost: credits * pricingConfig.creditValueIdr,
+        marginMultiplier: pricingConfig.marginMultiplier,
+        exchangeRate: pricingConfig.exchangeRate,
+        creditValueIdr: pricingConfig.creditValueIdr,
+        model: modelId
+      };
+    }
+
     const model = getFalModel(modelId);
     let baseCostUsd = model.costUsd || 0.15;
 
@@ -166,6 +191,34 @@ export class CreditService {
         credits: 0,
         costUsd: 0,
         idrCost: 0,
+        marginMultiplier: pricingConfig.marginMultiplier,
+        exchangeRate: pricingConfig.exchangeRate,
+        creditValueIdr: pricingConfig.creditValueIdr,
+        model: modelId
+      };
+    }
+
+    // Google Imagen / Nano Asli image models
+    if (modelId.startsWith('nano-asli') || modelId.includes('gemini-banana') || modelId.includes('google_image') || modelId.includes('gemini-imagen')) {
+      let costUsd = 0.03;
+      let credits = 10;
+      if (modelId.includes('lite') || modelId.includes('draft') || modelId === 'nano-asli-lite') {
+        costUsd = 0.015;
+        credits = 5;
+      } else if (modelId.includes('ultra') || modelId.includes('premium') || modelId === 'nano-asli-ultra' || modelId === 'nano-asli-premium') {
+        costUsd = 0.08;
+        credits = 25;
+      } else if (modelId.includes('pro') || modelId === 'nano-asli-pro') {
+        costUsd = 0.05;
+        credits = 15;
+      } else {
+        costUsd = 0.03;
+        credits = 10;
+      }
+      return {
+        credits,
+        costUsd,
+        idrCost: credits * pricingConfig.creditValueIdr,
         marginMultiplier: pricingConfig.marginMultiplier,
         exchangeRate: pricingConfig.exchangeRate,
         creditValueIdr: pricingConfig.creditValueIdr,

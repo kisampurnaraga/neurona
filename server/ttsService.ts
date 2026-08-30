@@ -105,7 +105,7 @@ export class TTSService {
 
         const candidateModels = [
           'gemini-3.1-flash-tts-preview',
-          'gemini-2.5-flash'
+          'gemini-3.6-flash'
         ];
 
         for (const modelName of candidateModels) {

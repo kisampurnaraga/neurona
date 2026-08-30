@@ -181,7 +181,7 @@ export class TTSService {
 
       const candidateModels = [
         'gemini-3.1-flash-tts-preview',
-        'gemini-2.5-flash'
+        'gemini-3.6-flash'
       ];
 
       return await keyRotator.executeGeminiWithRotation(async (ai, apiKey) => {

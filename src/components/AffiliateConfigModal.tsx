@@ -112,6 +112,8 @@ export default function AffiliateConfigModal({
   const [callToAction, setCallToAction] = useState('Klik logo keranjang kuning di kiri bawah sebelum kehabisan!');
   const [hookStyle, setHookStyle] = useState<'PAIN_POINT' | 'CURIOSITY' | 'UNBOXING' | 'BEFORE_AFTER' | 'AESTHETIC_REVEAL'>('PAIN_POINT');
   const [sceneCount, setSceneCount] = useState<number>(4);
+  const [imageEngine, setImageEngine] = useState<string>('nano-asli');
+  const [videoEngine, setVideoEngine] = useState<string>('veo-asli');
   const [characterImage, setCharacterImage] = useState(SAMPLE_PRESETS[0].creatorImage || '');
   const [productInfo, setProductInfo] = useState('');
   
@@ -264,7 +266,9 @@ export default function AffiliateConfigModal({
         productInfo: productInfo || preset.keyBenefits,
         productImages: presetAssets.map(a => a.url),
         referenceVideoUrl: referenceVideoUrl || undefined,
-        sceneCount: sceneCount
+        sceneCount: sceneCount,
+        imageEngine: imageEngine,
+        videoEngine: videoEngine
       };
       const promptText = `Buatkan video affiliate ${preset.platform} untuk produk ${preset.productName}. Keunggulan: ${preset.keyBenefits}. Promo: ${preset.pricePromo}. Call To Action: ${preset.callToAction}. Hook style: ${preset.hookStyle}.`;
       onSubmit(config, presetAssets, promptText);
@@ -292,7 +296,9 @@ export default function AffiliateConfigModal({
       productInfo: productInfo || keyBenefits,
       productImages: productImages,
       referenceVideoUrl: referenceVideoUrl || assets.find(a => a.type === 'VIDEO')?.url,
-      sceneCount: sceneCount
+      sceneCount: sceneCount,
+      imageEngine: imageEngine,
+      videoEngine: videoEngine
     };
 
     const promptText = `Buatkan video affiliate ${platform} untuk produk ${productName}. Keunggulan: ${keyBenefits}. Promo: ${pricePromo}. Call To Action: ${callToAction}. Hook style: ${hookStyle}.`;
@@ -648,35 +654,46 @@ export default function AffiliateConfigModal({
             </div>
           </div>
 
-          {/* 6. Pengisi Suara (TTS) */}
-          <div className="grid grid-cols-1 sm:grid-cols-1 gap-3 p-3 bg-[#121216] border border-rose-500/20 rounded-xl">
-            
-
+          {/* 6. AI Model Engine Selection */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-[#121216] border border-indigo-500/20 rounded-xl">
             <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-rose-400 flex items-center gap-1">
-                <Mic size={12} />
-                <span>Pengisi Suara Voiceover (TTS)</span>
+              <label className="text-[10px] uppercase font-bold text-teal-400 flex items-center gap-1">
+                <Sparkles size={12} />
+                <span>Model AI Gambar (Image Engine)</span>
               </label>
               <select
-                defaultValue={localStorage.getItem('neurona_voice_id') || 'openai-female-nova'}
-                onChange={(e) => {
-                  localStorage.setItem('neurona_voice_id', e.target.value);
-                  neuronaVoice.setVoice(e.target.value);
-                }}
-                className="w-full bg-black/60 border border-[#27272a] rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-rose-500"
+                value={imageEngine}
+                onChange={(e) => setImageEngine(e.target.value)}
+                className="w-full bg-black/60 border border-[#27272a] rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-teal-500"
               >
-                <option value="id-ID-Journey-O">Google Cloud Journey-O (ID ♀ Natural & Ultra-Realistis)</option>
-                <option value="id-ID-Wavenet-A">Google Cloud Wavenet-A (ID ♀ Jernih & Profesional)</option>
-                <option value="id-ID-Wavenet-B">Google Cloud Wavenet-B (ID ♂ Bertenaga & Promo Viral)</option>
-                <option value="en-US-Journey-D">Google Cloud Journey-D (EN ♂ Narator Sinematik)</option>
-                <option value="ja-JP-Neural2-B">Google Cloud Neural2-B (JA ♀ Seiyuu Anime Ekspresif)</option>
-                <option value="openai-female-nova">ChatGPT Nova (OpenAI - ♀ Ceria, Energik & Ramah)</option>
-                <option value="openai-male-onyx">ChatGPT Onyx (OpenAI - ♂ Berwibawa & Podcast)</option>
-                <option value="openai-female-shimmer">ChatGPT Shimmer (OpenAI - ♀ Lembut & Emosional)</option>
-                <option value="tryaudio-female-citra">Citra Kirana (Neural AI - ♀ Ceria Racun TikTok)</option>
-                <option value="tryaudio-male-dimas">Dimas Perkasa (Neural AI - ♂ Berwibawa & Epik)</option>
-                <option value="eleven-female-rachel">Rachel Storyteller (ElevenLabs - ♀ Emosional Jernih)</option>
-                <option value="eleven-male-adam">Adam Epic Narrator (ElevenLabs - ♂ Kelas Hollywood)</option>
+                <option value="nano-asli-lite">✨ Google Imagen 3 Lite (Nano Asli Lite - 5 CR)</option>
+                <option value="nano-asli">🔷 Google Gemini Imagen 3 (Nano Asli Std - 10 CR)</option>
+                <option value="nano-asli-pro">🌟 Google Gemini Imagen 3 Pro (Nano Asli Pro - 15 CR)</option>
+                <option value="nano-asli-premium">👑 Google Gemini Imagen 3 Ultra (Nano Asli Ultra - 25 CR)</option>
+                <option value="standard">⚡ Fal.ai Nano Banana 2 (15 CR)</option>
+                <option value="precision">🎯 Fal.ai Nano Banana Pro 4K (25 CR)</option>
+                <option value="draft">⚡ Fal.ai FLUX.1 Schnell (5 CR)</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-purple-400 flex items-center gap-1">
+                <VideoIcon size={12} />
+                <span>Model AI Video Engine</span>
+              </label>
+              <select
+                value={videoEngine}
+                onChange={(e) => setVideoEngine(e.target.value)}
+                className="w-full bg-black/60 border border-[#27272a] rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-purple-500"
+              >
+                <option value="veo-asli-lite">⚡ Google Veo Asli Lite (10 CR/Scene)</option>
+                <option value="veo-asli">🎬 Google Veo Asli Standard (15 CR/Scene)</option>
+                <option value="veo-asli-pro">🌟 Google Veo Asli Pro (25 CR/Scene)</option>
+                <option value="bytedance/seedance-2.0/fast/image-to-video">ByteDance SeaDance 2.0 Fast (10 CR)</option>
+                <option value="bytedance/seedance-2.0/image-to-video">ByteDance SeaDance 2.0 Std (15 CR)</option>
+                <option value="fal-ai/wan-i2v">Wan 2.1 14B I2V (45 CR)</option>
+                <option value="fal-ai/kling-video/v2.1/standard/image-to-video">Kling 2.1 Standard (15 CR)</option>
+                <option value="fal-ai/minimax/video-01/image-to-video">MiniMax Video 01 (15 CR)</option>
               </select>
             </div>
           </div>

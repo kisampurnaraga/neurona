@@ -58,8 +58,8 @@ export async function renderWithFalQueue(
   const requestId = queueJson.request_id;
   
   // If response came back synchronously with direct video URL
-  const directVideoUrl = queueJson?.video?.url || queueJson?.video_url || queueJson?.output?.[0] || queueJson?.file?.url;
-  if (directVideoUrl && !requestId) {
+  const directVideoUrl = queueJson?.video?.url || queueJson?.video_url || queueJson?.url || queueJson?.file?.url || (Array.isArray(queueJson?.output) ? (queueJson.output[0]?.url || queueJson.output[0]) : queueJson?.output?.url) || (typeof queueJson?.output === 'string' ? queueJson.output : null);
+  if (directVideoUrl && typeof directVideoUrl === 'string' && !requestId) {
     return directVideoUrl;
   }
 
@@ -96,13 +96,16 @@ export async function renderWithFalQueue(
         });
         if (resResult.ok) {
           const resultJson: any = await resResult.json();
-          const videoUrl = resultJson?.video?.url || resultJson?.video_url || resultJson?.output?.[0] || resultJson?.file?.url;
-          if (videoUrl) {
+          const videoUrl = resultJson?.video?.url || resultJson?.video_url || resultJson?.url || resultJson?.file?.url || (Array.isArray(resultJson?.output) ? (resultJson.output[0]?.url || resultJson.output[0]) : resultJson?.output?.url) || (typeof resultJson?.output === 'string' ? resultJson.output : null);
+          if (videoUrl && typeof videoUrl === 'string') {
             console.log(`[FAL QUEUE RUNNER] Video generated successfully for ${modelPath}: ${videoUrl}`);
             return videoUrl;
           }
+          throw new Error(`[FAL.AI] Generation COMPLETED but failed to extract video URL. Payload keys: ${Object.keys(resultJson || {}).join(',')}. Payload: ${JSON.stringify(resultJson).substring(0, 300)}`);
+        } else {
+          const errText = await resResult.text();
+          throw new Error(`[FAL.AI] Generation COMPLETED but failed to fetch responseUrl (${resResult.status}). Body: ${errText}`);
         }
-        throw new Error(`[FAL.AI] Generation COMPLETED but failed to extract video URL from response payload.`);
       } else if (status === 'IN_PROGRESS' || status === 'IN_QUEUE') {
         const queuePos = statusJson.queue_position !== undefined ? ` (Queue Pos: ${statusJson.queue_position})` : '';
         const msg = `fal.ai [${modelPath}] ${status}${queuePos} (${attempt * 5}s)`;

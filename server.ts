@@ -12,6 +12,7 @@ import { getVideoProvider } from "./src/server/providers";
 import { ConversationalIntentRouter } from "./src/server/core/IntentRouter";
 import { FounderService } from "./src/server/fcc/FounderService";
 import { keyRotator } from "./server/keyRotator";
+import { cleanApiKeyString } from "./server/utils/credentialValidator";
 import { TTSService } from "./server/ttsService";
 import { verifyToken, requireRole, generateToken, userDatabase, AuthenticatedRequest, UserSession } from "./server/middleware/auth";
 import videoStudioRouter from "./server/routes/videoStudio";
@@ -614,23 +615,48 @@ createdAt: new Date().toISOString()
   });
 
   app.post('/api/fcc/key-rotator/add', (req, res) => {
-     const { provider, key, keys } = req.body;
-     const targetProvider = provider || 'gemini';
-     const rawKeysInput = keys || key;
-     if (!rawKeysInput) return res.status(400).json({ error: 'Key input is required' });
+    try {
+      const { provider, key, keys } = req.body;
+      const targetProvider: 'gemini' | 'veo' | 'openai' | 'fal' = provider || 'gemini';
+      const rawKeysInput = keys || key;
+      if (!rawKeysInput) return res.status(400).json({ error: 'Key input is required' });
 
-     // Split by newline, comma, or semicolon
-     const keyList = String(rawKeysInput)
-       .split(/[\n,;]/)
-       .map((k: string) => k.trim())
-       .filter((k: string) => k.length > 5);
+      // Split by newline, comma, or semicolon
+      const keyList = String(rawKeysInput)
+        .split(/[\n,;]/)
+        .map((k: string) => cleanApiKeyString(k))
+        .filter((k: string) => k.length > 5);
 
-     if (keyList.length === 0) {
-       return res.status(400).json({ error: 'Tidak ada API Key valid yang ditemukan dalam input' });
-     }
+      if (keyList.length === 0) {
+        return res.status(400).json({ error: 'Tidak ada API Key valid yang ditemukan dalam input' });
+      }
 
-     const addedHealths = keyList.map((k: string) => keyRotator.addKey(targetProvider, k));
-     res.json({ success: true, count: addedHealths.length, healths: addedHealths, report: keyRotator.getHealthReport() });
+      const addedHealths: any[] = [];
+      const errorMsgs: string[] = [];
+
+      for (const k of keyList) {
+        try {
+          const added = keyRotator.addKey(targetProvider, k);
+          addedHealths.push(added);
+        } catch (err: any) {
+          errorMsgs.push(err.message || 'Format API key tidak valid');
+        }
+      }
+
+      if (addedHealths.length === 0 && errorMsgs.length > 0) {
+        return res.status(400).json({ error: errorMsgs.join('; ') });
+      }
+
+      res.json({
+        success: true,
+        count: addedHealths.length,
+        healths: addedHealths,
+        warnings: errorMsgs.length > 0 ? errorMsgs : undefined,
+        report: keyRotator.getHealthReport()
+      });
+    } catch (globalErr: any) {
+      res.status(500).json({ error: globalErr.message || 'Gagal menambahkan API key' });
+    }
   });
 
   app.post('/api/fcc/key-rotator/delete', (req, res) => {
@@ -638,6 +664,12 @@ createdAt: new Date().toISOString()
      if (!key || !provider) return res.status(400).json({ error: 'provider and key are required' });
      const removed = keyRotator.removeKey(provider, key);
      res.json({ success: removed, report: keyRotator.getHealthReport() });
+  });
+
+  app.post('/api/fcc/key-rotator/clear-all', (req, res) => {
+     const { provider } = req.body;
+     keyRotator.clearAllKeys(provider || 'all');
+     res.json({ success: true, report: keyRotator.getHealthReport() });
   });
 
   app.post('/api/fcc/key-rotator/reactivate', (req, res) => {
@@ -1107,8 +1139,131 @@ createdAt: new Date().toISOString()
     }
   }
 
+  
+  // Soft Delete Project
+  app.delete('/api/projects/:id', (req, res) => {
+    const project = projects.get(req.params.id);
+    if (!project) return res.status(404).json({ success: false, error: "Project not found" });
+    
+    if (project.showcaseEligible) {
+      return res.status(400).json({ success: false, error: "Project sedang dalam status Showcase. Nonaktifkan status Showcase di Founder Dashboard sebelum menghapus." });
+    }
+
+    project.status = 'deleted';
+    project.deletedAt = new Date().toISOString();
+    
+    // Log audit
+    const FounderService = require('./server/orchestrator').FounderService;
+    if (FounderService && typeof FounderService.appendLog === 'function') {
+      FounderService.appendLog(project, 'FOUNDER', `User soft-deleted project ${project.id} (${project.title})`, 'WARN');
+    }
+
+    saveProjects();
+    res.json({ success: true, message: "Project berhasil dipindahkan ke folder 'Baru Dihapus'." });
+  });
+
+  // Restore Project
+  app.post('/api/projects/:id/restore', (req, res) => {
+    const project = projects.get(req.params.id);
+    if (!project) return res.status(404).json({ success: false, error: "Project not found" });
+    
+    project.status = 'COMPLETED'; // or previous status
+    delete project.deletedAt;
+    
+    const FounderService = require('./server/orchestrator').FounderService;
+    if (FounderService && typeof FounderService.appendLog === 'function') {
+      FounderService.appendLog(project, 'FOUNDER', `User restored project ${project.id} (${project.title})`, 'SUCCESS');
+    }
+
+    saveProjects();
+    res.json({ success: true, message: "Project berhasil dipulihkan." });
+  });
+
+  // Hard Delete Project
+  app.delete('/api/projects/:id/hard', (req, res) => {
+    const project = projects.get(req.params.id);
+    if (!project) return res.status(404).json({ success: false, error: "Project not found" });
+    
+    if (project.showcaseEligible) {
+      return res.status(400).json({ success: false, error: "Project sedang dalam status Showcase. Tidak dapat dihapus permanen." });
+    }
+
+    // Attempt to delete local files associated with project
+    try {
+      const fsSync = require('fs');
+      const path = require('path');
+      if (project.finalVideoUrl && project.finalVideoUrl.startsWith('/outputs/')) {
+         const filename = project.finalVideoUrl.replace('/outputs/', '');
+         const filePath = path.join(process.cwd(), 'outputs', filename);
+         if (fsSync.existsSync(filePath)) fsSync.unlinkSync(filePath);
+      }
+      if (project.storyboard && project.storyboard.scenes) {
+         project.storyboard.scenes.forEach((s) => {
+            if (s.videoUrl && s.videoUrl.startsWith('/outputs/')) {
+               const filename = s.videoUrl.replace('/outputs/', '');
+               const filePath = path.join(process.cwd(), 'outputs', filename);
+               if (fsSync.existsSync(filePath)) fsSync.unlinkSync(filePath);
+            }
+            if (s.imageUrl && s.imageUrl.startsWith('/outputs/')) {
+               const filename = s.imageUrl.replace('/outputs/', '');
+               const filePath = path.join(process.cwd(), 'outputs', filename);
+               if (fsSync.existsSync(filePath)) fsSync.unlinkSync(filePath);
+            }
+         });
+      }
+    } catch (e) {
+      console.error("Error deleting local files:", e);
+    }
+
+    const FounderService = require('./server/orchestrator').FounderService;
+    if (FounderService && typeof FounderService.appendLog === 'function') {
+      FounderService.appendLog(project, 'FOUNDER', `User hard-deleted project ${project.id} (${project.title})`, 'ERROR');
+    }
+
+    projects.delete(req.params.id);
+    saveProjects();
+    res.json({ success: true, message: "Project dan semua file terkait berhasil dihapus permanen." });
+  });
+
+  
+  app.get('/api/projects/deleted', (req, res) => {
+    const deletedProjects = Array.from(projects.values()).filter((p: any) => p.status === 'deleted');
+    res.json(deletedProjects);
+  });
+
+  
+  app.post('/api/test-fal-model', async (req, res) => {
+    try {
+      const { endpoint } = req.body;
+      const keyRotator = (await import('./server/keyRotator.ts')).keyRotator;
+      const key = await keyRotator.getNextFalKey();
+      if (!key) return res.status(500).json({ error: "No fal key" });
+
+      const response = await fetch(`https://fal.run/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${key}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          prompt: "A beautiful cinematic shot of a glowing forest",
+          image_url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAABlBMVEX///+/v7+jQ3Y5AAAADklEQVQI12P4AIX8EAgALgAD/aNpbeaEAAAAAElFTkSuQmCC"
+        })
+      });
+      
+      if (!response.ok) {
+         const text = await response.text();
+         return res.status(response.status).json({ error: text });
+      }
+      const data = await response.json();
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get('/api/projects', (req, res) => {
-    const allProjects = Array.from(projects.values());
+    const allProjects = Array.from(projects.values()).filter((p: any) => p.status !== 'deleted');
     allProjects.forEach(checkAndValidateProjectVideo);
     res.json(allProjects);
   });

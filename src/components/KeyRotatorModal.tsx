@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 export interface KeyHealthItem {
   key: string;
   maskedKey: string;
-  provider: 'gemini' | 'openai' | 'fal';
+  provider: 'gemini' | 'veo' | 'openai' | 'fal';
   status: 'ACTIVE' | 'COOLDOWN' | 'DISABLED';
   cooldownUntil?: number;
   totalRequests: number;
@@ -20,8 +20,8 @@ interface KeyRotatorModalProps {
 }
 
 export const KeyRotatorModal: React.FC<KeyRotatorModalProps> = ({ isOpen, onClose }) => {
-  const [providerTab, setProviderTab] = useState<'gemini' | 'openai' | 'fal'>('gemini');
-  const [report, setReport] = useState<{ gemini: KeyHealthItem[]; openai: KeyHealthItem[]; fal: KeyHealthItem[] }>({ gemini: [], openai: [], fal: [] });
+  const [providerTab, setProviderTab] = useState<'gemini' | 'veo' | 'openai' | 'fal'>('gemini');
+  const [report, setReport] = useState<{ gemini: KeyHealthItem[]; veo: KeyHealthItem[]; openai: KeyHealthItem[]; fal: KeyHealthItem[] }>({ gemini: [], veo: [], openai: [], fal: [] });
   const [isLoading, setIsLoading] = useState(false);
   const [bulkKeysInput, setBulkKeysInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -35,6 +35,7 @@ export const KeyRotatorModal: React.FC<KeyRotatorModalProps> = ({ isOpen, onClos
         const data = await res.json();
         setReport({
           gemini: data.gemini || [],
+          veo: data.veo || [],
           openai: data.openai || [],
           fal: data.fal || []
         });
@@ -56,7 +57,7 @@ export const KeyRotatorModal: React.FC<KeyRotatorModalProps> = ({ isOpen, onClos
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+    setTimeout(() => setToastMessage(null), 5000);
   };
 
   const handleAddKeys = async () => {
@@ -78,18 +79,23 @@ export const KeyRotatorModal: React.FC<KeyRotatorModalProps> = ({ isOpen, onClos
 
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast(`✅ Berhasil menambahkan ${data.count || 1} API Key baru ke Rotator Pool!`);
+        showToast(`✅ Berhasil menambahkan ${data.count || 1} API Key baru ke Pool ${providerTab.toUpperCase()}!`);
         setBulkKeysInput('');
         if (data.report) {
-          setReport({ gemini: data.report.gemini || [], openai: data.report.openai || [] });
+          setReport({
+            gemini: data.report.gemini || [],
+            veo: data.report.veo || [],
+            openai: data.report.openai || [],
+            fal: data.report.fal || []
+          });
         } else {
           fetchHealthReport();
         }
       } else {
-        showToast(`❌ Gagal: ${data.error || 'Terjadi kesalahan'}`);
+        showToast(`❌ Gagal: ${data.error || 'Terjadi kesalahan format key.'}`);
       }
-    } catch (err) {
-      showToast('❌ Gagal menambahkan API Key.');
+    } catch (err: any) {
+      showToast('❌ Gagal menambahkan API Key: ' + (err.message || 'Error server'));
     } finally {
       setIsSubmitting(false);
     }
@@ -129,12 +135,41 @@ export const KeyRotatorModal: React.FC<KeyRotatorModalProps> = ({ isOpen, onClos
     }
   };
 
+  const handleClearPool = async (target: string = 'all') => {
+    if (!window.confirm(`Kosongkan semua API Key di pool ${target === 'all' ? 'SEMUA PROVIDER' : target.toUpperCase()}?`)) return;
+
+    try {
+      const res = await fetch('/api/fcc/key-rotator/clear-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: target })
+      });
+      if (res.ok) {
+        showToast(`🧹 Pool ${target === 'all' ? 'semua provider' : target.toUpperCase()} berhasil dikosongkan. Silakan input API Key manual.`);
+        fetchHealthReport();
+      }
+    } catch (err) {
+      showToast('❌ Gagal mengosongkan pool.');
+    }
+  };
+
   if (!isOpen) return null;
 
-  const currentList = providerTab === 'gemini' ? report.gemini : (providerTab === 'openai' ? report.openai : (report.fal || []));
-  const activeCount = currentList.filter(k => k.status === 'ACTIVE').length;
-  const cooldownCount = currentList.filter(k => k.status === 'COOLDOWN').length;
-  const disabledCount = currentList.filter(k => k.status === 'DISABLED').length;
+  const currentList = Array.isArray(
+    providerTab === 'gemini' 
+      ? report?.gemini 
+      : (providerTab === 'veo' 
+        ? report?.veo 
+        : (providerTab === 'openai' ? report?.openai : report?.fal))
+  ) ? (providerTab === 'gemini' 
+      ? report.gemini 
+      : (providerTab === 'veo' 
+        ? report.veo 
+        : (providerTab === 'openai' ? report.openai : report.fal))) : [];
+
+  const activeCount = currentList.filter(k => k && k.status === 'ACTIVE').length;
+  const cooldownCount = currentList.filter(k => k && k.status === 'COOLDOWN').length;
+  const disabledCount = currentList.filter(k => k && k.status === 'DISABLED').length;
 
   return (
     <AnimatePresence>
@@ -192,7 +227,19 @@ export const KeyRotatorModal: React.FC<KeyRotatorModalProps> = ({ isOpen, onClos
                   }`}
                 >
                   <Zap size={14} className={providerTab === 'gemini' ? 'text-cyan-400' : ''} />
-                  <span>Google Gemini ({report.gemini.length})</span>
+                  <span>Google Gemini ({(report.gemini || []).length})</span>
+                </button>
+
+                <button
+                  onClick={() => setProviderTab('veo')}
+                  className={`px-4 py-2 rounded-xl font-mono text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                    providerTab === 'veo'
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/50 shadow-lg shadow-rose-500/10'
+                      : 'bg-white/5 text-gray-400 hover:text-white border border-transparent'
+                  }`}
+                >
+                  <Zap size={14} className={providerTab === 'veo' ? 'text-rose-400' : ''} />
+                  <span>Google Veo ({(report.veo || []).length})</span>
                 </button>
 
                 <button
@@ -286,13 +333,31 @@ export const KeyRotatorModal: React.FC<KeyRotatorModalProps> = ({ isOpen, onClos
 
             {/* Key List Display */}
             <div className="space-y-2 font-mono">
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                Daftar API Key dalam Pool ({currentList.length})
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                  Daftar API Key dalam Pool ({currentList.length})
+                </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleClearPool(providerTab)}
+                    className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <Trash2 size={12} />
+                    <span>Kosongkan Pool {providerTab.toUpperCase()}</span>
+                  </button>
+                  <button
+                    onClick={() => handleClearPool('all')}
+                    className="px-2.5 py-1 rounded-lg bg-red-950/40 hover:bg-red-900/40 text-red-300 border border-red-500/40 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <Trash2 size={12} />
+                    <span>Kosongkan Semua Pool</span>
+                  </button>
+                </div>
+              </div>
 
               {currentList.length === 0 ? (
                 <div className="p-8 text-center rounded-xl bg-black/40 border border-dashed border-white/10 text-gray-500 text-xs">
-                  Belum ada API Key khusus di pool {providerTab.toUpperCase()}. Kunci dari file <code className="text-cyan-400">.env</code> akan digunakan secara default. Silakan tambahkan kunci tambahan di atas untuk mengaktifkan auto-failover.
+                  Pool {providerTab.toUpperCase()} kosong (0 Key). Silakan tambahkan API Key manual Anda pada kolom di atas.
                 </div>
               ) : (
                 <div className="space-y-2">

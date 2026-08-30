@@ -6,6 +6,7 @@ import path from "path";
 import { CharacterProfile, Scene, VideoType } from "../src/shared/types";
 import { FounderService } from "../src/server/fcc/FounderService";
 import { keyRotator } from "./keyRotator";
+import { validateCredentialFormat, logCredentialAudit } from "./utils/credentialValidator";
 import { 
   getFalImageModelForStudio, 
   buildFalImagePayload, 
@@ -31,90 +32,120 @@ export class ImageGenerationService {
       return trimmed;
     }
 
-    const key = falApiKey || keyRotator.getNextFalKey();
-    if (!key) {
-      console.warn('[Fal Storage] No Fal API Key available to upload reference image.');
-      return (trimmed.startsWith('http') || trimmed.startsWith('data:image')) ? trimmed : null;
+    let buffer: Buffer | null = null;
+    let contentType = 'image/png';
+    let fileName = `ref_${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
+
+    if (trimmed.startsWith('data:image/')) {
+      const match = trimmed.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+      if (match) {
+        contentType = match[1];
+        buffer = Buffer.from(match[2], 'base64');
+        const ext = contentType.split('/')[1] || 'png';
+        fileName = `ref_${Date.now()}.${ext}`;
+      }
+    } else if (trimmed.startsWith('/') || !trimmed.startsWith('http')) {
+      const resolvedPath = path.isAbsolute(trimmed) ? trimmed : path.join(process.cwd(), trimmed);
+      if (fs.existsSync(resolvedPath)) {
+        buffer = fs.readFileSync(resolvedPath);
+        if (resolvedPath.endsWith('.jpg') || resolvedPath.endsWith('.jpeg')) contentType = 'image/jpeg';
+        else if (resolvedPath.endsWith('.webp')) contentType = 'image/webp';
+        fileName = path.basename(resolvedPath);
+      }
     }
 
-    try {
-      let buffer: Buffer | null = null;
-      let contentType = 'image/png';
-      let fileName = `ref_${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
-
-      if (trimmed.startsWith('data:image/')) {
-        const match = trimmed.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
-        if (match) {
-          contentType = match[1];
-          buffer = Buffer.from(match[2], 'base64');
-          const ext = contentType.split('/')[1] || 'png';
-          fileName = `ref_${Date.now()}.${ext}`;
-        }
-      } else if (trimmed.startsWith('/') || !trimmed.startsWith('http')) {
-        const resolvedPath = path.isAbsolute(trimmed) ? trimmed : path.join(process.cwd(), trimmed);
-        if (fs.existsSync(resolvedPath)) {
-          buffer = fs.readFileSync(resolvedPath);
-          if (resolvedPath.endsWith('.jpg') || resolvedPath.endsWith('.jpeg')) contentType = 'image/jpeg';
-          else if (resolvedPath.endsWith('.webp')) contentType = 'image/webp';
-          fileName = path.basename(resolvedPath);
-        }
-      }
-
-      if (!buffer) {
-        if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
-        return null;
-      }
-
-      console.log(`[Fal Storage] Uploading reference image (${(buffer.length / 1024).toFixed(1)} KB, ${contentType}) to Fal Storage...`);
-
-      // 1. Initiate upload
-      const initRes = await fetch('https://rest.alpha.fal.ai/storage/upload/initiate', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Key ${key.trim()}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          file_name: fileName,
-          content_type: contentType
-        })
-      });
-
-      if (!initRes.ok) {
-        const err = await initRes.text().catch(() => '');
-        console.warn(`[Fal Storage] Initiate upload failed (${initRes.status}): ${err}`);
-        return trimmed.startsWith('data:image') ? trimmed : null;
-      }
-
-      const initJson: any = await initRes.json();
-      const uploadUrl = initJson.upload_url;
-      const fileUrl = initJson.file_url;
-
-      if (!uploadUrl || !fileUrl) {
-        console.warn('[Fal Storage] Incomplete initiate response:', initJson);
-        return trimmed;
-      }
-
-      // 2. PUT binary data
-      const putRes = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': contentType
-        },
-        body: buffer
-      });
-
-      if (!putRes.ok) {
-        console.warn(`[Fal Storage] PUT file data failed (${putRes.status})`);
-        return trimmed;
-      }
-
-      console.log(`[Fal Storage] Reference image uploaded successfully: ${fileUrl}`);
-      return fileUrl;
-    } catch (e: any) {
-      console.warn('[Fal Storage] Error uploading image to Fal Storage:', e.message);
-      return trimmed;
+    if (!buffer) {
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+      return null;
     }
+
+    const maxRetries = 3;
+    let currentKey = falApiKey || keyRotator.getNextFalKey();
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (!currentKey) {
+        console.warn(`[Fal Storage] Attempt ${attempt}/${maxRetries}: No Fal API Key available.`);
+        break;
+      }
+
+      try {
+        console.log(`[Fal Storage] Attempt ${attempt}/${maxRetries}: Uploading reference image (${(buffer.length / 1024).toFixed(1)} KB, ${contentType}) to Fal Storage...`);
+
+        // 1. Initiate upload
+        const initRes = await fetch('https://rest.alpha.fal.ai/storage/upload/initiate', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Key ${currentKey.trim()}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            file_name: fileName,
+            content_type: contentType
+          })
+        });
+
+        if (!initRes.ok) {
+          const errText = await initRes.text().catch(() => '');
+          console.warn(`[Fal Storage] Initiate failed (HTTP ${initRes.status}): ${errText}`);
+
+          if (initRes.status === 402 || initRes.status === 403 || initRes.status === 401 || errText.toLowerCase().includes('exhausted') || errText.toLowerCase().includes('locked')) {
+            keyRotator.reportKeyError('fal', currentKey, new Error(`HTTP ${initRes.status}: ${errText}`));
+            const nextKey = keyRotator.getNextFalKey();
+            if (nextKey && nextKey !== currentKey) {
+              console.log(`[Fal Storage] Rotating to next active Fal Key for retry...`);
+              currentKey = nextKey;
+              continue;
+            }
+          }
+
+          if (attempt < maxRetries) {
+            await new Promise(r => setTimeout(r, attempt * 1000));
+            continue;
+          }
+          break;
+        }
+
+        const initJson: any = await initRes.json();
+        const uploadUrl = initJson.upload_url;
+        const fileUrl = initJson.file_url;
+
+        if (!uploadUrl || !fileUrl) {
+          console.warn('[Fal Storage] Incomplete initiate response:', initJson);
+          if (attempt < maxRetries) {
+            await new Promise(r => setTimeout(r, attempt * 1000));
+            continue;
+          }
+          break;
+        }
+
+        // 2. PUT binary data
+        const putRes = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': contentType },
+          body: buffer
+        });
+
+        if (!putRes.ok) {
+          console.warn(`[Fal Storage] PUT file data failed (HTTP ${putRes.status})`);
+          if (attempt < maxRetries) {
+            await new Promise(r => setTimeout(r, attempt * 1000));
+            continue;
+          }
+          break;
+        }
+
+        console.log(`[Fal Storage] Reference image uploaded successfully: ${fileUrl}`);
+        return fileUrl;
+      } catch (err: any) {
+        console.warn(`[Fal Storage] Error during upload attempt ${attempt}/${maxRetries}:`, err?.message || err);
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, attempt * 1000));
+        }
+      }
+    }
+
+    console.warn(`[Fal Storage Warning] Fal Storage upload failed after ${maxRetries} attempts. Using base64 data URI fallback safely...`);
+    return `data:${contentType};base64,${buffer.toString('base64')}`;
   }
 
   /**
@@ -143,6 +174,83 @@ export class ImageGenerationService {
 
     // Dictionary mappings: Indonesian -> English for visual / character / setting / action terms
     const idToEnMap: [RegExp, string][] = [
+      // Meta-narrative / Camera & Perspective translation
+      [/arahan kamera:\s*/gi, ''],
+      [/sudut pandang kamera/gi, 'camera angle'],
+      [/sudut kamera/gi, 'camera angle'],
+      [/kamera depan/gi, 'front camera selfie angle'],
+      [/kamera belakang/gi, 'rear camera angle'],
+      [/kamera merekam/gi, 'medium shot of'],
+      [/kamera mengambil/gi, 'shot of'],
+      [/kamera menyorot/gi, 'focusing on'],
+      [/kamera mendekat/gi, 'close up of'],
+      [/kamera menjauh/gi, 'pull-out wide shot of'],
+      [/kamera bergerak maju/gi, 'dolly-in shot of'],
+      [/kamera bergerak/gi, 'tracking shot of'],
+      [/kamera berputar/gi, 'orbital shot of'],
+      [/kamera zoom in/gi, 'zooming in on'],
+      [/kamera zoom/gi, 'zooming in on'],
+      [/kamera low angle/gi, 'dynamic low-angle shot'],
+      [/kamera high angle/gi, 'high-angle overhead shot'],
+      [/kamera eye level/gi, 'eye-level shot'],
+      [/kamera close up/gi, 'close-up shot'],
+      [/kamera medium shot/gi, 'medium shot'],
+      [/kamera wide shot/gi, 'wide shot'],
+      [/kamera macro/gi, 'macro close-up shot'],
+      [/kamera handheld/gi, 'handheld smartphone camera shot'],
+      [/kamera smartphone/gi, 'authentic smartphone UGC camera perspective'],
+      [/kamera hp/gi, 'authentic smartphone camera perspective'],
+      [/kamera/gi, 'shot'],
+
+      // Lighting and Ambience
+      [/pencahayaan alami/gi, 'natural warm indoor lighting'],
+      [/pencahayaan studio/gi, 'clean studio lighting'],
+      [/pencahayaan terang/gi, 'bright soft lighting'],
+      [/pencahayaan dramatis/gi, 'dramatic key lighting'],
+      [/tata cahaya/gi, 'lighting'],
+      [/pencahayaan/gi, 'lighting'],
+      [/latar belakang/gi, 'backdrop'],
+      [/latar/gi, 'background'],
+
+      // Common typos & translation failures (Point 3)
+      [/tosakitan/gi, 'in pain'],
+      [/kesakitan/gi, 'wincing in pain'],
+      [/sakit/gi, 'pain'],
+      [/sneators/gi, 'sneakers'],
+      [/instinct/gi, 'distinct'],
+      [/meinum/gi, 'medium'],
+      [/slictod/gi, 'slicked'],
+      [/grainent/gi, 'gradient'],
+      [/frustrasi/gi, 'frustrated'],
+      [/lelah/gi, 'exhausted'],
+      [/bingung/gi, 'confused'],
+      [/kecewa/gi, 'disappointed'],
+      [/mengeluh/gi, 'complaining'],
+      [/sedih/gi, 'sad'],
+      [/murung/gi, 'gloomy'],
+      [/marah/gi, 'angry'],
+      [/tersenyum/gi, 'smiling'],
+      [/tertawa/gi, 'laughing'],
+      [/bahagia/gi, 'happy'],
+      [/senang/gi, 'glad'],
+      [/sepatu biasa/gi, 'ordinary shoes'],
+      [/sepatu/gi, 'shoes'],
+      [/rusak/gi, 'broken'],
+      [/jelek/gi, 'ugly'],
+      [/kotor/gi, 'dirty'],
+      [/bersih/gi, 'clean'],
+      [/baru/gi, 'new'],
+      [/lama/gi, 'old'],
+      [/memegang/gi, 'holding'],
+      [/menunjukkan/gi, 'showing'],
+      [/mengoleskan/gi, 'applying'],
+      [/memakai/gi, 'wearing'],
+      [/berjalan/gi, 'walking'],
+      [/berdiri/gi, 'standing'],
+      [/duduk/gi, 'sitting'],
+      [/berlari/gi, 'running'],
+      [/melompat/gi, 'jumping'],
+
       // Soccer & Sports terms
       [/pemain sepak bola/gi, 'soccer player'],
       [/sepak bola/gi, 'soccer'],
@@ -547,12 +655,16 @@ export class ImageGenerationService {
       }
     } else if (videoType === 'AFFILIATE') {
       const lowerT2I = (rawT2I || '').toLowerCase();
-      if (lowerT2I.includes('full-body') || lowerT2I.includes('full body') || lowerT2I.includes('on feet') || lowerT2I.includes('walking') || lowerT2I.includes('streetwear') || lowerT2I.includes('lifestyle')) {
-        styleSuffix = 'raw real life photograph, 35mm DSLR photo, authentic human skin texture with pores, professional fashion advertisement, full body lifestyle portrait, natural outdoor lighting, shallow depth of field';
-      } else if (lowerT2I.includes('macro') || lowerT2I.includes('close-up') || lowerT2I.includes('texture') || lowerT2I.includes('stitch')) {
-        styleSuffix = 'raw real life photograph, 35mm DSLR photo, macro photography, commercial studio product shot, extreme close-up showing fine product textures, soft diffused backlight';
+      const lowerVisual = (rawVisual || '').toLowerCase();
+      const combined = `${lowerT2I} ${lowerVisual}`;
+      if (combined.includes('full-body') || combined.includes('full body') || combined.includes('on feet') || combined.includes('walking') || combined.includes('streetwear') || combined.includes('lifestyle')) {
+        styleSuffix = 'authentic creator lifestyle photograph, 35mm lens, authentic human skin texture with pores, clean composition, natural warm ambient lighting, TikTok UGC video style';
+      } else if (combined.includes('macro') || combined.includes('close-up') || combined.includes('texture') || combined.includes('stitch')) {
+        styleSuffix = 'sharp macro photography, extreme close-up showing fine product textures, crystal clear focus, clean diffused studio lighting';
+      } else if (combined.includes('studio') || combined.includes('commercial')) {
+        styleSuffix = 'commercial advertising photograph, professional product presentation, sharp focus, clean studio backdrop, balanced key lighting';
       } else {
-        styleSuffix = 'raw real life photograph, 35mm DSLR photo, authentic human skin texture with pores, commercial studio product shot, medium shot showing upper body and hands holding product, 50mm lens f/2.8, clean dark studio backdrop, cool blue accent edge lighting';
+        styleSuffix = 'authentic TikTok UGC creator style, 35mm photo, natural warm indoor lighting, authentic human skin texture with pores, crisp focus on creator and product';
       }
     } else {
       styleSuffix = 'Cinematic 8k movie still, anamorphic lens flare, master shot, photorealistic';
@@ -591,8 +703,8 @@ export class ImageGenerationService {
 
     if (charName || charOutfit || charHair) {
       const parts = [
-        charName ? `A ${charName}` : 'A 27-year-old female model',
-        charOutfit ? `wearing ${charOutfit}` : 'wearing a black high-neck sweatshirt',
+        charName ? `A ${charName}` : 'A creator / presenter',
+        charOutfit ? `wearing ${charOutfit}` : '',
         charHair,
         charFace
       ].filter(Boolean);
@@ -606,7 +718,7 @@ export class ImageGenerationService {
 
     if (videoType === 'AFFILIATE') {
       const prodName = productName || 'Commercial Product';
-      const prodDesc = cleanProductVision || 'red perforated toe box, black leather upper, white midsole';
+      const prodDesc = cleanProductVision || 'authentic product design, clean packaging and labels';
       const cleanProdDesc = prodDesc.replace(/\(+/g, '').replace(/\)+/g, '').trim();
       const featuresProduct = scene.featuresProduct !== false && (scene as any)?.productLock !== false;
       const isBgLocked = scene.backgroundLock !== 'free';
@@ -633,17 +745,17 @@ export class ImageGenerationService {
           const alreadyHasProd = sanitizedText.toLowerCase().includes(prodName.toLowerCase());
           const prodSuffix = (!alreadyHasProd && prodName) ? `, featuring ${prodName} (${cleanProdDesc})` : '';
           
-          if (/^(Photorealistic|Extreme|Full-body|Commercial|Fashion|Dynamic|Lifestyle)/i.test(sanitizedText) || sanitizedText.length > 50) {
+          if (/^(Photorealistic|Extreme|Full-body|Commercial|Fashion|Dynamic|Lifestyle|Authentic|Sharp|Macro)/i.test(sanitizedText) || sanitizedText.length > 50) {
             promptParts.push(`${sanitizedText}${prodSuffix}`);
           } else {
-            const photoAnchor = `Photorealistic 35mm DSLR photograph of ${sanitizedText}${prodSuffix}`;
+            const photoAnchor = `Authentic photograph of ${sanitizedText}${prodSuffix}`;
             promptParts.push(photoAnchor);
           }
         } else {
-          const photoAnchor = `Photorealistic 35mm DSLR photograph of real hands holding ${prodName}, ${cleanProdDesc}, held at chest level in clear view, presented by ${charSubjectEn || 'a 27-year-old female model wearing a black high-neck sweatshirt'}, commercial studio product shot, 50mm lens f/2.8, authentic human skin texture with pores, clean dark studio backdrop, cool blue accent edge lighting`;
+          const photoAnchor = `Authentic creator photograph of real hands presenting ${prodName}, ${cleanProdDesc}, held in clear view by ${charSubjectEn || 'the creator'}, natural warm indoor lighting, authentic human skin texture with pores`;
           promptParts.push(photoAnchor);
           if (sceneActionEn) {
-            promptParts.push(`showing ${sceneActionEn}`);
+            promptParts.push(`Action: ${sceneActionEn}`);
           }
         }
       } else {
@@ -652,13 +764,13 @@ export class ImageGenerationService {
         if (sanitizedText) {
           promptParts.push(`Photorealistic 35mm DSLR portrait of ${charSubjectEn || 'the creator'}, authentic human skin texture with pores, showing ${sanitizedText}`);
         } else {
-          promptParts.push(`Photorealistic 35mm DSLR lifestyle portrait of ${charSubjectEn || 'the creator'}, authentic human skin texture with pores, expressive face showing ${sceneActionEn || 'candid authentic emotion'}, cinematic commercial lighting`);
+          promptParts.push(`Photorealistic 35mm DSLR lifestyle portrait of ${charSubjectEn || 'the creator'}, authentic human skin texture with pores, expressive face showing ${sceneActionEn || 'candid authentic emotion'}, natural ambient lighting`);
         }
       }
 
       // PRIORITAS 5: Background Lock Anchor
       if (isBgLocked) {
-        promptParts.push(`Background Lock: Environment strictly locked to ${locationStr || worldEn || 'the same consistent modern studio interior'}, identical lighting, architecture, and color temperature`);
+        promptParts.push(`Background Lock: Environment strictly locked to ${locationStr || worldEn || 'the same consistent modern room interior'}, identical lighting and color temperature`);
       } else {
         promptParts.push(`Background: ${locationStr || worldEn || 'Dynamic background setting suited to the scene action'}`);
       }
@@ -696,7 +808,7 @@ export class ImageGenerationService {
         }
 
         // Add character details as co-star actor modifiers so face/outfit map correctly without portrait zoom
-        if (charSubjectEn) {
+        if (charSubjectEn && !coreSubjectAction.toLowerCase().includes(charName.toLowerCase()) && !coreSubjectAction.toLowerCase().includes('starring')) {
           coreSubjectAction += `, starring ${charSubjectEn} as the main actor in action`;
         }
       } else if (charSubjectEn) {
@@ -848,18 +960,56 @@ export class ImageGenerationService {
     // Determine target aspect ratio based on studio & config
     const cleanAspect = aspectRatio || (videoType === 'AFFILIATE' || animationConfig?.aspectRatio === '9:16' || educationalConfig?.aspectRatio === '9:16' ? '9:16' : '16:9');
 
+    // Determine target engine route
+    const rawEngine = (engine || FounderService.getImageEngine() || 'fal').toLowerCase();
+    const isGoogleEngine = rawEngine.includes('gemini') || rawEngine.includes('imagen') || rawEngine.startsWith('nano-asli') || rawEngine === 'nano-asli';
+    const isOpenAiEngine = rawEngine.includes('chatgpt') || rawEngine.includes('dall-e') || rawEngine.includes('openai') || rawEngine.includes('gpt');
+    const isFalEngine = !isGoogleEngine && !isOpenAiEngine;
+
+    // Helper: Convert local path / URL / base64 into an inlineData part for Gemini multimodal image models
+    const loadAsBase64Part = async (imgStr: string): Promise<{ inlineData: { data: string; mimeType: string } } | null> => {
+      if (!imgStr) return null;
+      const trimmed = imgStr.trim();
+      if (trimmed.startsWith('data:image/')) {
+        const match = trimmed.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+        if (match) {
+          return { inlineData: { mimeType: match[1], data: match[2] } };
+        }
+      } else if (trimmed.startsWith('/') || (!trimmed.startsWith('http://') && !trimmed.startsWith('https://'))) {
+        const resolvedPath = path.isAbsolute(trimmed) ? trimmed : path.join(process.cwd(), trimmed);
+        if (fs.existsSync(resolvedPath)) {
+          const buffer = fs.readFileSync(resolvedPath);
+          let mimeType = 'image/png';
+          if (resolvedPath.endsWith('.jpg') || resolvedPath.endsWith('.jpeg')) mimeType = 'image/jpeg';
+          else if (resolvedPath.endsWith('.webp')) mimeType = 'image/webp';
+          return { inlineData: { mimeType, data: buffer.toString('base64') } };
+        }
+      } else if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        try {
+          const res = await fetch(trimmed);
+          if (res.ok) {
+            const arrayBuf = await res.arrayBuffer();
+            const buffer = Buffer.from(arrayBuf);
+            const mimeType = res.headers.get('content-type') || 'image/png';
+            return { inlineData: { mimeType, data: buffer.toString('base64') } };
+          }
+        } catch (e) {}
+      }
+      return null;
+    };
+
     // -----------------------------------------------------------------------
-    // Prepare Reference Images for Edit Models (Nano Banana 2 Edit / Nano Banana Pro Edit)
+    // Prepare Reference Images based on Selected Engine Route
     // -----------------------------------------------------------------------
     let referenceImageUrls: string[] = [];
-    const activeFalKey = keyRotator.getNextFalKey() || process.env.FAL_KEY || process.env.FAL_API_KEY || undefined;
+    let localGeminiParts: Array<{ inlineData: { data: string; mimeType: string } }> = [];
+    const activeFalKey = isFalEngine ? (keyRotator.getNextFalKey() || process.env.FAL_KEY || process.env.FAL_API_KEY || undefined) : undefined;
 
     if (videoType === 'AFFILIATE') {
-      // PRIORITAS 2 & 4: Multi-Angle Product gathering & Conditional Injection
       const shouldIncludeProduct = scene.featuresProduct !== false && (scene as any)?.productLock !== false;
       const shouldIncludeFace = (scene as any)?.faceLock !== false;
 
-      // 1. Gather all product images (up to 14 references supported by Fal Edit)
+      // 1. Gather all product images
       const rawProductList: string[] = [];
       if (shouldIncludeProduct) {
         if (masterProductImageUrl) rawProductList.push(masterProductImageUrl);
@@ -883,138 +1033,126 @@ export class ImageGenerationService {
         ? (masterCharacterImageUrl || characterProfile?.referenceImageUrl || affiliateConfig?.characterImage)
         : null;
 
-      // 3. Convert / upload product images to Fal storage
-      for (const pImg of rawProductList) {
-        const pUrl = await ImageGenerationService.ensurePublicFalImageUrl(pImg, activeFalKey);
-        if (pUrl && !referenceImageUrls.includes(pUrl) && referenceImageUrls.length < 14) {
-          referenceImageUrls.push(pUrl);
-        }
-      }
-
-      // 4. Convert / upload face image to Fal storage
-      let faceUrl: string | null = null;
-      if (rawFace) {
-        faceUrl = await ImageGenerationService.ensurePublicFalImageUrl(rawFace, activeFalKey);
-        if (faceUrl && !referenceImageUrls.includes(faceUrl) && referenceImageUrls.length < 14) {
-          referenceImageUrls.push(faceUrl);
-        }
-      }
-
-      // 5. PRIORITAS 5: Background Lock reference injection
+      // 3. Gather background reference
       const isBgLocked = scene.backgroundLock !== 'free';
-      const rawBg = previousSceneImageUrl || (scene as any)?.previousSceneImageUrl || (scene as any)?.backgroundImageUrl;
-      if (isBgLocked && rawBg && referenceImageUrls.length < 14) {
-        const bgUrl = await ImageGenerationService.ensurePublicFalImageUrl(rawBg, activeFalKey);
-        if (bgUrl && !referenceImageUrls.includes(bgUrl)) {
-          referenceImageUrls.push(bgUrl);
-        }
-      }
+      const rawBg = isBgLocked ? (previousSceneImageUrl || (scene as any)?.previousSceneImageUrl || (scene as any)?.backgroundImageUrl) : null;
 
-      // 6. Validation
-      const hasProduct = referenceImageUrls.some(u => u !== faceUrl);
-      const hasFace = !!faceUrl;
-
-      if (shouldIncludeProduct && !hasProduct) {
+      // Check validation
+      if (shouldIncludeProduct && rawProductList.length === 0) {
         const errMsg = `[Affiliate Studio Validation] Adegan ${sceneIndex + 1} membutuhkan Foto Produk, namun aset foto produk belum ditemukan. Mohon upload foto produk terlebih dahulu!`;
         if (onLog) onLog(errMsg, 'ERROR');
         throw new Error(errMsg);
       }
 
-      if (shouldIncludeFace && !hasFace) {
+      if (shouldIncludeFace && !rawFace) {
         const errMsg = `[Affiliate Studio Validation] Adegan ${sceneIndex + 1} mengaktifkan Kunci Wajah, namun foto wajah kreator belum ditemukan. Mohon upload foto wajah kreator terlebih dahulu!`;
         if (onLog) onLog(errMsg, 'ERROR');
         throw new Error(errMsg);
       }
 
-      if (referenceImageUrls.length === 0) {
-        const errMsg = `[Affiliate Studio Validation] Tidak ada gambar referensi (produk/wajah) yang tersedia untuk adegan ${sceneIndex + 1}.`;
-        if (onLog) onLog(errMsg, 'ERROR');
-        throw new Error(errMsg);
+      // Route image conversion
+      if (isGoogleEngine) {
+        // Direct local base64 parts for Google Gemini (Zero Fal Storage calls)
+        for (const pImg of rawProductList) {
+          const part = await loadAsBase64Part(pImg);
+          if (part && localGeminiParts.length < 3) localGeminiParts.push(part);
+        }
+        if (rawFace) {
+          const part = await loadAsBase64Part(rawFace);
+          if (part && localGeminiParts.length < 4) localGeminiParts.push(part);
+        }
+        if (rawBg) {
+          const part = await loadAsBase64Part(rawBg);
+          if (part && localGeminiParts.length < 5) localGeminiParts.push(part);
+        }
+      } else if (isFalEngine) {
+        // Upload / convert to Fal Storage
+        for (const pImg of rawProductList) {
+          const pUrl = await ImageGenerationService.ensurePublicFalImageUrl(pImg, activeFalKey);
+          if (pUrl && !referenceImageUrls.includes(pUrl) && referenceImageUrls.length < 14) {
+            referenceImageUrls.push(pUrl);
+          }
+        }
+        if (rawFace) {
+          const faceUrl = await ImageGenerationService.ensurePublicFalImageUrl(rawFace, activeFalKey);
+          if (faceUrl && !referenceImageUrls.includes(faceUrl) && referenceImageUrls.length < 14) {
+            referenceImageUrls.push(faceUrl);
+          }
+        }
+        if (rawBg) {
+          const bgUrl = await ImageGenerationService.ensurePublicFalImageUrl(rawBg, activeFalKey);
+          if (bgUrl && !referenceImageUrls.includes(bgUrl) && referenceImageUrls.length < 14) {
+            referenceImageUrls.push(bgUrl);
+          }
+        }
       }
     } else {
       // ANIMATION & EDUCATIONAL STUDIO:
-      // Support multi-character isolation: if scene specifies character(s), isolate strictly to those characters
       const sceneChar = (scene as any).characterImageUrl 
         || (scene as any).characterReferenceUrl 
         || (scene as any).characterProfile?.referenceImageUrl
         || scene.metadata?.characterImageUrl
         || scene.metadata?.characterReferenceUrl;
 
-      // Check if project has multiple registered characters in animationConfig
       const registeredChars = (animationConfig as any)?.characters || (animationConfig as any)?.characterProfiles;
       const sceneCharNames: string[] = (scene as any).characters || ((scene as any).characterName ? [(scene as any).characterName] : []);
 
+      const rawCharList: string[] = [];
       if (Array.isArray(registeredChars) && registeredChars.length > 0 && sceneCharNames.length > 0) {
-        // Multi-character scene filtering: only include references of characters present in this scene
         for (const charObj of registeredChars) {
           const isFeatured = sceneCharNames.some(n => 
             n && charObj.name && (n.toLowerCase().includes(charObj.name.toLowerCase()) || charObj.name.toLowerCase().includes(n.toLowerCase()))
           );
           if (isFeatured) {
             const ref = charObj.referenceImageUrl || charObj.imageUrl || charObj.characterImageUrl;
-            if (ref) {
-              const charUrl = await ImageGenerationService.ensurePublicFalImageUrl(ref, activeFalKey);
-              if (charUrl && !referenceImageUrls.includes(charUrl)) {
-                referenceImageUrls.push(charUrl);
-              }
-            }
+            if (ref && !rawCharList.includes(ref)) rawCharList.push(ref);
           }
         }
       } else if (sceneChar) {
-        // Scene-specific character reference override
-        const charUrl = await ImageGenerationService.ensurePublicFalImageUrl(sceneChar, activeFalKey);
-        if (charUrl && !referenceImageUrls.includes(charUrl)) {
-          referenceImageUrls.push(charUrl);
-        }
+        rawCharList.push(sceneChar);
       } else {
-        // Default single master character reference
         const rawChar = masterCharacterImageUrl 
           || characterProfile?.referenceImageUrl 
           || (Array.isArray(characterProfile?.referenceImageUrls) && characterProfile.referenceImageUrls[0]);
+        if (rawChar) rawCharList.push(rawChar);
+      }
 
-        if (rawChar) {
-          const charUrl = await ImageGenerationService.ensurePublicFalImageUrl(rawChar, activeFalKey);
-          if (charUrl && !referenceImageUrls.includes(charUrl)) {
+      if (isGoogleEngine) {
+        for (const cImg of rawCharList) {
+          const part = await loadAsBase64Part(cImg);
+          if (part && localGeminiParts.length < 4) localGeminiParts.push(part);
+        }
+      } else if (isFalEngine) {
+        for (const cImg of rawCharList) {
+          const charUrl = await ImageGenerationService.ensurePublicFalImageUrl(cImg, activeFalKey);
+          if (charUrl && !referenceImageUrls.includes(charUrl) && referenceImageUrls.length < 14) {
             referenceImageUrls.push(charUrl);
           }
         }
       }
     }
 
-    // Sanitize URLs to ensure valid array format and max 14 limit
     referenceImageUrls = sanitizeReferenceImageUrls(referenceImageUrls);
-
-    // Determine preferred engine
-    const rawEngine = (engine || FounderService.getImageEngine() || 'fal').toLowerCase();
-    let preferredEngine = 'fal';
-    if (rawEngine.includes('gemini') || rawEngine.includes('imagen') || rawEngine.includes('banana')) {
-      preferredEngine = 'gemini-imagen-3';
-    } else if (rawEngine.includes('chatgpt') || rawEngine.includes('dall-e') || rawEngine.includes('openai') || rawEngine.includes('gpt')) {
-      preferredEngine = 'chatgpt-image-2';
-    } else {
-      preferredEngine = 'fal';
-    }
 
     let falQuotaErrorOccurred = false;
     let falQuotaErrorMessage = '';
+    let lastFalError = '';
+    let lastGeminiError = '';
+    let lastGptError = '';
 
     // -----------------------------------------------------------------------
-    // Engine 1: Fal.ai Engine (Nano Banana 2 / Nano Banana Pro Edit / Flux Schnell)
+    // Engine 1: Fal.ai Engine (Executed ONLY when user selects Fal.ai / Standard / Precision / Draft)
     // -----------------------------------------------------------------------
     const runFalImage = async (): Promise<string | null> => {
       const falApiKey = keyRotator.getNextFalKey();
       if (!falApiKey) {
-        console.log(`[Fal.ai Engine] API Key not configured or all keys exhausted in rotator.`);
         falQuotaErrorOccurred = true;
-        falQuotaErrorMessage = 'Seluruh FAL_KEY dalam rotator habis atau tidak terkonfigurasi.';
+        falQuotaErrorMessage = 'Kunci API Fal.ai belum dikonfigurasi di server.';
         return null;
       }
 
-      // Determine model from single source of truth based on studio mode, tier, & reference images
       const selectedTier = (rawEngine === 'draft' || rawEngine === 'precision' || rawEngine === 'standard') ? rawEngine : undefined;
       const isDraftMode = selectedTier === 'draft' || rawEngine === 'flux-diffusion' || rawEngine === 'fal-ai/flux/schnell';
-
-      // For draft mode (FLUX.1 Schnell), strictly ignore reference images (pure text-to-image)
       const effectiveRefImages = isDraftMode ? [] : referenceImageUrls;
 
       const targetModelDef = getFalImageModelForStudio(videoType, {
@@ -1027,211 +1165,182 @@ export class ImageGenerationService {
       console.log(`[Fal.ai Engine] Studio [${videoType}] -> Selected Model: ${targetModelDef.id} (Tier: ${selectedTier || 'default'}, Ref Images: ${effectiveRefImages.length})`);
       if (onLog) onLog(`Routing Scene ${sceneIndex + 1} ke fal.ai [${targetModelDef.id}] (Ref Images: ${effectiveRefImages.length})...`, 'INFO');
 
-      // Model target: Draft tier strictly uses flux/schnell without fallback. Affiliate strictly uses nano-banana-pro/edit.
-      const candidateModels = [targetModelDef.id];
+      const modelPath = targetModelDef.id;
+      try {
+        const payload = buildFalImagePayload(modelPath, {
+          prompt: finalPrompt,
+          imageUrls: (modelPath.includes('/edit') && effectiveRefImages.length > 0) ? effectiveRefImages : undefined,
+          aspectRatio: cleanAspect,
+          resolution: resolution as any,
+          safetyTolerance: videoType === 'AFFILIATE' ? '6' : '5'
+        });
 
-      for (const modelPath of candidateModels) {
-        try {
-          // Construct payload according to official schema
-          const payload = buildFalImagePayload(modelPath, {
-            prompt: finalPrompt,
-            imageUrls: (modelPath.includes('/edit') && effectiveRefImages.length > 0) ? effectiveRefImages : undefined,
-            aspectRatio: cleanAspect,
-            resolution: resolution as any,
-            safetyTolerance: videoType === 'AFFILIATE' ? '6' : '5' // High tolerance for authentic human faces & products
+        const isHighResQueue = resolution === '4K' || resolution === '2K';
+        const startTime = Date.now();
+
+        if (isHighResQueue) {
+          console.log(`[Fal.ai Queue] Submitting 4K/2K payload to https://queue.fal.run/${modelPath}...`);
+          if (onLog) onLog(`Mengantrekan render keyframe resolusi tinggi (${resolution || '4K'}) ke queue.fal.run [${modelPath}]...`, 'INFO');
+
+          const queueRes = await fetch(`https://queue.fal.run/${modelPath}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Key ${falApiKey.trim()}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
           });
 
-          console.log(`[Fal.ai Payload] Model: ${modelPath}`);
-          console.log(`[Fal.ai Payload] image_urls (${payload?.image_urls?.length || 0} items):`, JSON.stringify(payload?.image_urls || [], null, 2));
+          if (!queueRes.ok) {
+            const errText = await queueRes.text().catch(() => '');
+            let parsedDetail = errText;
+            try {
+              const errJson = JSON.parse(errText);
+              parsedDetail = errJson.detail || errJson.message || errText;
+            } catch (e) {}
 
-          const isHighResQueue = resolution === '4K' || resolution === '2K';
-          const startTime = Date.now();
+            if (queueRes.status === 401 || queueRes.status === 403) {
+              falQuotaErrorOccurred = true;
+              falQuotaErrorMessage = `Saldo token API Fal.ai habis atau akses ditolak (${parsedDetail})`;
+              keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP ${queueRes.status}: ${parsedDetail}`));
+            } else if (queueRes.status === 402) {
+              falQuotaErrorOccurred = true;
+              falQuotaErrorMessage = `Saldo token API Fal.ai habis (HTTP 402 Payment Required).`;
+              keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 402 Payment Required`));
+            }
+            lastFalError = `HTTP ${queueRes.status}: ${parsedDetail}`;
+            return null;
+          }
 
-          if (isHighResQueue) {
-            // ASYNC QUEUE MODE (Fal Queue runner for 4K / 2K generations)
-            console.log(`[Fal.ai Queue] Submitting 4K/2K payload to https://queue.fal.run/${modelPath}...`);
-            if (onLog) onLog(`Mengantrekan render keyframe resolusi tinggi (${resolution || '4K'}) ke queue.fal.run [${modelPath}]...`, 'INFO');
+          const queueJson: any = await queueRes.json();
+          const requestId = queueJson.request_id;
+          const statusUrl = queueJson.status_url || `https://queue.fal.run/${modelPath}/requests/${requestId}/status`;
+          const responseUrl = queueJson.response_url || `https://queue.fal.run/${modelPath}/requests/${requestId}`;
 
-            const queueRes = await fetch(`https://queue.fal.run/${modelPath}`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Key ${falApiKey.trim()}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(payload)
+          let completedJson: any = null;
+          const maxPollTimeMs = 180000;
+          const pollIntervalMs = 2500;
+
+          while (Date.now() - startTime < maxPollTimeMs) {
+            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+            const pollRes = await fetch(statusUrl, {
+              headers: { 'Authorization': `Key ${falApiKey.trim()}` }
             });
 
-            if (!queueRes.ok) {
-              const errText = await queueRes.text().catch(() => '');
-              let parsedDetail = errText;
-              try {
-                const errJson = JSON.parse(errText);
-                parsedDetail = errJson.detail || errJson.message || errText;
-              } catch (e) {}
-
-              if (queueRes.status === 401) {
-                falQuotaErrorOccurred = true;
-                falQuotaErrorMessage = `HTTP 401 Unauthorized pada Fal.ai (${parsedDetail})`;
-                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 401 Unauthorized: ${parsedDetail}`));
-              } else if (queueRes.status === 402) {
-                falQuotaErrorOccurred = true;
-                falQuotaErrorMessage = `Saldo token API Fal.ai (${modelPath}) habis (HTTP 402 Payment Required).`;
-                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 402 Payment Required: Saldo Fal.ai habis`));
+            if (pollRes.ok) {
+              const pollJson: any = await pollRes.json();
+              const queueStatus = (pollJson.status || '').toUpperCase();
+              if (queueStatus === 'COMPLETED') {
+                const finalRes = await fetch(responseUrl, {
+                  headers: { 'Authorization': `Key ${falApiKey.trim()}` }
+                });
+                completedJson = finalRes.ok ? await finalRes.json() : pollJson;
+                break;
+              } else if (queueStatus === 'FAILED') {
+                lastFalError = JSON.stringify(pollJson.error || pollJson.logs || 'Queue task failed');
+                return null;
               }
-
-              throw new Error(`[FAL.AI QUEUE SUBMIT FAILED] HTTP ${queueRes.status}: ${parsedDetail}`);
-            }
-
-            const queueJson: any = await queueRes.json();
-            const requestId = queueJson.request_id;
-            const statusUrl = queueJson.status_url || `https://queue.fal.run/${modelPath}/requests/${requestId}/status`;
-            const responseUrl = queueJson.response_url || `https://queue.fal.run/${modelPath}/requests/${requestId}`;
-
-            console.log(`[Fal.ai Queue] Request queued ID: ${requestId}. Polling for completion...`);
-
-            let completedJson: any = null;
-            const maxPollTimeMs = 180000; // 3 minutes timeout
-            const pollIntervalMs = 2500;
-
-            while (Date.now() - startTime < maxPollTimeMs) {
-              await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-              const pollRes = await fetch(statusUrl, {
-                headers: { 'Authorization': `Key ${falApiKey.trim()}` }
-              });
-
-              if (pollRes.ok) {
-                const pollJson: any = await pollRes.json();
-                const queueStatus = (pollJson.status || '').toUpperCase();
-                const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
-                console.log(`[Fal.ai Queue] Job ${requestId.substring(0, 8)} status: ${queueStatus} (${elapsedSec}s)`);
-
-                if (queueStatus === 'COMPLETED') {
-                  const finalRes = await fetch(responseUrl, {
-                    headers: { 'Authorization': `Key ${falApiKey.trim()}` }
-                  });
-                  if (finalRes.ok) {
-                    completedJson = await finalRes.json();
-                  } else {
-                    completedJson = pollJson;
-                  }
-                  break;
-                } else if (queueStatus === 'FAILED') {
-                  const jobErr = pollJson.error || pollJson.logs || 'Queue task failed';
-                  throw new Error(`[FAL.AI QUEUE JOB FAILED] Model ${modelPath}: ${JSON.stringify(jobErr)}`);
-                }
-              }
-            }
-
-            const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
-            if (!completedJson) {
-              // NO SILENT SYNC FALLBACK: Fail cleanly and trigger automatic credit refund to prevent HTTP 504 gateway timeout
-              throw new Error(`[FAL.AI QUEUE TIMEOUT] Render antrean resolusi ${resolution} waktu habis setelah ${durationSec}s. Permintaan dihentikan demi stabilitas server. Kredit akan otomatis di-refund.`);
-            }
-
-            const imageUrl = completedJson?.images?.[0]?.url || completedJson?.images?.[0]?.image?.url || completedJson?.image?.url || completedJson?.output?.[0];
-            if (imageUrl) {
-              console.log(`[Fal.ai Queue] Successfully generated ${resolution} keyframe in ${durationSec}s via queue (${modelPath})!`);
-              if (onLog) onLog(`Keyframe ${resolution} Adegan ${sceneIndex + 1} berhasil digenerate via Queue (${durationSec}s) [${modelPath}]`, 'SUCCESS');
-              return imageUrl;
-            }
-
-            throw new Error(`[FAL.AI QUEUE ERROR] Job selesai tetapi tidak ditemukan URL gambar pada response payload.`);
-          } else {
-            // DIRECT SYNC MODE (0.5K / 1K)
-            console.log(`[Fal.ai Engine] Submitting sync payload to https://fal.run/${modelPath}...`);
-            const res = await fetch(`https://fal.run/${modelPath}`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Key ${falApiKey.trim()}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(payload)
-            });
-
-            if (res.ok) {
-              const json: any = await res.json();
-              
-              // Check Content Safety / NSFW flags
-              if (json?.has_nsfw_concepts && Array.isArray(json.has_nsfw_concepts) && json.has_nsfw_concepts.some(Boolean)) {
-                const safetyMsg = `[FAL.AI SAFETY FILTER] Gambar adegan ${sceneIndex + 1} ditolak oleh filter keamanan (NSFW / Safety Trigger). Sesuaikan kata kunci atau tingkatkan toleransi keamanan.`;
-                console.warn(safetyMsg);
-                if (onLog) onLog(safetyMsg, 'WARN');
-              }
-
-              const imageUrl = json?.images?.[0]?.url || json?.images?.[0]?.image?.url || json?.image?.url || json?.output?.[0];
-              if (imageUrl) {
-                const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
-                console.log(`[Fal.ai Engine] Successfully generated keyframe via Fal.ai (${modelPath}) in ${durationSec}s!`);
-                if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate [${modelPath}] (${durationSec}s)`, 'SUCCESS');
-                return imageUrl;
-              }
-            } else {
-              const errText = await res.text().catch(() => '');
-              let parsedErr = errText;
-              try {
-                const errJson = JSON.parse(errText);
-                parsedErr = errJson.detail || errJson.message || errText;
-              } catch (e) {}
-
-              if (res.status === 401) {
-                falQuotaErrorOccurred = true;
-                falQuotaErrorMessage = `HTTP 401 Unauthorized pada Fal.ai (${parsedErr})`;
-                console.error(`[Fal.ai Engine 401] Autentikasi Fal.ai gagal untuk model '${modelPath}': ${parsedErr}`);
-                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 401 Unauthorized: ${parsedErr}`));
-              } else if (res.status === 402) {
-                falQuotaErrorOccurred = true;
-                falQuotaErrorMessage = `Saldo token API Fal.ai (${modelPath}) habis (HTTP 402 Payment Required).`;
-                console.error(`[Fal.ai Engine 402] Saldo/Kuota Fal.ai habis: ${parsedErr}`);
-                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 402 Payment Required: Saldo habis`));
-              } else if (res.status === 422) {
-                console.error(`[Fal.ai Engine 422] Validasi payload gagal untuk model '${modelPath}': ${parsedErr}`);
-                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 422 Unprocessable Entity: ${parsedErr}`));
-              } else if (res.status === 429) {
-                console.error(`[Fal.ai Engine 429] Rate limit tercapai untuk model '${modelPath}': ${parsedErr}`);
-                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 429 Rate Limit Exceeded`));
-              } else {
-                console.error(`[Fal.ai Engine HTTP ${res.status}] Error: ${parsedErr}`);
-                keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP ${res.status}: ${parsedErr}`));
-              }
-
-              console.warn(`[Fal.ai Engine Sync ${res.status}] ${parsedErr}. Proceeding to next failover engine.`);
-              return null;
             }
           }
-        } catch (falErr: any) {
-          console.error(`[Fal.ai Engine] Error running model ${modelPath}:`, falErr?.message || falErr);
-          keyRotator.reportKeyError('fal', falApiKey, falErr);
-          return null;
-        }
-      }
 
+          const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+          if (!completedJson) {
+            lastFalError = `Queue polling timeout after ${durationSec}s`;
+            return null;
+          }
+
+          const imageUrl = completedJson?.images?.[0]?.url || completedJson?.images?.[0]?.image?.url || completedJson?.image?.url || completedJson?.output?.[0];
+          if (imageUrl) {
+            if (onLog) onLog(`Keyframe ${resolution} Adegan ${sceneIndex + 1} berhasil digenerate [${modelPath}] (${durationSec}s)`, 'SUCCESS');
+            return imageUrl;
+          }
+        } else {
+          // DIRECT SYNC MODE
+          const res = await fetch(`https://fal.run/${modelPath}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Key ${falApiKey.trim()}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+          });
+
+          if (res.ok) {
+            const json: any = await res.json();
+            const imageUrl = json?.images?.[0]?.url || json?.images?.[0]?.image?.url || json?.image?.url || json?.output?.[0];
+            if (imageUrl) {
+              const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+              if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate [${modelPath}] (${durationSec}s)`, 'SUCCESS');
+              return imageUrl;
+            }
+          } else {
+            const errText = await res.text().catch(() => '');
+            let parsedErr = errText;
+            try {
+              const errJson = JSON.parse(errText);
+              parsedErr = errJson.detail || errJson.message || errText;
+            } catch (e) {}
+
+            if (res.status === 401 || res.status === 403) {
+              falQuotaErrorOccurred = true;
+              falQuotaErrorMessage = `Saldo token API Fal.ai habis atau akses ditolak (${parsedErr})`;
+            } else if (res.status === 402) {
+              falQuotaErrorOccurred = true;
+              falQuotaErrorMessage = `Saldo token API Fal.ai habis (HTTP 402 Payment Required).`;
+            }
+            lastFalError = `HTTP ${res.status}: ${parsedErr}`;
+          }
+        }
+      } catch (falErr: any) {
+        lastFalError = falErr?.message || String(falErr);
+        keyRotator.reportKeyError('fal', falApiKey, falErr);
+      }
       return null;
     };
 
     // -----------------------------------------------------------------------
-    // Engine 2: Google Gemini Banana / Google AI Studio Imagen 3 Engine
+    // Engine 2: Google Gemini Banana / Nano Asli Engine (Executed ONLY when user selects Nano Asli)
     // -----------------------------------------------------------------------
     const runGeminiBanana = async (): Promise<string | null> => {
       const bananaConfig = FounderService.getGeminiBananaConfig();
       const customKey = bananaConfig.apiKey;
 
-      const candidateModels = [
-        bananaConfig.model || 'gemini-3.1-flash-image',
-        'gemini-3.1-flash-lite-image',
-        'gemini-3.1-flash-image'
-      ];
+      let candidateModels = ['gemini-3.1-flash-image', 'gemini-3.1-flash-lite-image', 'gemini-3-pro-image'];
+
+      if (rawEngine === 'nano-asli-lite') {
+        candidateModels = ['gemini-3.1-flash-lite-image', 'gemini-3.1-flash-image'];
+      } else if (rawEngine === 'nano-asli-pro' || rawEngine.includes('pro')) {
+        candidateModels = ['gemini-3.1-flash-image', 'gemini-3-pro-image'];
+      } else if (rawEngine === 'nano-asli-premium' || rawEngine === 'nano-asli-ultra' || rawEngine.includes('imagen')) {
+        candidateModels = ['imagen-3.0-generate-002', 'gemini-3.1-flash-image'];
+      }
+
       const uniqueBananaModels = Array.from(new Set(candidateModels));
 
-      const maxAttempts = customKey ? 1 : 3;
+      const maxAttempts = 3;
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const apiKey = customKey || keyRotator.getNextGeminiKey();
+        const apiKey = (attempt === 0 && customKey) ? customKey : keyRotator.getNextGeminiKey();
         if (!apiKey) {
-          console.log(`[Google Gemini Banana Engine] API Key not configured or all keys exhausted. Skipping to next engine...`);
+          lastGeminiError = 'API Key Google Gemini belum dikonfigurasi di server.';
           return null;
         }
 
+        const keySourceName = (attempt === 0 && customKey) ? 'FounderService.customGeminiBananaConfig' : 'KeyRotator.GeminiPool';
+        const vRes = validateCredentialFormat('gemini', apiKey, keySourceName);
+        if (!vRes.valid) {
+          logCredentialAudit('gemini', keySourceName, apiKey, 'GENERATE_KEYFRAME', 'BLOCKED', vRes.reason);
+          lastGeminiError = vRes.reason || 'Invalid credential format';
+          continue;
+        }
+
+        logCredentialAudit('gemini', keySourceName, apiKey, 'GENERATE_KEYFRAME', 'SUCCESS');
+        let keyAuthFailed = false;
+
         for (const modelName of uniqueBananaModels) {
-          console.log(`[Google Gemini Banana Engine] Attempting keyframe generation for Scene ${sceneIndex + 1} with ${modelName}...`);
+          if (keyAuthFailed) break;
+
+          console.log(`[Google Gemini Nano Asli Engine] Attempting keyframe generation for Scene ${sceneIndex + 1} with ${modelName}...`);
+          if (onLog) onLog(`Generating keyframe Adegan ${sceneIndex + 1} dengan Google Nano Asli [${modelName}]...`, 'INFO');
 
           try {
             const ai = new GoogleGenAI({
@@ -1243,47 +1352,72 @@ export class ImageGenerationService {
               }
             });
 
-            const response = await ai.models.generateContent({
-              model: modelName,
-              contents: {
-                parts: [
-                  { text: finalPrompt }
-                ]
-              },
-              config: {
-                imageConfig: {
-                  aspectRatio: cleanAspect as any,
-                  imageSize: resolution === '4K' ? '2K' : (resolution === '2K' ? '2K' : '1K')
+            if (modelName === 'imagen-3.0-generate-002') {
+              const imgRes = await ai.models.generateImages({
+                model: 'imagen-3.0-generate-002',
+                prompt: finalPrompt,
+                config: {
+                  numberOfImages: 1,
+                  aspectRatio: (cleanAspect === '9:16' ? '9:16' : (cleanAspect === '16:9' ? '16:9' : '1:1')) as any
                 }
-              }
-            });
+              });
 
-            if (response.candidates?.[0]?.content?.parts) {
-              for (const part of response.candidates[0].content.parts) {
-                if (part.inlineData && part.inlineData.data) {
-                  console.log(`[Google Gemini Banana Engine] Successfully synthesized keyframe via SDK (${modelName})!`);
-                  return `data:image/png;base64,${part.inlineData.data}`;
+              if (imgRes.generatedImages?.[0]?.image?.imageBytes) {
+                if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate via Google Imagen 3!`, 'SUCCESS');
+                return `data:image/png;base64,${imgRes.generatedImages[0].image.imageBytes}`;
+              }
+            } else {
+              // Multimodal content parts (Reference Images + Prompt)
+              const parts: any[] = [...localGeminiParts, { text: finalPrompt }];
+              const imageConfig: any = {
+                aspectRatio: (cleanAspect === '9:16' ? '9:16' : (cleanAspect === '16:9' ? '16:9' : '1:1')) as any
+              };
+              if (modelName !== 'gemini-3.1-flash-lite-image' && (resolution === '4K' || resolution === '2K')) {
+                imageConfig.imageSize = '2K';
+              }
+
+              const response = await ai.models.generateContent({
+                model: modelName,
+                contents: { parts },
+                config: { imageConfig }
+              });
+
+              if (response.candidates?.[0]?.content?.parts) {
+                for (const part of response.candidates[0].content.parts) {
+                  if (part.inlineData && part.inlineData.data) {
+                    if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate via Google Nano Asli [${modelName}]!`, 'SUCCESS');
+                    return `data:image/png;base64,${part.inlineData.data}`;
+                  }
                 }
               }
             }
           } catch (sdkErr: any) {
-            console.log(`[Google Gemini Banana Engine] Model ${modelName} error on API key (${sdkErr?.message}).`);
+            const msg = sdkErr?.message || String(sdkErr);
+            console.log(`[Google Gemini Nano Asli] Model ${modelName} error on key: ${msg}`);
+            lastGeminiError = msg;
             keyRotator.reportKeyError('gemini', apiKey, sdkErr);
+
+            const isAuthErr = msg.toLowerCase().includes('api_key_invalid') ||
+                              msg.toLowerCase().includes('invalid api key') ||
+                              msg.includes('401') || msg.includes('403') ||
+                              msg.toLowerCase().includes('unauthenticated');
+            if (isAuthErr) {
+              keyAuthFailed = true;
+            }
           }
         }
       }
-      console.log(`[Google Gemini Banana Engine] Imagen API unavailable on current key(s), seamlessly proceeding to failover engine.`);
       return null;
     };
 
     // -----------------------------------------------------------------------
-    // Engine 3: OpenAI ChatGPT Image 2 (DALL-E 3 / DALL-E 2)
+    // Engine 3: OpenAI ChatGPT Image 2 (Executed ONLY when user selects OpenAI)
     // -----------------------------------------------------------------------
     const runGptImage2 = async (): Promise<string | null> => {
       const gptConfig = FounderService.getGptImage2Config();
       const apiKey = gptConfig.apiKey || process.env.OPENAI_API_KEY;
       if (!apiKey) {
-        console.log(`[ChatGPT Image 2 Engine] OpenAI API Key not configured. Skipping to next engine...`);
+        lastGptError = 'OpenAI API Key belum dikonfigurasi di server.';
         return null;
       }
 
@@ -1291,126 +1425,53 @@ export class ImageGenerationService {
         let customBaseURL = gptConfig.endpoint ? gptConfig.endpoint.trim() : undefined;
         if (customBaseURL) {
           customBaseURL = customBaseURL.replace(/\/images\/generations\/?$/, '').replace(/\/+$/, '');
-          if (customBaseURL.includes('api.openai.com/v1')) {
-            customBaseURL = undefined;
-          }
+          if (customBaseURL.includes('api.openai.com/v1')) customBaseURL = undefined;
         }
 
-        const openai = new OpenAI({ 
-          apiKey,
-          baseURL: customBaseURL
+        const openai = new OpenAI({ apiKey, baseURL: customBaseURL });
+        const targetModel = gptConfig.model || 'dall-e-3';
+
+        if (onLog) onLog(`Generating keyframe Adegan ${sceneIndex + 1} dengan OpenAI [${targetModel}]...`, 'INFO');
+
+        const response = await openai.images.generate({
+          model: targetModel as any,
+          prompt: finalPrompt.substring(0, 1000),
+          n: 1,
+          size: cleanAspect === '9:16' ? "1024x1792" : "1792x1024"
         });
 
-        const targetModel = gptConfig.model || 'dall-e-3';
-        console.log(`[ChatGPT Image 2 Engine] Requesting keyframe generation for Scene ${sceneIndex + 1} (${targetModel})...`);
-
-        // If custom endpoint is set, try standard REST image generation first
-        if (customBaseURL) {
-          const directEndpoint = gptConfig.endpoint || `${customBaseURL}/images/generations`;
-          try {
-            const apiRes = await fetch(directEndpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-              },
-              body: JSON.stringify({
-                model: targetModel,
-                prompt: finalPrompt.substring(0, 1000),
-                n: 1,
-                size: cleanAspect === '9:16' ? "1024x1792" : "1792x1024"
-              })
-            });
-            if (apiRes.ok) {
-              const resData: any = await apiRes.json();
-              if (resData?.data && resData.data[0]?.url) {
-                console.log(`[ChatGPT Image 2 Engine] Successfully generated image via custom endpoint!`);
-                return resData.data[0].url;
-              }
-              if (resData?.data && resData.data[0]?.b64_json) {
-                return `data:image/png;base64,${resData.data[0].b64_json}`;
-              }
-            }
-          } catch (endpointErr) {
-            console.log(`[ChatGPT Image 2 Engine] Custom endpoint unreachable, trying standard client...`);
-          }
-        }
-
-        // Try standard OpenAI image models with cascade fallback (dall-e-3 -> dall-e-2)
-        const modelsToTry = targetModel === 'chatgpt-image-2' 
-          ? ['dall-e-3', 'dall-e-2'] 
-          : [targetModel, 'dall-e-3', 'dall-e-2'];
-        
-        const uniqueModels = Array.from(new Set(modelsToTry));
-
-        for (const m of uniqueModels) {
-          try {
-            const response = await openai.images.generate({
-              model: m as any,
-              prompt: finalPrompt.substring(0, 1000),
-              n: 1,
-              size: cleanAspect === '9:16' ? "1024x1792" : (m === 'dall-e-2' ? "512x512" : "1792x1024")
-            });
-
-            if (response?.data && response.data[0]?.url) {
-              console.log(`[ChatGPT Image 2 Engine] Successfully generated image with ${m} for Scene ${sceneIndex + 1}!`);
-              return response.data[0].url;
-            }
-          } catch (modelErr: any) {
-            const msg = modelErr?.message || '';
-            console.log(`[ChatGPT Image 2 Engine] Notice for model '${m}': ${msg.substring(0, 100)}`);
-          }
+        if (response?.data && response.data[0]?.url) {
+          if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate via OpenAI [${targetModel}]!`, 'SUCCESS');
+          return response.data[0].url;
         }
       } catch (openAiErr: any) {
-        console.log(`[ChatGPT Image 2 Engine] Service unavailable, initiating seamless failover...`);
+        lastGptError = openAiErr?.message || String(openAiErr);
       }
       return null;
     };
 
-    const throwApiError = () => {
-      console.log(`[Image Synthesis Engine] All configured API models failed or API key exhausted.`);
-      throw new Error("Gagal generate gambar — kuota API sedang bermasalah atau error dari penyedia layanan AI. Silakan coba lagi nanti.");
-    };
-
-    // Primary & Fallback Engine Execution Flow
-    if (preferredEngine === 'fal') {
-      const falResult = await runFalImage();
-      if (falResult) return falResult;
-
-      // Check if Fal.ai quota/token was exhausted
-      if (falQuotaErrorOccurred) {
-        throw new Error(`[NANO_QUOTA_EXHAUSTED] ${falQuotaErrorMessage || 'Gagal generate gambar — kuota API (Fal.ai) sedang bermasalah, silakan coba lagi nanti.'}`);
-      }
-
+    // -----------------------------------------------------------------------
+    // STRICT ENGINE DISPATCH: Respect User Selection without Cross-Provider Fallback
+    // -----------------------------------------------------------------------
+    if (isGoogleEngine) {
       const bananaResult = await runGeminiBanana();
       if (bananaResult) return bananaResult;
+      const errMsg = `[NANO_ASLI_ERROR] Gagal generate gambar dengan model Google Nano Asli / Gemini. Token API server pusat Google mengalami kendala atau habis kuota. Detail: ${lastGeminiError || 'API token error'}`;
+      if (onLog) onLog(`[ERROR] ${errMsg}`, 'ERROR');
+      throw new Error(errMsg);
+    } else if (isOpenAiEngine) {
       const gptResult = await runGptImage2();
       if (gptResult) return gptResult;
-      return throwApiError();
-    } else if (preferredEngine === 'chatgpt-image-2') {
-      const gptResult = await runGptImage2();
-      if (gptResult) return gptResult;
-      const falResult = await runFalImage();
-      if (falResult) return falResult;
-      const bananaResult = await runGeminiBanana();
-      if (bananaResult) return bananaResult;
-      return throwApiError();
-    } else if (preferredEngine === 'gemini-imagen-3' || preferredEngine === 'gemini-banana') {
-      const bananaResult = await runGeminiBanana();
-      if (bananaResult) return bananaResult;
-      const falResult = await runFalImage();
-      if (falResult) return falResult;
-      const gptResult = await runGptImage2();
-      if (gptResult) return gptResult;
-      return throwApiError();
+      const errMsg = `[OPENAI_ERROR] Gagal generate gambar dengan model OpenAI / ChatGPT Image 2. Token API server pusat OpenAI bermasalah. Detail: ${lastGptError || 'API key error'}`;
+      if (onLog) onLog(`[ERROR] ${errMsg}`, 'ERROR');
+      throw new Error(errMsg);
     } else {
+      // Fal.ai Engine Route
       const falResult = await runFalImage();
       if (falResult) return falResult;
-      const bananaResult = await runGeminiBanana();
-      if (bananaResult) return bananaResult;
-      const gptResult = await runGptImage2();
-      if (gptResult) return gptResult;
-      return throwApiError();
+      const errMsg = `[NANO_QUOTA_EXHAUSTED] Gagal generate gambar dengan model Fal.ai (${rawEngine}). Token / saldo API server pusat Fal.ai habis. Detail: ${falQuotaErrorMessage || lastFalError || 'Saldo habis (402/403)'}`;
+      if (onLog) onLog(`[ERROR] ${errMsg}`, 'ERROR');
+      throw new Error(errMsg);
     }
   }
 

@@ -423,40 +423,6 @@ export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
             />
           </div>
 
-          {/* Pengisi Suara Edukasi (TTS) */}
-          <div className="grid grid-cols-1 md:grid-cols-1 gap-4 p-3.5 rounded-xl bg-slate-950/80 border border-rose-500/20">
-            
-
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-2 flex items-center gap-1.5">
-                <Volume2 className="w-3.5 h-3.5" />
-                Karakter Suara Edukator (TTS)
-              </label>
-              <select
-                id="select-edu-voice-actor"
-                defaultValue={localStorage.getItem('neurona_voice_id') || 'openai-female-nova'}
-                onChange={(e) => {
-                  localStorage.setItem('neurona_voice_id', e.target.value);
-                  neuronaVoice.setVoice(e.target.value);
-                }}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 focus:border-rose-400 text-xs text-white outline-none"
-              >
-                <option value="id-ID-Journey-O">Google Cloud Journey-O (ID ♀ Edukator Ultra-Realistis)</option>
-                <option value="id-ID-Wavenet-A">Google Cloud Wavenet-A (ID ♀ Pengajar Jernih & Formal)</option>
-                <option value="id-ID-Wavenet-B">Google Cloud Wavenet-B (ID ♂ Guru Bertenaga & Lugas)</option>
-                <option value="en-US-Journey-D">Google Cloud Journey-D (EN ♂ Narator Dokumenter Sains)</option>
-                <option value="ja-JP-Neural2-B">Google Cloud Neural2-B (JA ♀ Seiyuu Edukasi Jepang)</option>
-                <option value="openai-female-nova">ChatGPT Nova (OpenAI - ♀ Edukator Ramah & Jelas)</option>
-                <option value="openai-male-onyx">ChatGPT Onyx (OpenAI - ♂ Pengajar Berwibawa & Podcast)</option>
-                <option value="openai-female-shimmer">ChatGPT Shimmer (OpenAI - ♀ Lembut & Inspiratif)</option>
-                <option value="tryaudio-female-citra">Citra Kirana (Neural AI - ♀ Edukator Ramah & Jelas)</option>
-                <option value="tryaudio-male-dimas">Dimas Perkasa (Neural AI - ♂ Pengajar Berwibawa)</option>
-                <option value="eleven-male-adam">Adam Explainer (ElevenLabs - ♂ Dosen Ahli & Mendalam)</option>
-                <option value="eleven-female-rachel">Rachel Teacher (ElevenLabs - ♀ Guru Interaktif)</option>
-              </select>
-            </div>
-          </div>
-
           {/* Rasio & Jumlah Bab */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

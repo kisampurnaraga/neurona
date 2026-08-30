@@ -81,20 +81,15 @@ export const FounderAudioVoiceLibrary: React.FC = () => {
     try {
       setLoadingVoiceId(voice.id);
       neuronaVoice.stop();
-
-      const sampleText = voice.lang === 'ja-JP' 
-        ? "こんにちは、ボス！私はノイロナです。お手伝いできることはありますか？"
-        : voice.lang === 'en-US'
-        ? "Hello Boss! I am Neurona, your creative AI video director. How can I assist you today?"
-        : "Assalamu Alaikum Boss! Ini adalah contoh suara saya untuk asisten dan video produksi Anda.";
-
-      await neuronaVoice.speak(sampleText, voice.gender, voice.provider, voice.voiceKey);
       setPlayingVoiceId(voice.id);
+
+      await neuronaVoice.playSample(voice.id);
     } catch (err) {
       console.error("Preview voice failed:", err);
       showToast("Gagal memutar audio sampel suara.");
     } finally {
       setLoadingVoiceId(null);
+      setPlayingVoiceId(null);
     }
   };
 

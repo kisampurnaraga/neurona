@@ -48,7 +48,7 @@ import {
   Terminal
 } from 'lucide-react';
 import type { ProductionProject, Scene } from '../shared/types';
-import { neuronaVoice } from '../utils/speechSynthesis';
+import { neuronaVoice, AVAILABLE_VOICES, VoiceOption } from '../utils/speechSynthesis';
 import { getProjectAspectRatioClass } from '../utils/aspectRatio';
 import { NanoQuotaAlertModal } from './NanoQuotaAlertModal';
 import { getAccessToken, googleSignIn } from '../utils/googleAuth';
@@ -67,7 +67,7 @@ interface StoryboardMatrixModalProps {
   onResyncScene?: (action: 'ADD' | 'REMOVE', targetIndex: number) => Promise<void>;
 }
 
-export type ImageModelId = 'standard' | 'precision' | 'draft' | 'chatgpt-image-2' | 'gemini-imagen-3' | 'flux-diffusion';
+export type ImageModelId = 'standard' | 'precision' | 'draft' | 'chatgpt-image-2' | 'gemini-imagen-3' | 'flux-diffusion' | 'nano-asli-lite' | 'nano-asli' | 'nano-asli-pro' | 'nano-asli-premium' | 'nano-asli-ultra';
 
 export interface ImageModelOption {
   id: ImageModelId;
@@ -106,6 +106,42 @@ export const IMAGE_MODEL_OPTIONS: ImageModelOption[] = [
     badge: '5 Kredit',
     badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
     desc: 'fal-ai/flux/schnell — Eksplorasi gaya visual cepat & preview storyboard kilat'
+  },
+  {
+    id: 'nano-asli-lite',
+    name: 'Google Imagen 3 Lite (Nano Asli Lite - 5 Kredit)',
+    shortName: 'Nano Asli Lite (5 Cr)',
+    costPerImage: 5,
+    badge: '5 Kredit',
+    badgeColor: 'bg-teal-500/20 text-teal-300 border-teal-500/40',
+    desc: 'Google Gemini 3.1 Flash Lite Image — Cepat & Hemat'
+  },
+  {
+    id: 'nano-asli',
+    name: 'Google Gemini Imagen 3 (Nano Asli Standar - 10 Kredit)',
+    shortName: 'Nano Asli (10 Cr)',
+    costPerImage: 10,
+    badge: '10 Kredit',
+    badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+    desc: 'Google Gemini Imagen 3 Resmi - Pipeline Google AI Studio'
+  },
+  {
+    id: 'nano-asli-pro',
+    name: 'Google Gemini Imagen 3 Pro (Nano Asli Pro - 15 Kredit)',
+    shortName: 'Nano Asli Pro (15 Cr)',
+    costPerImage: 15,
+    badge: '15 Kredit',
+    badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
+    desc: 'Resolusi Tinggi & Kualitas Premium Google Imagen 3'
+  },
+  {
+    id: 'nano-asli-premium',
+    name: 'Google Gemini Imagen 3 Premium (Nano Asli Premium - 25 Kredit)',
+    shortName: 'Nano Asli Prem (25 Cr)',
+    costPerImage: 25,
+    badge: '25 Kredit',
+    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+    desc: 'Ultra High Quality & Presisi Maksimal Google Imagen 3'
   }
 ];
 
@@ -118,7 +154,12 @@ export interface VideoModelOption {
 }
 
 export const VIDEO_MODEL_OPTIONS: VideoModelOption[] = [
-  { id: 'fal-ai/wan-i2v', name: 'Wan 2.1 (Budget - 10 Cr)', shortName: 'Wan 2.1 (10 Cr)', desc: 'Wan 2.1 14B I2V 720p — Sangat efisien & stabil', costPerVideo: 10 },
+  { id: 'veo-asli-lite', name: 'Google Veo Asli Lite (Budget - 10 Cr)', shortName: 'Veo Asli Lite (10 Cr)', desc: 'Google Veo Resmi — Hemat & Cepat', costPerVideo: 10 },
+  { id: 'veo-asli', name: 'Google Veo Asli Standard (Balanced - 15 Cr)', shortName: 'Veo Asli Std (15 Cr)', desc: 'Google Veo Resmi — Kualitas Standar Sinematik', costPerVideo: 15 },
+  { id: 'veo-asli-pro', name: 'Google Veo Asli Pro (Premium - 25 Cr)', shortName: 'Veo Asli Pro (25 Cr)', desc: 'Google Veo Resmi — Resolusi & Gerak Ultra Pro', costPerVideo: 25 },
+  { id: 'fal-ai/veo3.1/lite/image-to-video', name: 'Veo 3.1 Lite Bisu (Budget - 20 Cr)', shortName: 'Veo 3.1 Lite (20 Cr)', desc: 'Termurah dari Google. Tanpa Audio.', costPerVideo: 20 },
+  { id: 'fal-ai/bytedance/seedance/v1/lite/image-to-video', name: 'Seedance 1.0 Lite (Budget - 25 Cr)', shortName: 'Seedance 1.0 (25 Cr)', desc: 'Budget Bytedance. Native Audio.', costPerVideo: 25 },
+  { id: 'fal-ai/wan-i2v', name: 'Wan 2.1 (Budget - 45 Cr)', shortName: 'Wan 2.1 (45 Cr)', desc: 'Wan 2.1 14B I2V 720p — Sangat efisien & stabil', costPerVideo: 45 },
   { id: 'bytedance/seedance-2.0/fast/image-to-video', name: 'SeaDance 2.0 Fast (Budget - 10 Cr)', shortName: 'SeaDance Fast (10 Cr)', desc: 'ByteDance SeaDance 2.0 Fast — Render kilat', costPerVideo: 10 },
   { id: 'fal-ai/hunyuan-video-image-to-video', name: 'Hunyuan Video (Budget - 10 Cr)', shortName: 'Hunyuan Video (10 Cr)', desc: 'Tencent Hunyuan Video — Stabil & efisien', costPerVideo: 10 },
   { id: 'bytedance/seedance-2.0/image-to-video', name: 'SeaDance 2.0 Standard (Balanced - 15 Cr)', shortName: 'SeaDance 2.0 Std (15 Cr)', desc: 'ByteDance SeaDance 2.0 Standard — Kualitas 720p', costPerVideo: 15 },
@@ -159,11 +200,14 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [activeTab, setActiveTab] = useState<'SCENES' | 'TIERS'>('SCENES');
   const [selectedImageEngine, setSelectedImageEngine] = useState<ImageModelId>(() => {
     const saved = localStorage.getItem('neurona_image_model') as ImageModelId;
-    return (saved === 'standard' || saved === 'precision' || saved === 'draft') ? saved : 'standard';
+    const valid = IMAGE_MODEL_OPTIONS.some(m => m.id === saved);
+    return valid ? saved : 'nano-asli';
   });
-  const [selectedVideoEngine, setSelectedVideoEngine] = useState<string>(
-    () => localStorage.getItem('neurona_video_model') || 'byteplus'
-  );
+  const [selectedVideoEngine, setSelectedVideoEngine] = useState<string>(() => {
+    const saved = localStorage.getItem('neurona_video_model');
+    const valid = VIDEO_MODEL_OPTIONS.some(m => m.id === saved);
+    return valid ? saved : 'veo-asli';
+  });
   const [sceneImageModels, setSceneImageModels] = useState<Record<string, ImageModelId>>({});
   const [sceneVideoModels, setSceneVideoModels] = useState<Record<string, string>>({});
   const [copiedSceneId, setCopiedSceneId] = useState<string | null>(null);
@@ -181,78 +225,22 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [subtitleStyle, setSubtitleStyle] = useState<'Bold Pop' | 'Clean Minimal' | 'Neon Glow'>('Bold Pop');
 
   // Suara Narator Engine States
-  const [selectedNarratorVoice, setSelectedNarratorVoice] = useState<
-    'webspeech' | 'minimax_turbo' | 'minimax_hd' | 'elevenlabs' | 'voice_clone'
-  >('webspeech');
+  const [selectedNarratorVoice, setSelectedNarratorVoice] = useState<string>('id-ID-Journey-O');
   const [clonedVoiceId, setClonedVoiceId] = useState<string>('');
   const [uploadedVoiceFile, setUploadedVoiceFile] = useState<File | null>(null);
   const [voiceFileDuration, setVoiceFileDuration] = useState<number>(0);
   const [isCloningVoice, setIsCloningVoice] = useState<boolean>(false);
   const [cloneVoiceSuccess, setCloneVoiceSuccess] = useState<boolean>(false);
   const [playingVoiceDemo, setPlayingVoiceDemo] = useState<string | null>(null);
+  const [voiceCategoryFilter, setVoiceCategoryFilter] = useState<string>('all');
 
-  const NARRATOR_VOICES = [
-    {
-      id: 'webspeech',
-      name: 'Browser TTS (Web Speech API)',
-      badge: 'GRATIS',
-      creditCostText: '0 CR / Video',
-      badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-      description: 'Sintesis vokal bawaan browser HP/PC (id-ID). Gratis 0 kredit.',
-      demoText: 'Halo! Ini adalah contoh sampel suara narator gratis dari browser Anda.',
-      provider: 'webspeech'
-    },
-    {
-      id: 'minimax_turbo',
-      name: 'MiniMax Speech-02 Turbo',
-      badge: '15 CR',
-      creditCostText: '15 CR / Video',
-      badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
-      description: 'Sintesis vokal AI cepat, natural, & responsif (fal-ai/minimax/speech-02-turbo).',
-      demoText: 'Halo! Ini contoh sampel suara MiniMax Speech-02 Turbo yang cepat dan alami.',
-      provider: 'minimax_turbo'
-    },
-    {
-      id: 'minimax_hd',
-      name: 'MiniMax Speech-02 HD',
-      badge: '25 CR',
-      creditCostText: '25 CR / Video',
-      badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-      description: 'Kualitas vokal studio HD 48kHz dengan artikulasi tinggi (fal-ai/minimax/speech-02-hd).',
-      demoText: 'Halo! Ini adalah sampel suara MiniMax Speech-02 HD dengan kejernihan studio definisi tinggi.',
-      provider: 'minimax_hd'
-    },
-    {
-      id: 'elevenlabs',
-      name: 'ElevenLabs Multilingual v2',
-      badge: '35 CR',
-      creditCostText: '35 CR / Video',
-      badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-      description: 'Vokal AI paling realistis & emosional (Terhubung via Founder Center Provider).',
-      demoText: 'Halo! Ini sampel suara ElevenLabs Multilingual v2 yang sangat jernih dan ekspresif.',
-      provider: 'elevenlabs'
-    },
-    {
-      id: 'voice_clone',
-      name: 'Voice Cloning (MiniMax Voice Clone)',
-      badge: '50 CR SETUP',
-      creditCostText: '50 CR Setup + 15 CR/Gen',
-      badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-      description: 'Kloning vokal Anda sendiri dari sampel audio (minimal 10 detik). Tersimpan di proyek.',
-      demoText: 'Halo! Ini sampel suara hasil kloning vokal kustom Anda.',
-      provider: 'voice_clone'
-    }
-  ];
+  const NARRATOR_VOICES = AVAILABLE_VOICES;
 
-  const handlePlayVoiceDemo = (voiceId: string, demoText: string) => {
+  const handlePlayVoiceDemo = async (voiceId: string, demoText?: string) => {
     if (playingVoiceDemo === voiceId) {
-      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      neuronaVoice.stop();
       setPlayingVoiceDemo(null);
       return;
-    }
-
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
     }
 
     if (voiceId === 'voice_clone' && uploadedVoiceFile) {
@@ -269,34 +257,13 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
       }
     }
 
-    if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(demoText);
-      utterance.lang = 'id-ID';
-
-      if (voiceId === 'webspeech') {
-        utterance.rate = 1.0;
-        utterance.pitch = 1.0;
-      } else if (voiceId === 'minimax_turbo') {
-        utterance.rate = 1.12;
-        utterance.pitch = 1.05;
-      } else if (voiceId === 'minimax_hd') {
-        utterance.rate = 0.95;
-        utterance.pitch = 1.02;
-      } else if (voiceId === 'elevenlabs') {
-        utterance.rate = 1.0;
-        utterance.pitch = 1.08;
-      } else {
-        utterance.rate = 0.92;
-        utterance.pitch = 0.95;
-      }
-
+    try {
       setPlayingVoiceDemo(voiceId);
-      utterance.onend = () => setPlayingVoiceDemo(null);
-      utterance.onerror = () => setPlayingVoiceDemo(null);
-      window.speechSynthesis.speak(utterance);
-    } else {
-      setPlayingVoiceDemo(voiceId);
-      setTimeout(() => setPlayingVoiceDemo(null), 3000);
+      await neuronaVoice.playSample(voiceId);
+    } catch (e) {
+      console.warn("Gagal memutar sampel audio:", e);
+    } finally {
+      setPlayingVoiceDemo(null);
     }
   };
 
@@ -900,6 +867,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     try {
       if (onGenerateSceneVideo) {
         await onGenerateSceneVideo(sceneId, appliedCost, chosenVideoModel);
+        setActiveMediaView(prev => ({ ...prev, [sceneId]: 'video' }));
       }
     } finally {
       setIsProcessingAction(null);
@@ -1616,7 +1584,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                             const isVideoDone = scene.videoStatus === 'COMPLETED' || Boolean(scene.videoUrl);
                             const currentView = activeMediaView[scene.id] || (isVideoDone ? 'video' : 'image');
                             const isExplicitImageInVideo = typeof scene.videoUrl === 'string' && scene.videoUrl.startsWith('data:image/');
-                            const safeVideoSrc = (!isExplicitImageInVideo && scene.videoUrl && (scene.videoUrl.endsWith('.mp4') || scene.videoUrl.endsWith('.webm') || scene.videoUrl.includes('/videos/') || scene.videoUrl.includes('/sample/') || scene.videoUrl.startsWith('data:video/')))
+                            const safeVideoSrc = (!isExplicitImageInVideo && scene.videoUrl)
                               ? scene.videoUrl
                               : '/api/videos/sample-ocean.mp4';
 
@@ -2566,24 +2534,50 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
             {/* SECTION 2: SUARA NARATOR AI */}
             <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-2">
                 <label className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
-                  <Mic size={14} /> 2. Suara Narator AI (Voiceover Engine)
+                  <Mic size={14} /> 2. Suara Narator AI (Google TTS & Voice Cloning)
                 </label>
                 <span className="text-[11px] text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
                   <Zap size={10} /> Sampel Hemat Biaya (0 CR Preview)
                 </span>
               </div>
 
-              <div className="space-y-3">
-                {NARRATOR_VOICES.map((v) => {
+              {/* CATEGORY FILTER TABS */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-3 no-scrollbar">
+                {[
+                  { id: 'all', label: 'Semua Suara' },
+                  { id: 'Journey', label: 'Google Journey' },
+                  { id: 'Neural2', label: 'Google Neural2' },
+                  { id: 'Wavenet', label: 'Google WaveNet' },
+                  { id: 'Standard', label: 'Google Standard' },
+                  { id: 'Free', label: 'Gratis Browser' },
+                  { id: 'Clone', label: 'Voice Cloning' }
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setVoiceCategoryFilter(cat.id)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition shrink-0 cursor-pointer ${
+                      voiceCategoryFilter === cat.id
+                        ? 'bg-purple-600 text-white shadow-sm'
+                        : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
+                {NARRATOR_VOICES.filter(v => voiceCategoryFilter === 'all' || v.category === voiceCategoryFilter).map((v) => {
                   const isSelected = selectedNarratorVoice === v.id;
                   const isPlaying = playingVoiceDemo === v.id;
 
                   return (
                     <div 
                       key={v.id}
-                      className={`p-4 rounded-xl border transition-all ${
+                      className={`p-3.5 rounded-xl border transition-all ${
                         isSelected 
                         ? 'bg-purple-950/30 border-purple-500/60 shadow-[0_0_15px_rgba(168,85,247,0.2)]' 
                         : 'bg-slate-800/40 border-slate-700 hover:border-slate-600'
@@ -2592,7 +2586,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                       <div className="flex items-start justify-between gap-3">
                         <div 
                           className="flex items-start gap-3 flex-1 cursor-pointer"
-                          onClick={() => setSelectedNarratorVoice(v.id as any)}
+                          onClick={() => setSelectedNarratorVoice(v.id)}
                         >
                           <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 ${
                             isSelected ? 'border-purple-400' : 'border-slate-600'
@@ -2604,6 +2598,9 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                               <span className={`font-bold text-sm ${isSelected ? 'text-purple-200' : 'text-slate-200'}`}>{v.name}</span>
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${v.badgeColor}`}>
                                 {v.badge}
+                              </span>
+                              <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950/50 px-1.5 py-0.5 rounded border border-cyan-500/30">
+                                {v.creditCostText}
                               </span>
                             </div>
                             <p className="text-xs text-slate-400 mt-1 leading-relaxed">{v.description}</p>

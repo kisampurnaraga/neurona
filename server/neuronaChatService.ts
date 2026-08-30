@@ -30,7 +30,7 @@ Perhatian:
 
       return await keyRotator.executeGeminiWithRotation(async (ai, apiKey) => {
         const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.6-flash',
           contents: [
             ...formattedHistory,
             { role: 'user', parts: [{ text: userMessage }] }

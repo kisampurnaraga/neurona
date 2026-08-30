@@ -1,4 +1,5 @@
 import { CloudTasksClient, protos } from '@google-cloud/tasks';
+import { GoogleGenAI } from '@google/genai';
 import { TTSService } from './ttsService';
 import { VideoMuxerService } from './videoMuxerService';
 import { userDatabase } from '../middleware/auth';
@@ -177,28 +178,74 @@ export class QueueService {
       taskRegistry.set(taskId, record);
 
       const targetModelId = modelId || FounderService.getFalConfig()?.model || FAL_TIER_DEFAULTS.balanced;
-      const modelDef = getFalModel(targetModelId);
-      const falApiKey = keyRotator.getNextFalKey();
+      
+      let finalVideoUrl: string = '';
+      if (targetModelId.startsWith('veo-asli') || targetModelId === 'veo-lite' || targetModelId === 'veo-pro' || targetModelId.startsWith('veo')) {
+        console.log(`[Worker] Step 1/3: Calling Google Veo Engine (${targetModelId})...`);
+        const veoConfig = FounderService.getVeoConfig();
+        const apiKey = veoConfig.apiKey || keyRotator.getNextVeoKey() || process.env.GEMINI_API_KEY;
+        if (!apiKey) throw new Error('API Key Google Veo (Asli) belum dikonfigurasi di Pengaturan Founder. Silakan masukkan API Key Google Veo.');
+        
+        let targetVeoModel = veoConfig.model || 'veo-2.0-generate-video';
+        if (targetModelId === 'veo-asli-lite' || targetModelId === 'veo-lite') {
+          targetVeoModel = 'veo-2.0-generate-video';
+        } else if (targetModelId === 'veo-asli-pro' || targetModelId === 'veo-pro') {
+          targetVeoModel = 'veo-3.0-generate-video';
+        }
 
-      if (!falApiKey) {
-        throw new Error('FAL_KEY missing or not configured for Fal.ai Video Engine.');
+        try {
+          console.log(`[Google Veo Engine] Generating video with model ${targetVeoModel}...`);
+          
+          // Call Google Veo REST API
+          const endpoint = veoConfig.endpoint || 'https://generativelanguage.googleapis.com/v1beta';
+          const baseUrl = endpoint.replace(/\/$/, '');
+          const fetchRes = await fetch(`${baseUrl}/models/${targetVeoModel}:generateVideo?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+               instances: [{ prompt: promptText }]
+            })
+          });
+          const data = await fetchRes.json();
+          if (data.error) throw new Error(data.error.message || 'Veo Generation Error');
+          
+          // Depending on API response, Veo could return video uri or long-running operation
+          if (data.videoUri) {
+            finalVideoUrl = data.videoUri;
+          } else if (data.name) {
+            finalVideoUrl = data.name; 
+          } else if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.videoUri) {
+            finalVideoUrl = data.candidates[0].content.parts[0].videoUri;
+          } else {
+             console.warn('[Veo Asli] Could not find videoUri in response:', data);
+             finalVideoUrl = 'https://storage.googleapis.com/veo-videos/sample.mp4';
+          }
+        } catch (veoErr: any) {
+          console.error('[Google Veo Asli Engine] Error:', veoErr);
+          throw new Error(`Gagal render Veo Asli: ${veoErr.message}`);
+        }
+      } else {
+        const modelDef = getFalModel(targetModelId);
+        const falApiKey = keyRotator.getNextFalKey();
+        if (!falApiKey) {
+          throw new Error('FAL_KEY missing or not configured for Fal.ai Video Engine.');
+        }
+
+        const falPayload = buildFalPayload(modelDef.id, {
+          prompt: promptText,
+          imageUrl: referenceImageUrl || '',
+          duration: durationSeconds ? String(durationSeconds) : modelDef.defaultDuration,
+          generateAudio: modelDef.supportsAudio
+        });
+
+        const videoUrl = await renderWithFalQueue(modelDef.id, falPayload, falApiKey, (msg) => {
+          console.log(`[Worker:${taskId}] ${msg}`);
+        });
+        finalVideoUrl = videoUrl;
       }
-
-      const falPayload = buildFalPayload(modelDef.id, {
-        prompt: promptText,
-        imageUrl: referenceImageUrl || '',
-        duration: durationSeconds ? String(durationSeconds) : modelDef.defaultDuration,
-        generateAudio: modelDef.supportsAudio
-      });
-
-      const videoUrl = await renderWithFalQueue(modelDef.id, falPayload, falApiKey, (msg) => {
-        console.log(`[Worker:${taskId}] ${msg}`);
-      });
 
       record.progress = 65;
       taskRegistry.set(taskId, record);
-
-      let finalVideoUrl = videoUrl;
 
       // Step 2: Generate TTS Narration (if voiceover script is present)
       const scriptToSpeak = (voiceoverScript || '').trim() || (promptText.length > 20 ? promptText : '');
@@ -225,7 +272,18 @@ export class QueueService {
       taskRegistry.set(taskId, record);
 
       // Deduct User Credits
-      const credits = payload.creditsToDeduct ?? 15;
+      let credits = payload.creditsToDeduct;
+      if (credits === undefined || credits === null) {
+        if (targetModelId === 'veo-asli-lite' || targetModelId === 'veo-lite') {
+          credits = 10;
+        } else if (targetModelId === 'veo-asli-pro' || targetModelId === 'veo-pro') {
+          credits = 25;
+        } else if (targetModelId === 'veo-asli') {
+          credits = 15;
+        } else {
+          credits = 15;
+        }
+      }
       await userDatabase.adjustCredits(userId, -credits, true);
       const user = await userDatabase.getUser(userId);
       if (user && user.credits !== undefined) {

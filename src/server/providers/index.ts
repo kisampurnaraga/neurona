@@ -1,5 +1,6 @@
 import { FalVideoAdapter } from "./FalVideoAdapter";
 import { BytePlusAdapter } from "./BytePlusAdapter";
+import { GoogleVeoAdapter } from "./GoogleVeoAdapter";
 import { MockVideoProvider } from "./MockVideoProvider";
 import { VideoGenerationProvider } from "./VideoProvider";
 import { FAL_MODELS } from "../../../server/falModelConfig";
@@ -23,6 +24,10 @@ export function getAvailableVideoProviders() {
 export function getVideoProvider(preferredType?: string): VideoGenerationProvider {
   const providerType = (preferredType || activeProviderType || process.env.VIDEO_PROVIDER || 'fal').toLowerCase();
   
+  if (providerType.includes('veo') || providerType.includes('google') || providerType === 'google_veo') {
+    return new GoogleVeoAdapter();
+  }
+
   if (providerType.includes('byteplus') || providerType.includes('pixeldance') || providerType.includes('doubao')) {
     return new BytePlusAdapter();
   }
@@ -38,3 +43,4 @@ export function getVideoProvider(preferredType?: string): VideoGenerationProvide
 export * from './VideoProvider';
 export * from './FalVideoAdapter';
 export * from './BytePlusAdapter';
+export * from './GoogleVeoAdapter';

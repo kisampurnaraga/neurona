@@ -1,10 +1,22 @@
 const fs = require('fs');
-
 let content = fs.readFileSync('server/imageService.ts', 'utf8');
 
-content = content.replace(
-  "      const rawProd = masterProductImageUrl \n        || affiliateConfig?.productImages?.[0] \n        || affiliateConfig?.productImage \n        || (scene.assetUrl && !scene.assetUrl.includes('pollinations') ? scene.assetUrl : undefined);",
-  "      let rawProd = masterProductImageUrl \n        || (scene.metadata && scene.metadata.productImage) \n        || (scene.assetUrl && !scene.assetUrl.includes('pollinations') ? scene.assetUrl : undefined);\n\n      // Fallback check if the scene actually needs the product but metadata was missed\n      if (!rawProd && (affiliateConfig?.productImages?.[0] || affiliateConfig?.productImage)) {\n        const sceneText = (scene.visualDirection || '') + ' ' + (scene.promptTextToImage || '');\n        if (/(produk|product|barang|item|kemasan|botol|cream|krim|sepatu|baju|menampilkan|dipegang|memegang|tas|kosmetik)/i.test(sceneText)) {\n          rawProd = affiliateConfig.productImages?.[0] || affiliateConfig.productImage;\n        }\n      }"
-);
+const oldStorageInit = `      if (!initRes.ok) {
+        const err = await initRes.text().catch(() => '');
+        console.warn(\`[Fal Storage] Initiate upload failed (\${initRes.status}): \${err}\`);
+        return trimmed.startsWith('data:image') ? trimmed : null;
+      }`;
 
+const newStorageInit = `      if (!initRes.ok) {
+        const err = await initRes.text().catch(() => '');
+        console.warn(\`[Fal Storage] Initiate upload failed (\${initRes.status}): \${err}\`);
+        if (initRes.status === 402 || initRes.status === 403 || err.toLowerCase().includes('exhausted balance')) {
+          const keyRotator = require('./keyRotator').keyRotator;
+          keyRotator.reportKeyError('fal', key, new Error(\`HTTP \${initRes.status}: \${err}\`));
+          throw new Error(\`[Fal Storage] Initiate upload failed (\${initRes.status}): \${err}\`);
+        }
+        return trimmed.startsWith('data:image') ? trimmed : null;
+      }`;
+
+content = content.replace(oldStorageInit, newStorageInit);
 fs.writeFileSync('server/imageService.ts', content);

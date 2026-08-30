@@ -500,9 +500,13 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
                     onChange={(e) => setImageEngine(e.target.value)}
                     className="bg-transparent text-xs text-cyan-300 font-semibold outline-none cursor-pointer pr-1"
                   >
-                    <option value="standard" className="bg-slate-900 text-slate-200">🍌 Nano Banana 2 (Standard - 15 CR)</option>
-                    <option value="draft" className="bg-slate-900 text-slate-200">⚡ FLUX.1 Schnell (Draft - 5 CR)</option>
-                    <option value="precision" className="bg-slate-900 text-slate-200">💎 Nano Banana Pro Edit (Precision - 25 CR)</option>
+                    <option value="standard" className="bg-slate-900 text-slate-200">🍌 Nano Banana 2 (Standard Fal - 15 CR)</option>
+                    <option value="draft" className="bg-slate-900 text-slate-200">⚡ FLUX.1 Schnell (Draft Fal - 5 CR)</option>
+                    <option value="precision" className="bg-slate-900 text-slate-200">💎 Nano Banana Pro Edit (Precision Fal - 25 CR)</option>
+                    <option value="nano-asli-lite" className="bg-slate-900 text-slate-200">✨ Google Imagen 3 Lite (Nano Asli Lite - 5 CR)</option>
+                    <option value="nano-asli" className="bg-slate-900 text-slate-200">🔷 Google Gemini Imagen 3 (Nano Asli Std - 10 CR)</option>
+                    <option value="nano-asli-pro" className="bg-slate-900 text-slate-200">🌟 Google Gemini Imagen 3 Pro (Nano Asli Pro - 15 CR)</option>
+                    <option value="nano-asli-premium" className="bg-slate-900 text-slate-200">👑 Google Gemini Imagen 3 Ultra (Nano Asli Ultra - 25 CR)</option>
                   </select>
                 </div>
 
@@ -980,35 +984,6 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
                 {GENRES.map((g) => (
                   <option key={g.id} value={g.id}>{g.label}</option>
                 ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Pengisi Suara TTS */}
-          <div className="grid grid-cols-1 md:grid-cols-1 gap-4 p-3.5 rounded-xl bg-slate-950/80 border border-rose-500/20">
-            
-
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-rose-400 mb-1.5 flex items-center gap-1.5">
-                <Volume2 className="w-3.5 h-3.5" />
-                Pengisi Suara Narator TTS
-              </label>
-              <select
-                id="select-anim-voice-actor"
-                defaultValue={localStorage.getItem('neurona_voice_id') || 'id-ID-Journey-O'}
-                onChange={(e) => {
-                  localStorage.setItem('neurona_voice_id', e.target.value);
-                  neuronaVoice.setVoice(e.target.value);
-                }}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 focus:border-rose-400 text-xs text-white outline-none"
-              >
-                <option value="id-ID-Journey-O">Google Cloud Journey-O (ID ♀ Natural & Ultra-Realistis)</option>
-                <option value="id-ID-Wavenet-B">Google Cloud Wavenet-B (ID ♂ Bertenaga & Dinamis)</option>
-                <option value="en-US-Journey-D">Google Cloud Journey-D (EN ♂ Narator Sinematik)</option>
-                <option value="ja-JP-Neural2-B">Google Cloud Neural2-B (JA ♀ Seiyuu Anime)</option>
-                <option value="openai-female-nova">ChatGPT Nova (OpenAI - ♀ Ceria & Energik)</option>
-                <option value="openai-male-onyx">ChatGPT Onyx (OpenAI - ♂ Berwibawa & Podcast)</option>
-                <option value="eleven-male-adam">Adam Epic Narrator (ElevenLabs - ♂ Epik)</option>
               </select>
             </div>
           </div>

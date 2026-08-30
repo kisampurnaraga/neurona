@@ -1,10 +1,11 @@
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
+import { validateCredentialFormat, logCredentialAudit } from "./utils/credentialValidator";
 
 export interface KeyHealth {
   key: string;
   maskedKey: string;
-  provider: 'gemini' | 'openai' | 'fal';
+  provider: 'gemini' | 'veo' | 'openai' | 'fal';
   status: 'ACTIVE' | 'COOLDOWN' | 'DISABLED';
   cooldownUntil?: number;
   totalRequests: number;
@@ -15,17 +16,45 @@ export interface KeyHealth {
 
 class ApiKeyRotatorService {
   private geminiKeys: Map<string, KeyHealth> = new Map();
+  private veoKeys: Map<string, KeyHealth> = new Map();
   private openAIKeys: Map<string, KeyHealth> = new Map();
   private falKeys: Map<string, KeyHealth> = new Map();
   private geminiIndex = 0;
+  private veoIndex = 0;
   private openAIIndex = 0;
   private falIndex = 0;
 
+  private userClearedPool = true;
+
   constructor() {
-    this.reloadKeysFromEnv();
+    // Start with empty pool as requested by user, allowing manual key entry
+    this.clearAllKeys('all');
+  }
+
+  public clearAllKeys(provider?: 'gemini' | 'veo' | 'openai' | 'fal' | 'all'): void {
+    this.userClearedPool = true;
+    if (!provider || provider === 'all') {
+      this.geminiKeys.clear();
+      this.veoKeys.clear();
+      this.openAIKeys.clear();
+      this.falKeys.clear();
+    } else if (provider === 'gemini') {
+      this.geminiKeys.clear();
+    } else if (provider === 'veo') {
+      this.veoKeys.clear();
+    } else if (provider === 'openai') {
+      this.openAIKeys.clear();
+    } else if (provider === 'fal') {
+      this.falKeys.clear();
+    }
+    console.log(`[KeyRotator] Pool cleared for provider: ${provider || 'all'}`);
   }
 
   public reloadKeysFromEnv(): void {
+    // If pool was explicitly cleared or set for manual entry, do not auto-inject default env keys
+    if (this.userClearedPool) {
+      return;
+    }
     // 1. Load Gemini Keys
     const envGeminiList = process.env.GEMINI_API_KEYS 
       ? process.env.GEMINI_API_KEYS.split(',').map(k => k.trim()).filter(Boolean)
@@ -38,6 +67,26 @@ class ApiKeyRotatorService {
     }
 
     envGeminiList.forEach(key => {
+      const vRes = validateCredentialFormat('gemini', key, 'GEMINI_ENV');
+      if (!vRes.valid) {
+        logCredentialAudit('gemini', 'GEMINI_ENV', key, 'LOAD_KEYS', 'BLOCKED', vRes.reason);
+        // Auto-recover Fal.ai key if mistakenly placed in GEMINI_ENV
+        if (key.startsWith('AQ.') || key.startsWith('fal_') || key.includes(':')) {
+          const falV = validateCredentialFormat('fal', key, 'GEMINI_ENV_FAL_RECOVERY');
+          if (falV.valid && !this.falKeys.has(key)) {
+            this.falKeys.set(key, {
+              key,
+              maskedKey: this.maskKey(key),
+              provider: 'fal',
+              status: 'ACTIVE',
+              totalRequests: 0,
+              totalErrors: 0
+            });
+            logCredentialAudit('fal', 'GEMINI_ENV_FAL_RECOVERY', key, 'LOAD_KEYS', 'SUCCESS', 'Auto-recovered Fal key misassigned to GEMINI_ENV');
+          }
+        }
+        return;
+      }
       if (!this.geminiKeys.has(key)) {
         this.geminiKeys.set(key, {
           key,
@@ -50,7 +99,35 @@ class ApiKeyRotatorService {
       }
     });
 
-    // 2. Load OpenAI Keys
+    // 2. Load Veo Keys
+    const envVeoList = process.env.VEO_API_KEYS
+      ? process.env.VEO_API_KEYS.split(',').map(k => k.trim()).filter(Boolean)
+      : [];
+
+    const singleVeo = process.env.VEO_API_KEY || process.env.VEO_MANUAL_API_KEY;
+    if (singleVeo && !envVeoList.includes(singleVeo.trim())) {
+      envVeoList.unshift(singleVeo.trim());
+    }
+
+    envVeoList.forEach(key => {
+      const vRes = validateCredentialFormat('veo', key, 'VEO_ENV');
+      if (!vRes.valid) {
+        logCredentialAudit('veo', 'VEO_ENV', key, 'LOAD_KEYS', 'BLOCKED', vRes.reason);
+        return;
+      }
+      if (!this.veoKeys.has(key)) {
+        this.veoKeys.set(key, {
+          key,
+          maskedKey: this.maskKey(key),
+          provider: 'veo',
+          status: 'ACTIVE',
+          totalRequests: 0,
+          totalErrors: 0
+        });
+      }
+    });
+
+    // 3. Load OpenAI Keys
     const envOpenAIList = process.env.OPENAI_API_KEYS
       ? process.env.OPENAI_API_KEYS.split(',').map(k => k.trim()).filter(Boolean)
       : [];
@@ -61,6 +138,11 @@ class ApiKeyRotatorService {
     }
 
     envOpenAIList.forEach(key => {
+      const vRes = validateCredentialFormat('openai', key, 'OPENAI_ENV');
+      if (!vRes.valid) {
+        logCredentialAudit('openai', 'OPENAI_ENV', key, 'LOAD_KEYS', 'BLOCKED', vRes.reason);
+        return;
+      }
       if (!this.openAIKeys.has(key)) {
         this.openAIKeys.set(key, {
           key,
@@ -73,7 +155,7 @@ class ApiKeyRotatorService {
       }
     });
 
-    // 3. Load Fal.ai Keys
+    // 4. Load Fal.ai Keys
     const envFalList = process.env.FAL_KEYS
       ? process.env.FAL_KEYS.split(',').map(k => k.trim()).filter(Boolean)
       : [];
@@ -84,6 +166,11 @@ class ApiKeyRotatorService {
     }
 
     envFalList.forEach(key => {
+      const vRes = validateCredentialFormat('fal', key, 'FAL_ENV');
+      if (!vRes.valid) {
+        logCredentialAudit('fal', 'FAL_ENV', key, 'LOAD_KEYS', 'BLOCKED', vRes.reason);
+        return;
+      }
       if (!this.falKeys.has(key)) {
         this.falKeys.set(key, {
           key,
@@ -96,7 +183,7 @@ class ApiKeyRotatorService {
       }
     });
 
-    console.log(`[KeyRotator] Initialized with ${this.geminiKeys.size} Gemini key(s), ${this.openAIKeys.size} OpenAI key(s), and ${this.falKeys.size} Fal.ai key(s).`);
+    console.log(`[KeyRotator] Initialized with ${this.geminiKeys.size} Gemini key(s), ${this.veoKeys.size} Veo key(s), ${this.openAIKeys.size} OpenAI key(s), and ${this.falKeys.size} Fal.ai key(s).`);
   }
 
   private maskKey(key: string): string {
@@ -104,8 +191,9 @@ class ApiKeyRotatorService {
     return `${key.substring(0, 6)}...${key.substring(key.length - 4)}`;
   }
 
-  private getMap(provider: 'gemini' | 'openai' | 'fal'): Map<string, KeyHealth> {
+  private getMap(provider: 'gemini' | 'veo' | 'openai' | 'fal'): Map<string, KeyHealth> {
     if (provider === 'gemini') return this.geminiKeys;
+    if (provider === 'veo') return this.veoKeys;
     if (provider === 'openai') return this.openAIKeys;
     return this.falKeys;
   }
@@ -113,8 +201,14 @@ class ApiKeyRotatorService {
   /**
    * Add a key dynamically at runtime
    */
-  public addKey(provider: 'gemini' | 'openai' | 'fal', key: string): KeyHealth {
+  public addKey(provider: 'gemini' | 'veo' | 'openai' | 'fal', key: string): KeyHealth {
     const cleanKey = key.trim();
+    const vRes = validateCredentialFormat(provider, cleanKey, 'DYNAMIC_ADD');
+    if (!vRes.valid) {
+      logCredentialAudit(provider, 'DYNAMIC_ADD', cleanKey, 'ADD_KEY', 'BLOCKED', vRes.reason);
+      throw new Error(`[Kredensial Tidak Sesuai Provider] ${vRes.reason}`);
+    }
+
     const map = this.getMap(provider);
     
     const existing = map.get(cleanKey);
@@ -136,6 +230,26 @@ class ApiKeyRotatorService {
     map.set(cleanKey, health);
     console.log(`[KeyRotator] Registered new ${provider} key (${health.maskedKey})`);
     return health;
+  }
+
+  /**
+   * Get an active Veo Key using Round-Robin rotation with Gemini fallback
+   */
+  public getNextVeoKey(): string | null {
+    this.reloadKeysFromEnv();
+    const keysArray = Array.from(this.veoKeys.values());
+    if (keysArray.length > 0) {
+      const activeKeys = keysArray.filter(k => k.status === 'ACTIVE');
+      if (activeKeys.length > 0) {
+        const selected = activeKeys[this.veoIndex % activeKeys.length];
+        this.veoIndex = (this.veoIndex + 1) % activeKeys.length;
+        selected.totalRequests++;
+        selected.lastUsedAt = new Date().toISOString();
+        return selected.key;
+      }
+    }
+    // Fallback to Gemini key pool
+    return this.getNextGeminiKey();
   }
 
   /**
@@ -237,13 +351,20 @@ class ApiKeyRotatorService {
   /**
    * Report an error on a key (e.g. 429 Rate limit, 401 Unauthorized)
    */
-  public reportKeyError(provider: 'gemini' | 'openai' | 'fal', key: string, error: any): void {
+  public reportKeyError(provider: 'gemini' | 'veo' | 'openai' | 'fal', key: string, error: any): void {
     const map = this.getMap(provider);
     const health = map.get(key);
     if (!health) return;
 
     health.totalErrors++;
-    const errMsg = error?.message || String(error);
+    
+    // Better error parsing
+    let errMsg = '';
+    if (error && typeof error === 'object') {
+        errMsg = error.message || (error.error && error.error.message) || JSON.stringify(error);
+    } else {
+        errMsg = String(error);
+    }
     health.lastErrorReason = errMsg;
 
     const isDepleted = errMsg.toLowerCase().includes('prepayment credits are depleted');
@@ -256,8 +377,9 @@ class ApiKeyRotatorService {
                         errMsg.toLowerCase().includes('unavailable') ||
                         errMsg.toLowerCase().includes('high demand'));
 
-    const isInvalid = isDepleted || errMsg.includes('401') || 
-                      errMsg.includes('403') || 
+    const isBillingExhausted = !isRateLimit && (errMsg.toLowerCase().includes('spending cap') || errMsg.toLowerCase().includes('exceeded its monthly') || errMsg.toLowerCase().includes('exhausted balance'));
+    const isInvalid = isDepleted || isBillingExhausted || errMsg.includes('401') || 
+                      (errMsg.includes('403') && !isRateLimit) || 
                       errMsg.toLowerCase().includes('api_key_invalid') || 
                       errMsg.toLowerCase().includes('invalid api key') ||
                       errMsg.toLowerCase().includes('unauthenticated');
@@ -266,10 +388,19 @@ class ApiKeyRotatorService {
       health.status = 'DISABLED';
       console.error(`[KeyRotator] ${provider.toUpperCase()} Key (${health.maskedKey}) marked as DISABLED due to auth failure: ${errMsg}`);
     } else if (isRateLimit) {
-      const cooldownMs = 60 * 1000; // 60s cooldown
-      health.status = 'COOLDOWN';
-      health.cooldownUntil = Date.now() + cooldownMs;
-      console.warn(`[KeyRotator] ${provider.toUpperCase()} Key (${health.maskedKey}) hit Rate Limit/Quota. Put on COOLDOWN for 60s.`);
+      if (health.status !== 'DISABLED') {
+        let cooldownMs = 60 * 1000; // default 60s cooldown
+        const match = errMsg.match(/retry in ([0-9.]+)s/);
+        if (match && match[1]) {
+            const parsedDelay = parseFloat(match[1]) * 1000;
+            if (!isNaN(parsedDelay) && parsedDelay > 0) {
+                cooldownMs = parsedDelay + 1000; // Add 1s buffer
+            }
+        }
+        health.status = 'COOLDOWN';
+        health.cooldownUntil = Date.now() + cooldownMs;
+        console.warn(`[KeyRotator] ${provider.toUpperCase()} Key (${health.maskedKey}) hit Rate Limit/Quota. Put on COOLDOWN for ${(cooldownMs/1000).toFixed(1)}s.`);
+      }
     }
   }
 
@@ -281,15 +412,27 @@ class ApiKeyRotatorService {
     maxAttempts: number = 3
   ): Promise<T> {
     let lastError: any = null;
-    const triedKeys = new Set<string>();
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const apiKey = this.getNextGeminiKey();
       if (!apiKey) {
+        if (lastError) {
+          throw lastError; // If we already tried and failed, throw the actual API error
+        }
         throw new Error("Token API habis atau tidak ada API Key Gemini yang aktif. Silakan isi GEMINI_API_KEY di .env");
       }
 
-      triedKeys.add(apiKey);
+      // If the key we got is currently in cooldown (fallback), we should wait until it's ready if possible
+      const map = this.getMap('gemini');
+      const health = map.get(apiKey);
+      if (health && health.status === 'COOLDOWN' && health.cooldownUntil) {
+          const waitMs = health.cooldownUntil - Date.now();
+          if (waitMs > 0 && waitMs < 25000) { // Only wait if it's less than 25s to avoid huge hangups
+              console.log(`[KeyRotator] Fallback key is on cooldown. Waiting ${waitMs}ms before reusing...`);
+              await new Promise(r => setTimeout(r, waitMs));
+          }
+      }
+
       const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
 
       try {
@@ -297,18 +440,30 @@ class ApiKeyRotatorService {
         return result;
       } catch (err: any) {
         lastError = err;
-        console.warn(`[KeyRotator] Gemini attempt ${attempt}/${maxAttempts} failed on key (${this.maskKey(apiKey)}): ${err.message}`);
+        
+        let errMsg = '';
+        if (err && typeof err === 'object') {
+            errMsg = err.message || (err.error && err.error.message) || JSON.stringify(err);
+        } else {
+            errMsg = String(err);
+        }
+
+        console.warn(`[KeyRotator] Gemini attempt ${attempt}/${maxAttempts} failed on key (${this.maskKey(apiKey)}): ${errMsg}`);
         this.reportKeyError('gemini', apiKey, err);
 
-        // If it's not a rate limit / auth error and not retryable, throw immediately
-        const isTransient = err.message?.includes('429') || 
-                            err.message?.toLowerCase().includes('resource_exhausted') ||
-                            err.message?.includes('500') ||
-                            err.message?.includes('503') ||
-                            err.message?.toLowerCase().includes('fetch failed');
+        const isTransient = errMsg.includes('429') || 
+                            errMsg.toLowerCase().includes('resource_exhausted') ||
+                            errMsg.includes('500') ||
+                            errMsg.includes('503') ||
+                            errMsg.toLowerCase().includes('fetch failed');
 
-        if (!isTransient && attempt >= maxAttempts) {
+        if (!isTransient) {
           throw err;
+        }
+        
+        // If it's the last attempt, don't loop
+        if (attempt >= maxAttempts) {
+            throw err;
         }
       }
     }
@@ -316,7 +471,7 @@ class ApiKeyRotatorService {
     throw lastError || new Error("Gagal mengeksekusi request setelah rotasi API Key.");
   }
 
-  public removeKey(provider: 'gemini' | 'openai' | 'fal', maskedOrFullKey: string): boolean {
+  public removeKey(provider: 'gemini' | 'veo' | 'openai' | 'fal', maskedOrFullKey: string): boolean {
     const map = this.getMap(provider);
     for (const [fullKey, health] of map.entries()) {
       if (fullKey === maskedOrFullKey || health.maskedKey === maskedOrFullKey) {
@@ -328,7 +483,7 @@ class ApiKeyRotatorService {
     return false;
   }
 
-  public reactivateKey(provider: 'gemini' | 'openai' | 'fal', maskedOrFullKey: string): boolean {
+  public reactivateKey(provider: 'gemini' | 'veo' | 'openai' | 'fal', maskedOrFullKey: string): boolean {
     const map = this.getMap(provider);
     for (const [fullKey, health] of map.entries()) {
       if (fullKey === maskedOrFullKey || health.maskedKey === maskedOrFullKey) {
@@ -345,10 +500,11 @@ class ApiKeyRotatorService {
   /**
    * Get health metrics for all keys (safe for UI reporting)
    */
-  public getHealthReport(): { gemini: KeyHealth[]; openai: KeyHealth[]; fal: KeyHealth[] } {
+  public getHealthReport(): { gemini: KeyHealth[]; veo: KeyHealth[]; openai: KeyHealth[]; fal: KeyHealth[] } {
     this.reloadKeysFromEnv();
     return {
       gemini: Array.from(this.geminiKeys.values()).map(k => ({ ...k, key: k.maskedKey })),
+      veo: Array.from(this.veoKeys.values()).map(k => ({ ...k, key: k.maskedKey })),
       openai: Array.from(this.openAIKeys.values()).map(k => ({ ...k, key: k.maskedKey })),
       fal: Array.from(this.falKeys.values()).map(k => ({ ...k, key: k.maskedKey }))
     };

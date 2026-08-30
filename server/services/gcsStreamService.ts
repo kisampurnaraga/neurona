@@ -9,6 +9,19 @@ export interface GCSStreamOptions {
 export class GCSStreamService {
   private static storageClient: Storage | null = null;
   private static defaultBucketName: string = 'neuronna-media-vault';
+  private static isGcsDisabled: boolean = false;
+  private static gcsDisabledReason: string = '';
+
+  /**
+   * Checks whether GCS direct streaming is available and has write permissions.
+   */
+  public static isAvailable(): boolean {
+    return !this.isGcsDisabled;
+  }
+
+  public static getDisabledReason(): string {
+    return this.gcsDisabledReason;
+  }
 
   /**
    * Initializes or returns the cached GCS Storage client.
@@ -33,6 +46,10 @@ export class GCSStreamService {
     destinationFileName: string,
     options: GCSStreamOptions = { isPublic: true }
   ): Promise<string> {
+    if (this.isGcsDisabled) {
+      throw new Error(`GCS direct streaming disabled due to prior permission/storage error: ${this.gcsDisabledReason}`);
+    }
+
     const bucketName = process.env.GCS_BUCKET_NAME || this.defaultBucketName;
     if (!bucketName) {
       throw new Error("GCS_BUCKET_NAME is not configured in the environment.");
@@ -64,8 +81,15 @@ export class GCSStreamService {
     });
 
     return new Promise((resolve, reject) => {
-      writeStream.on('error', (err) => {
-        console.error(`[GCSStreamService] Direct streaming upload to bucket '${bucketName}' failed:`, err);
+      writeStream.on('error', (err: any) => {
+        const errMsg = err?.message || String(err);
+        if (errMsg.includes('storage.objects.create') || errMsg.includes('denied') || errMsg.includes('403') || errMsg.includes('does not have')) {
+          GCSStreamService.isGcsDisabled = true;
+          GCSStreamService.gcsDisabledReason = errMsg;
+          console.warn(`[GCSStreamService] GCS write permission denied for bucket '${bucketName}'. Automatically switching to local storage for future assets.`);
+        } else {
+          console.warn(`[GCSStreamService] Direct streaming upload to bucket '${bucketName}' skipped/failed (${errMsg}). Falling back to local storage.`);
+        }
         reject(err);
       });
 

@@ -40,7 +40,7 @@ const GENRE_VIDEOS: Record<string, string[]> = {
 
 export function getSampleVideoForScene(scene: Scene, context: string = ''): string {
   // 1. If scene has a valid MP4 or WebM video stream, keep it
-  if (scene.videoUrl && (scene.videoUrl.endsWith('.mp4') || scene.videoUrl.endsWith('.webm') || scene.videoUrl.includes('/sample/') || scene.videoUrl.startsWith('data:video/'))) {
+  if (scene.videoUrl && (!scene.videoUrl.startsWith('data:image/'))) {
     return scene.videoUrl;
   }
 

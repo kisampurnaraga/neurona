@@ -43,7 +43,7 @@
 +      try {
 +        const response = await withTimeout(
 +          genAI.models.generateContent({
-+            model: "gemini-2.5-flash",
++            model: "gemini-3.6-flash",
 +            contents: prompt,
 +            systemInstruction: systemInstruction,
 +            config: {
@@ -58,7 +58,7 @@
 +        return {
 +          data: JSON.parse(rawText),
 +          rawText,
-+          modelUsed: "gemini-2.5-flash",
++          modelUsed: "gemini-3.6-flash",
 +          provider: "gemini"
 +        };
 +      } catch (err) {

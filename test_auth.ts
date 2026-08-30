@@ -10,7 +10,7 @@ const ai = new GoogleGenAI({
 async function run() {
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: 'Halo ini tes'
     });
     console.log("Success text:", response.text);

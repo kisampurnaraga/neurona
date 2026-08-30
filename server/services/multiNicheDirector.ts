@@ -21,7 +21,7 @@ export interface MultiNicheResult {
 
 export class MultiNicheDirector {
   static async analyze(input: MultiNicheInput): Promise<MultiNicheResult> {
-    const targetModel = 'gemini-2.5-flash';
+    const targetModel = 'gemini-3.6-flash';
 
     const systemInstruction = `Role: Master AI Multi-Niche Affiliate Director for Neuronna Platform.
 

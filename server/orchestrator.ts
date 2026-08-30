@@ -23,6 +23,7 @@ import { getVideoProvider } from "../src/server/providers";
 import { FalVideoAdapter } from "../src/server/providers/FalVideoAdapter";
 import { BytePlusAdapter } from "../src/server/providers/BytePlusAdapter";
 import { getSampleVideoForScene } from "../src/server/providers/VideoProvider";
+import { FounderService } from "../src/server/fcc/FounderService";
 
 export async function renderSceneVideoWithFallback(
   project: ProductionProject,
@@ -220,8 +221,8 @@ export async function saveFileLocally(urlOrData: string, prefix: string, extensi
   const isReferenceImage = /reference|ref_|face|profile|upload|avatar|product_image/i.test(filename);
 
   // === CLOUD RUN PRODUCTION HARDENING (DIRECT STREAMING TO GCS) ===
-  // If GCS_BUCKET_NAME is configured, stream directly to GCS, completely skipping local container filesystem writing!
-  if (process.env.GCS_BUCKET_NAME) {
+  // If GCS_BUCKET_NAME is configured and available, stream directly to GCS
+  if (process.env.GCS_BUCKET_NAME && GCSStreamService.isAvailable()) {
     try {
       console.log(`[LocalSaver] GCS Bucket defined. Initiating direct streaming upload of '${filename}' to GCS...`);
       const category = isReferenceImage ? 'reference_image' : 'final_output';
@@ -1229,302 +1230,34 @@ export class ProductionOrchestrator {
         }));
         appendLog(project, 'SINTA', `STORYBOARD GENERATED [${sbResult.modelUsed}]: ${generatedScenes.length} Scenes Choreographed with QA Audit & Auto-Correction`, 'SUCCESS');
       }
-
-      // Procedural scene fallback if needed
+            // Fallback prevention
       if (generatedScenes.length === 0) {
-        if (vType === 'ANIMATION') {
-          const anim = project.animationConfig!;
-          const charName = project.characterProfile?.name || 'Karakter Utama';
-          const charDesc = anim.characterDescription || 'Protagonis penuh determinasi';
-          const world = anim.worldSetting || 'Stadion dan arena visual megah';
-          const title = anim.title || 'Petualangan Epik';
+        throw new Error("Gagal menyusun naskah — kuota AI Director sedang bermasalah atau error dari penyedia layanan AI. Silakan coba lagi nanti.");
+      }
 
-          generatedScenes = [
-            {
-              id: crypto.randomUUID(),
-              duration: "00:04",
-              visualDirection: `Opening shot (Establishing shot) di ${world}. Memperlihatkan ${charName} (${charDesc}) bersiap mengawali kisah "${title}". Sudut kamera sinematik dengan tata pencahayaan dramatis.`,
-              textOverlay: `✨ ${title}`,
-              subtitle: `✨ ${title}`,
-              voiceOver: `Di ${world}, sebuah babak baru yang dinantikan kini dimulai bersama ${charName}.`,
-              promptTextToImage: `Cinematic wide establishing keyframe of ${charName}, ${charDesc}, in ${world}, ${anim.artStyle}, cinematic lighting, atmospheric depth, masterpiece 8k --seed ${project.characterProfile?.styleSeed || 8849201}`,
-              promptImageToVideo: `Cinematic wide tracking camera glide moving towards ${charName} in ${world}, ${anim.artStyle}, ${charDesc}, atmospheric volumetric lighting, smooth camera movement 4k --ar ${anim.aspectRatio || '16:9'}`,
-              styleKeywords: [anim.artStyle, "Wide Shot", "Establishing", "Cinematic"],
-              status: 'PENDING',
-              imageStatus: 'PENDING',
-              videoStatus: 'PENDING',
-              imageCreditCost: 5,
-              videoCreditCost: 15,
-              qaScore: 95,
-              qaPassed: true,
-              qaIssues: []
-            },
-            {
-              id: crypto.randomUUID(),
-              duration: "00:04",
-              visualDirection: `Medium action shot: ${charName} memperlihatkan aksi dan keahlian utamanya di ${world}. Ekspresi wajah fokus dengan detail pantulan cahaya yang sangat tajam dan hidup.`,
-              textOverlay: "🔥 Dedikasi & Keterampilan Luar Biasa",
-              subtitle: "🔥 Dedikasi & Keterampilan Luar Biasa",
-              voiceOver: "Setiap langkah, determinasi, dan fokus terasah membawa langkah lebih dekat menuju impian tertinggi.",
-              promptTextToImage: `Medium close-up keyframe of ${charName} showcasing dynamic action, ${charDesc}, set in ${world}, ${anim.artStyle}, intense focus, subsurface scattering, 8k --seed ${project.characterProfile?.styleSeed || 8849201}`,
-              promptImageToVideo: `Dynamic medium action tracking shot of ${charName}, ${charDesc}, in ${world}, ${anim.artStyle}, fast fluid camera movement, particle dynamics, 4k 60fps --ar ${anim.aspectRatio || '16:9'}`,
-              styleKeywords: [anim.artStyle, "Medium Shot", "Action Focus", "Expressive Character"],
-              status: 'PENDING',
-              imageStatus: 'PENDING',
-              videoStatus: 'PENDING',
-              imageCreditCost: 5,
-              videoCreditCost: 15,
-              qaScore: 93,
-              qaPassed: true,
-              qaIssues: []
-            },
-            {
-              id: crypto.randomUUID(),
-              duration: "00:04",
-              visualDirection: `Dynamic high-speed camera tracking: ${charName} melancarkan manuver klimaks terbaiknya di ${world} dengan efek visual dramatis dan sorak sorai pendukung.`,
-              textOverlay: "⚡ Manuver Klimaks & Aksi Epik",
-              subtitle: "⚡ Manuver Klimaks & Aksi Epik",
-              voiceOver: "Dengan segenap tekad dan keberanian pantang menyerah, saat penentuan telah tiba!",
-              promptTextToImage: `High dynamic action keyframe of ${charName} executing powerful climactic move in ${world}, ${charDesc}, ${anim.artStyle}, speed lines, dramatic rim lighting, 8k --seed ${project.characterProfile?.styleSeed || 8849201}`,
-              promptImageToVideo: `High-speed orbiting camera tracking ${charName} executing powerful climactic move in ${world}, ${charDesc}, ${anim.artStyle}, motion blur, ultra dynamic action sequence 4k --ar ${anim.aspectRatio || '16:9'}`,
-              styleKeywords: [anim.artStyle, "Orbit Shot", "Dynamic Climax", "High Speed"],
-              status: 'PENDING',
-              imageStatus: 'PENDING',
-              videoStatus: 'PENDING',
-              imageCreditCost: 5,
-              videoCreditCost: 15,
-              qaScore: 96,
-              qaPassed: true,
-              qaIssues: []
-            },
-            {
-              id: crypto.randomUUID(),
-              duration: "00:04",
-              visualDirection: `Hero shot klimaks: ${charName} merayakan kemenangan dan momen bersejarah di ${world} dengan ekspresi bangga diiringi cahaya keemasan.`,
-              textOverlay: `🌟 Kemenangan & Mahakarya ${title}`,
-              subtitle: `🌟 Kemenangan & Mahakarya ${title}`,
-              voiceOver: `Inilah bukti nyata bahwa tekad pantang menyerah akan selalu mengukir sejarah abadi.`,
-              promptTextToImage: `Epic hero low-angle keyframe of ${charName} celebrating triumph in ${world}, ${charDesc}, ${anim.artStyle}, dramatic golden hour lighting, cinematic masterpiece 8k --seed ${project.characterProfile?.styleSeed || 8849201}`,
-              promptImageToVideo: `Epic slow-motion pull-back hero shot of ${charName} triumphant in ${world}, ${charDesc}, ${anim.artStyle}, glowing cinematic rim lighting, 4k outro --ar ${anim.aspectRatio || '16:9'}`,
-              styleKeywords: [anim.artStyle, "Hero Shot", "Epic Victory", "Title Finale"],
-              status: 'PENDING',
-              imageStatus: 'PENDING',
-              videoStatus: 'PENDING',
-              imageCreditCost: 5,
-              videoCreditCost: 15,
-              qaScore: 97,
-              qaPassed: true,
-              qaIssues: []
-            }
-          ];
-        } else if (vType === 'EDUCATIONAL') {
-          const edu = project.educationalConfig!;
-          const charName = project.characterProfile?.name || "Edukator Utama";
-          const charDesc = project.characterProfile?.outfit || edu.characterDescription || "Edukator profesional";
-          const world = edu.worldSetting || "Laboratorium sains modern";
-
-          generatedScenes = [
-            {
-              id: crypto.randomUUID(),
-              duration: "00:04",
-              visualDirection: `Hook adegan pembuka: ${charName} memperkenalkan topik "${edu.subjectTitle}" di ${world} dengan grafis infografis interaktif melayang.`,
-              textOverlay: `💡 Mengapa ${edu.subjectTitle} Sangat Penting?`,
-              subtitle: `💡 Mengapa ${edu.subjectTitle} Sangat Penting?`,
-              voiceOver: `Pernahkah Anda bertanya-tanya bagaimana sebenarnya ${edu.subjectTitle} bekerja di kehidupan kita sehari-hari?`,
-              promptTextToImage: `Educational presentation keyframe of ${charName}, ${charDesc}, presenting ${edu.subjectTitle} in ${world}, ${edu.visualStyle}, clean modern infographic overlays, crisp clarity, 8k --seed 5829104`,
-              promptImageToVideo: `Clean educational motion graphics with ${charName} presenting in ${world}, showing sleek modern isometric diagrams, crisp typography, 4k vector render --ar ${edu.aspectRatio || '16:9'}`,
-              styleKeywords: [edu.visualStyle, "Explainer Hook", "Presenter Lock"],
-              status: 'PENDING',
-              imageStatus: 'PENDING',
-              videoStatus: 'PENDING',
-              imageCreditCost: 5,
-              videoCreditCost: 15,
-              qaScore: 94,
-              qaPassed: true,
-              qaIssues: []
-            },
-            {
-              id: crypto.randomUUID(),
-              duration: "00:05",
-              visualDirection: `Visualisasi analogi mekanisme inti: ${charName} mendemonstrasikan proses inti "${edu.subjectTitle}" di ${world} dengan model diagram terurai (exploded view) beranotasi cahaya.`,
-              textOverlay: "⚙️ Mekanisme & Prinsip Kerja Inti",
-              subtitle: "⚙️ Mekanisme & Prinsip Kerja Inti",
-              voiceOver: `Kuncinya terletak pada komponen utama ini yang saling berinteraksi secara harmonis dan presisi.`,
-              promptTextToImage: `Exploded view technical diagram of ${edu.subjectTitle} with glowing nodes in ${world}, ${edu.visualStyle}, high clarity, 8k --seed 5829104`,
-              promptImageToVideo: `Detailed educational exploded view 3D diagram in ${world} with glowing animated data streams, isometric tech infographic, studio lighting, 4k --ar ${edu.aspectRatio || '16:9'}`,
-              styleKeywords: [edu.visualStyle, "Exploded Diagram", "Data Stream"],
-              status: 'PENDING',
-              imageStatus: 'PENDING',
-              videoStatus: 'PENDING',
-              imageCreditCost: 5,
-              videoCreditCost: 15,
-              qaScore: 95,
-              qaPassed: true,
-              qaIssues: []
-            },
-            {
-              id: crypto.randomUUID(),
-              duration: "00:05",
-              visualDirection: `Simulasi studi kasus nyata: ${charName} memperlihatkan perbandingan sebelum dan sesudah penerapan konsep secara nyata dengan visual split-screen interaktif di ${world}.`,
-              textOverlay: "📊 Dampak Nyata di Dunia Praktis",
-              subtitle: "📊 Dampak Nyata di Dunia Praktis",
-              voiceOver: `Hasilnya, efisiensi melonjak berlipat ganda dan kesalahan dapat diminimalisir hingga mendekati nol.`,
-              promptTextToImage: `Split-screen comparison visualization for ${edu.subjectTitle} in ${world}, data charts, glowing metrics, clean modern UI, 8k --seed 5829104`,
-              promptImageToVideo: `Split-screen comparison motion graphics visualization in ${world}, clean data charts and glowing metrics, modern tech UI, 4k --ar ${edu.aspectRatio || '16:9'}`,
-              styleKeywords: [edu.visualStyle, "Case Study", "Data Charts"],
-              status: 'PENDING',
-              imageStatus: 'PENDING',
-              videoStatus: 'PENDING',
-              imageCreditCost: 5,
-              videoCreditCost: 15,
-              qaScore: 92,
-              qaPassed: true,
-              qaIssues: []
-            },
-            {
-              id: crypto.randomUUID(),
-              duration: "00:04",
-              visualDirection: `Kesimpulan dan ringkasan 3 poin kunci: ${charName} merangkum "${edu.keyTakeaways}" di ${world} dalam format infografis ringkas yang mudah dipahami.`,
-              textOverlay: "🎯 Kesimpulan & Poin Kunci Utama",
-              subtitle: "🎯 Kesimpulan & Poin Kunci Utama",
-              voiceOver: `Ingat poin-poin utama ini, dan Anda sudah siap menguasai materi ini!`,
-              promptTextToImage: `Modern animated summary board with checkmarks presented by ${charName} in ${world}, sleek typography, clean visual graphic outro, 8k --seed 5829104`,
-              promptImageToVideo: `Modern animated summary card with checkmarks in ${world}, sleek typography, clean motion design outro, 4k --ar ${edu.aspectRatio || '16:9'}`,
-              styleKeywords: [edu.visualStyle, "Summary Card", "Outro"],
-              status: 'PENDING',
-              imageStatus: 'PENDING',
-              videoStatus: 'PENDING',
-              imageCreditCost: 5,
-              videoCreditCost: 15,
-              qaScore: 96,
-              qaPassed: true,
-              qaIssues: []
-            }
-          ];
-        } else {
-          // Affiliate & Commercial Fallback
-          const aff = project.affiliateConfig;
-          const prodName = aff?.productName || "Featured Product";
-          const rawVision = aff?.productVisualAnalysis ? aff.productVisualAnalysis.replace(/^Exact Physical Product Features from Uploaded Photo:\s*/i, '').trim() : '';
-          const visionAttrs = rawVision || (aff?.keyBenefits || "premium finish, authentic colors and texture");
-          const charName = project.characterProfile?.name || 'Creator';
-          const cleanCharName = (charName || '')
-            .replace(/Kreator Utama/gi, 'Female model')
-            .replace(/\(Model Referensi\)/gi, '')
-            .replace(/\(Kreator Utama\)/gi, '')
-            .replace(/Model Referensi/gi, '')
-            .trim() || 'Female model';
-          
-          const cleanVision = ImageGenerationService.sanitizeNegativePhrasesFromPositivePrompt(visionAttrs || '');
-
-          const charOutfit = project.characterProfile?.outfit || '';
-          const charFace = project.characterProfile?.facialFeatures || '';
-          
-          const prodLockHeader = `Photorealistic 35mm commercial photo of ${cleanCharName} holding ${prodName} (${cleanVision})`;
-          const i2vLockHeader = `Photorealistic commercial vertical 9:16 video of ${cleanCharName} presenting ${prodName} (${cleanVision})`;
-
-          generatedScenes = [
-            {
-              id: crypto.randomUUID(),
-              duration: "00:03",
-              visualDirection: `Hook visual berkecepatan tinggi: ${cleanCharName} memegang ${prodName} langsung di depan kamera dengan lighting studio profesional dan efek zoom cepat yang menarik perhatian.`,
-              textOverlay: "🔥 JANGAN BELI SEBELUM TAHU INI!",
-              subtitle: "🔥 JANGAN BELI SEBELUM TAHU INI!",
-              voiceOver: `Gila sih, nemu ${prodName} sebagus ini dengan harga yang nggak masuk akal murahnya!`,
-              promptTextToImage: `Photorealistic 35mm commercial product photo of ${cleanCharName} holding and presenting ${prodName} (${cleanVision}) directly to the camera in a modern studio setting, medium close-up shot showing creator face and product, authentic skin texture, 50mm lens f/2.8, clean background with cool blue accent lighting, high conversion TikTok aesthetic, 8k crisp focus.`,
-              promptImageToVideo: `${i2vLockHeader} presenting product directly to camera, fast dynamic zoom-in commercial shot, e-commerce studio lighting, vertical 9:16 video --ar 9:16`,
-              styleKeywords: ["TikTok Hook", "Vertical 9:16", "Commercial Macro"],
-              status: 'PENDING',
-              imageStatus: 'PENDING',
-              videoStatus: 'PENDING',
-              imageCreditCost: 5,
-              videoCreditCost: 15,
-              qaScore: 92,
-              qaPassed: true,
-              qaIssues: []
-            },
-            {
-              id: crypto.randomUUID(),
-              duration: "00:04",
-              visualDirection: `Extreme close-up uji pakai dan demonstrasi kualitas material: ${cleanCharName} menunjukkan ketahanan, kelembutan, dan detail jahitan/tekstur premium ${prodName}.`,
-              textOverlay: "☁️ Bahan Super Premium & Nyaman",
-              subtitle: "☁️ Bahan Super Premium & Nyaman",
-              voiceOver: `Lihat deh detail bahannya, bener-bener solid, empuk, dan nyaman banget dipakai seharian.`,
-              promptTextToImage: `Extreme macro close-up commercial product shot of ${prodName} (${cleanVision}), showing detailed material texture, sole flexibility, and fine stitching, held and demonstrated by ${cleanCharName}'s hands, soft commercial studio backlight, crisp 8k focus.`,
-              promptImageToVideo: `Action: Extreme close-up macro texture shot of ${prodName} (${cleanVision}) with ${cleanCharName}'s hands demonstrating premium material, soft commercial studio backlight, ultra sharp material details, 4k 60fps --ar 9:16`,
-              styleKeywords: ["Macro Texture", "Material Demo", "E-commerce Studio"],
-              status: 'PENDING',
-              imageStatus: 'PENDING',
-              videoStatus: 'PENDING',
-              imageCreditCost: 5,
-              videoCreditCost: 15,
-              qaScore: 94,
-              qaPassed: true,
-              qaIssues: []
-            },
-            {
-              id: crypto.randomUUID(),
-              duration: "00:04",
-              visualDirection: `Showcase pemakaian (Wear test / On-model): ${cleanCharName} berjalan percaya diri menunjukkan kombinasi outfit yang matching dengan ${prodName}.`,
-              textOverlay: "✨ Bikin OOTD Makin Standout!",
-              subtitle: "✨ Bikin OOTD Makin Standout!",
-              voiceOver: `Dipake ke mana aja langsung auto keren dan banyak yang nanyain beli di mana!`,
-              promptTextToImage: `Full-body fashion lifestyle portrait of the same ${cleanCharName} wearing ${prodName} (${cleanVision}) on feet, walking confidently along a sunny urban street, wearing a stylish streetwear outfit, dynamic tracking angle, natural daylight with warm sun flare, 8k crisp focus.`,
-              promptImageToVideo: `Action: Trendy fashion lifestyle shot showcasing ${cleanCharName} wearing ${prodName} (${cleanVision}) while walking confidently, urban streetwear lighting, cinematic smooth tracking shot, 4k --ar 9:16`,
-              styleKeywords: ["Lifestyle Shoot", "OOTD Showcase", "Viral Cut"],
-              status: 'PENDING',
-              imageStatus: 'PENDING',
-              videoStatus: 'PENDING',
-              imageCreditCost: 5,
-              videoCreditCost: 15,
-              qaScore: 96,
-              qaPassed: true,
-              qaIssues: []
-            },
-            {
-              id: crypto.randomUUID(),
-              duration: "00:03",
-              visualDirection: `Call-to-Action penutup: ${cleanCharName} menunjuk ke arah kiri bawah layar dengan stiker flash sale diskon dan garansi ${prodName}.`,
-              textOverlay: "🛒 KLIK KERANJANG KUNING SEKARANG!",
-              subtitle: "🛒 KLIK KERANJANG KUNING SEKARANG!",
-              voiceOver: `Mumpung lagi ada promo diskon dan gratis ongkir, langsung checkout di keranjang kuning kiri bawah ya!`,
-              promptTextToImage: `Commercial promotional showcase shot of ${cleanCharName} holding ${prodName} (${cleanVision}) and enthusiastically pointing toward the bottom left corner discount badge, clean studio backdrop, energetic lighting, urgent CTA styling, 8k crisp focus.`,
-              promptImageToVideo: `Action: Commercial product display with ${cleanCharName} holding ${prodName} (${cleanVision}) and pointing towards glowing animated discount badge in bottom left corner, clean studio background, 4k vertical --ar 9:16`,
-              styleKeywords: ["CTA Outro", "Flash Sale", "Keranjang Kuning"],
-              status: 'PENDING',
-              imageStatus: 'PENDING',
-              videoStatus: 'PENDING',
-              imageCreditCost: 5,
-              videoCreditCost: 15,
-              qaScore: 91,
-              qaPassed: true,
-              qaIssues: []
-            }
-          ];
+      // Safety Check: Override featuresProduct to false if scene describes a pain point/before state
+      generatedScenes.forEach((s) => {
+        const text = (s.visualDirection + " " + (s.promptTextToImage || "")).toLowerCase();
+        const isPainPoint = text.includes('before') || text.includes('pain point') || text.includes('kesakitan') || text.includes('biasa') || text.includes('frustrasi') || text.includes('struggling') || text.includes('sulit') || text.includes('susah') || text.includes('masalah');
+        const hasSolusi = text.includes('solusi') || text.includes('menemukan') || (project.affiliateConfig?.productName && text.includes(project.affiliateConfig.productName.toLowerCase()));
+        
+        if (isPainPoint && !hasSolusi) {
+           s.featuresProduct = false;
         }
-      }
+      });
 
-      // Assign user uploaded product images as reference anchors (character lock / Google Flow style)
-      const userProductImages = (project.affiliateConfig?.productImages && project.affiliateConfig.productImages.length > 0)
-        ? project.affiliateConfig.productImages
-        : (project.attachedAssets?.filter(a => a.type === 'IMAGE').map(a => a.url) || []);
-
-      const activeCharImg = project.affiliateConfig?.characterImage || charImg;
-      if (project.characterProfile) {
-         if (activeCharImg) {
-            project.characterProfile.referenceImageUrl = activeCharImg;
-            appendLog(project, 'SINTA', `KARAKTER LOCK: Foto Kreator/Karakter spesifik dikunci ke profil sebagai Subject Reference UGC.`, 'SUCCESS');
-         }
-      }
-
-      if (userProductImages.length > 0) {
-        userProductImages.forEach((imgUrl, idx) => {
-          if (generatedScenes[idx]) {
-            generatedScenes[idx].assetUrl = imgUrl;
-            // DO NOT set imageUrl or imageStatus to COMPLETED here.
-            // We want the AI to generate a consistent scene combining the product/character.
+      // Validasi Keunikan Scene (Cek semua pasangan adegan secara komprehensif)
+      if (generatedScenes.length >= 2) {
+        const uniquePrompts = new Set();
+        for (const scene of generatedScenes) {
+          const prompt = (scene.promptTextToImage || scene.visualDirection || "").trim();
+          if (prompt) {
+            if (uniquePrompts.has(prompt)) {
+              throw new Error("Gagal menyusun naskah — AI menghasilkan adegan yang berulang/duplikat (ANOMALI). Silakan coba lagi.");
+            }
+            uniquePrompts.add(prompt);
           }
-        });
+        }
       }
 
       project.storyboard = {
@@ -1611,9 +1344,19 @@ export class ProductionOrchestrator {
     delete (scene as any).lastError;
     delete (project as any).lastQuotaWarning;
 
-    // Save image model to scene & project for full consistency
-    const effectiveEngine = imageEngine || (scene as any).imageEngine || (project as any).imageModel || 'standard';
+    // Save image model to scene & project for full consistency and prevent engine drift
+    const effectiveEngine = imageEngine 
+      || (scene as any).imageEngine 
+      || (project as any).imageEngine 
+      || (project as any).imageModel 
+      || (project.affiliateConfig as any)?.imageEngine 
+      || (project.animationConfig as any)?.imageEngine 
+      || (project.videoType === 'AFFILIATE' ? 'nano-asli' : undefined)
+      || FounderService.getImageEngine() 
+      || 'standard';
+
     (scene as any).imageEngine = effectiveEngine;
+    (project as any).imageEngine = effectiveEngine;
     (project as any).imageModel = effectiveEngine;
 
     // 1. Determine Model & Calculate Credit Cost
@@ -1660,7 +1403,7 @@ export class ProductionOrchestrator {
         affiliateConfig: project.affiliateConfig,
         animationConfig: project.animationConfig,
         educationalConfig: project.educationalConfig,
-        engine: imageEngine,
+        engine: effectiveEngine,
         resolution,
         masterCharacterImageUrl: masterCharUrl,
         masterProductImageUrl: masterProdUrl,
@@ -1738,17 +1481,31 @@ export class ProductionOrchestrator {
     const total = project.storyboard.scenes.length;
     const artStyle = project.animationConfig?.artStyle || project.educationalConfig?.visualStyle;
 
+    // Save image model to project for full consistency and prevent engine drift
+    const effectiveEngine = imageEngine 
+      || (project as any).imageEngine 
+      || (project as any).imageModel 
+      || (project.affiliateConfig as any)?.imageEngine 
+      || (project.animationConfig as any)?.imageEngine 
+      || (project.videoType === 'AFFILIATE' ? 'nano-asli' : undefined)
+      || FounderService.getImageEngine() 
+      || 'standard';
+
+    (project as any).imageEngine = effectiveEngine;
+    (project as any).imageModel = effectiveEngine;
+
     for (let i = 0; i < total; i++) {
       const sc = project.storyboard.scenes[i];
       sc.imageStatus = 'GENERATING';
+      (sc as any).imageEngine = effectiveEngine;
       project.currentPhaseName = `Generating Keyframe ${i + 1}/${total} (${project.characterProfile?.name || 'Karakter'})`;
       projectEvents.emit(`update:${id}`, project);
 
       const modelDef = getFalImageModelForStudio(project.videoType, {
         isSubsequentScene: i > 0,
         hasReferenceImages: !!(project.characterProfile?.referenceImageUrl || (project as any).masterCharacterImageUrl || (project as any).masterProductImageUrl || project.affiliateConfig?.productImages?.[0]),
-        tier: (imageEngine === 'draft' || imageEngine === 'precision' || imageEngine === 'standard') ? imageEngine : undefined,
-        forceModelId: imageEngine?.startsWith('fal-ai/') ? imageEngine : undefined
+        tier: (effectiveEngine === 'draft' || effectiveEngine === 'precision' || effectiveEngine === 'standard') ? effectiveEngine : undefined,
+        forceModelId: effectiveEngine?.startsWith('fal-ai/') ? effectiveEngine : undefined
       });
 
       const isFounderBypass = (project as any).isFounderBypass || (project.userId === 'founder' || project.userId === 'admin');
@@ -1780,7 +1537,7 @@ export class ProductionOrchestrator {
           affiliateConfig: project.affiliateConfig,
           animationConfig: project.animationConfig,
           educationalConfig: project.educationalConfig,
-          engine: imageEngine,
+          engine: effectiveEngine,
           resolution,
           masterCharacterImageUrl: masterCharUrl,
           masterProductImageUrl: masterProdUrl,

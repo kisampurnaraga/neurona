@@ -771,7 +771,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
     { id: '4', timestamp: '02:24:08', source: 'INTERRUPT', message: 'Sistem: Semua sub-node workspace & 8 Agen AI Indonesia terhubung.', level: 'INTERRUPT' }
   ];
 
-  const scenesWithVideo = project?.storyboard?.scenes?.filter(s => Boolean(s.videoUrl && (s.videoUrl.endsWith('.mp4') || s.videoUrl.endsWith('.webm') || s.videoUrl.includes('/videos/') || s.videoUrl.startsWith('data:video/')))) || [];
+  const scenesWithVideo = project?.storyboard?.scenes?.filter(s => Boolean(s.videoUrl && (!s.videoUrl.startsWith('data:image/')))) || [];
   const currentScene = project?.storyboard?.scenes?.[selectedSceneIndex];
   const activeVideoSrc = currentScene?.videoUrl 
     || project?.finalVideoUrl 

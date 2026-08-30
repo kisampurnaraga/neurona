@@ -4,6 +4,14 @@ import { FounderService } from "../src/server/fcc/FounderService";
 import { CinematicStyleLibrary } from "./StyleLibrary";
 import { keyRotator } from "./keyRotator";
 
+export function stripBase64FromText(text: string | undefined | null): string {
+  if (!text) return '';
+  let cleaned = text.replace(/data:([a-zA-Z0-9+\/.-]+);base64,[A-Za-z0-9+/=]+/g, '[BASE64_IMAGE_DATA_TRUNCATED]');
+  cleaned = cleaned.replace(/data:([a-zA-Z0-9+\/.-]+);[^\s'"]+/g, '[BASE64_IMAGE_DATA_TRUNCATED]');
+  cleaned = cleaned.replace(/(?:[A-Za-z0-9+/]{4}){25,}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?/g, '[RAW_BASE64_DATA_TRUNCATED]');
+  return cleaned;
+}
+
 export interface LLMGenerationResult<T = any> {
   data: T;
   rawText: string;
@@ -41,8 +49,8 @@ export function getPreferredLLMProvider(): 'gemini' | 'openai' | 'anthropic' | '
 export function getActiveGeminiModel(): string {
   const engine = FounderService.getLlmEngine()?.toLowerCase() || '';
   if (engine.includes('pro')) return 'gemini-3.1-pro-preview';
-  if (engine.includes('flash')) return 'gemini-2.5-flash';
-  return 'gemini-2.5-flash';
+  if (engine.includes('flash')) return 'gemini-3.6-flash';
+  return 'gemini-3.6-flash';
 }
 
 export function getOpenAIModel(): string {
@@ -674,11 +682,11 @@ ${charVisual ? `- Ciri Fisik Ekstrak dari Foto Karakter (Vision Lock): "${charVi
 `;
     } else {
       const aff = config || {};
-      const productName = aff.productName || '';
-      const productVisualAnalysis = aff.productVisualAnalysis || '';
-      const characterVisualAnalysis = aff.characterVisualAnalysis || '';
-      const keyBenefits = aff.keyBenefits || '';
-      const pricePromo = aff.pricePromo || '';
+      const productName = stripBase64FromText(aff.productName) || '';
+      const productVisualAnalysis = stripBase64FromText(aff.productVisualAnalysis) || '';
+      const characterVisualAnalysis = stripBase64FromText(aff.characterVisualAnalysis) || '';
+      const keyBenefits = stripBase64FromText(aff.keyBenefits) || '';
+      const pricePromo = stripBase64FromText(aff.pricePromo) || '';
       contextBlock = `
 [ROLE: VIRAL AFFILIATE UGC DIRECTOR (TikTok Shop, Shopee Video, Instagram Reels)]
 - Video Type: AFFILIATE UGC (9:16 Vertical Portrait).
@@ -769,7 +777,7 @@ Kembalikan JSON dengan struktur baku:
       "duration": "4s",
       "visual_direction": "Deskripsi sinematik Bahasa Indonesia untuk pratinjau user...",
       "promptImageToVideo": "Character identity locked: ... Setting locked: ... Visual Scene: ...",
-      "promptTextToImage": "Character identity locked: ... Setting locked: ... Visual Scene: ...",
+      "promptTextToImage": "Photorealistic 35mm commercial photo of...",
       "voiceover_script": "Naskah narasi suara adegan...",
       "text_overlay": "TEKS HOOK DI LAYAR",
       "featuresProduct": true,
@@ -780,7 +788,7 @@ Kembalikan JSON dengan struktur baku:
 }
 
 ATURAN LOGIKA SCENE-BY-SCENE (CRITICAL):
-- "featuresProduct" (BOOLEAN): Bernilai true HANYA jika adegan ini secara visual memegang, mengoleskan, memakai, atau menyorot produk fisik. Bernilai false jika adegan ini murni menceritakan masalah wajah, keluhan emosional, atau hook sebelum produk diperkenalkan.
+- "featuresProduct" (BOOLEAN): Bernilai true HANYA jika adegan ini secara visual memegang, mengoleskan, memakai, atau menyorot produk fisik. Bernilai false jika adegan ini murni menceritakan masalah, keluhan emosional (pain point), menggunakan "sepatu biasa/produk lain", atau hook sebelum produk SOLUSI diperkenalkan.
 - "backgroundLock" (STRING: "locked" | "free"): Bernilai "locked" jika adegan bertempat di ruangan/setting fisik yang sama dengan adegan sebelumnya demi kontinuitas. Bernilai "free" jika adegan berganti lokasi/suasana baru.
 - "location" (STRING): Deskripsi singkat setting fisik (misal: "Kamar tidur minimalis", "Kamar mandi modern", "Studio foto komersial").
 

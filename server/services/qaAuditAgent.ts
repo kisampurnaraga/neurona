@@ -41,6 +41,21 @@ export class QAAuditAgent {
   private static SCORE_THRESHOLD = 80;
 
   /**
+   * Helper to strip any base64 data URIs or raw base64 binary blocks from text fields.
+   * Ensures base64 images NEVER leak into text prompt strings sent to LLM text models.
+   */
+  public static stripBase64FromText(text: string | undefined | null): string {
+    if (!text) return '';
+    // 1. Strip data URIs (e.g., data:image/png;base64,..., data:application/octet-stream;base64,...)
+    let cleaned = text.replace(/data:([a-zA-Z0-9+\/.-]+);base64,[A-Za-z0-9+/=]+/g, '[BASE64_IMAGE_DATA_TRUNCATED]');
+    // 2. Strip generic data URIs
+    cleaned = cleaned.replace(/data:([a-zA-Z0-9+\/.-]+);[^\s'"]+/g, '[BASE64_IMAGE_DATA_TRUNCATED]');
+    // 3. Strip long continuous raw base64 strings (>100 chars without spaces)
+    cleaned = cleaned.replace(/(?:[A-Za-z0-9+/]{4}){25,}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?/g, '[RAW_BASE64_DATA_TRUNCATED]');
+    return cleaned;
+  }
+
+  /**
    * Run automated QA audit on script, keyframe visual prompt, and AI video prompt.
    * Ensures compliance with Neuronna Director Architecture before reaching rendering pipeline.
    */
@@ -85,7 +100,7 @@ export class QAAuditAgent {
     ai: GoogleGenAI,
     engineName: string
   ): Promise<QAAuditResult | null> {
-    const targetModel = engineName.includes('pro') ? 'gemini-3.1-pro-preview' : 'gemini-2.5-flash';
+    const targetModel = engineName.includes('pro') ? 'gemini-3.1-pro-preview' : 'gemini-3.6-flash';
 
     const systemInstruction = `Kamu adalah NEURONNA QA AUDIT AGENT & MASTER DIRECTOR REVIEWER.
 Tugasmu adalah mengaudit secara objektif dan ketat output sutradara AI sebelum dieksekusi ke pipeline video AI dan Google Cloud TTS.
@@ -110,11 +125,11 @@ Jika Rata-rata Skor < 85, perbaiki secara otomatis:
 Format Output WAJIB JSON murni tanpa markdown pembungkus.`;
 
     const auditPrompt = JSON.stringify({
-      productName: input.productName || "Product / Creative Subject",
-      referenceImageUrl: input.referenceImageUrl || null,
-      videoPrompt: input.videoPrompt || input.promptText || "",
-      voiceoverScript: input.voiceoverScript || input.script || "",
-      visualPrompt: input.visualPrompt || "",
+      productName: QAAuditAgent.stripBase64FromText(input.productName) || "Product / Creative Subject",
+      referenceImageUrl: QAAuditAgent.stripBase64FromText(input.referenceImageUrl) || null,
+      videoPrompt: QAAuditAgent.stripBase64FromText(input.videoPrompt || input.promptText),
+      voiceoverScript: QAAuditAgent.stripBase64FromText(input.voiceoverScript || input.script),
+      visualPrompt: QAAuditAgent.stripBase64FromText(input.visualPrompt),
       targetDurationSeconds: input.durationSeconds || 5,
       aspectRatio: input.aspectRatio || '9:16',
       videoType: input.videoType || 'AFFILIATE'
@@ -186,7 +201,16 @@ Return JSON with: passed (boolean), score (number), breakdown { productLockConsi
         },
         {
           role: 'user',
-          content: JSON.stringify(input)
+          content: JSON.stringify({
+            productName: QAAuditAgent.stripBase64FromText(input.productName),
+            referenceImageUrl: QAAuditAgent.stripBase64FromText(input.referenceImageUrl),
+            videoPrompt: QAAuditAgent.stripBase64FromText(input.videoPrompt || input.promptText),
+            voiceoverScript: QAAuditAgent.stripBase64FromText(input.voiceoverScript || input.script),
+            visualPrompt: QAAuditAgent.stripBase64FromText(input.visualPrompt),
+            targetDurationSeconds: input.durationSeconds || 5,
+            aspectRatio: input.aspectRatio || '9:16',
+            videoType: input.videoType || 'AFFILIATE'
+          })
         }
       ],
       temperature: 0.2

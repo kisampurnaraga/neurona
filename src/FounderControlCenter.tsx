@@ -48,7 +48,7 @@ interface FCCConfig {
   providers: ProviderItem[];
   flags: Record<string, boolean>;
   imageEngine?: 'draft' | 'standard' | 'precision' | 'chatgpt-image-2' | 'openai' | 'dall-e-3' | 'gemini_banana' | 'google_image' | 'imagen-3' | 'flux-diffusion';
-  llmEngine?: 'gemini' | 'gemini-3.1-pro-preview' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gemini-2.5-flash';
+  llmEngine?: 'gemini' | 'gemini-3.1-pro-preview' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gemini-3.6-flash';
   primaryVideoEngine?: string;
   health: {
     system: string;
@@ -227,7 +227,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
     showNotification('Perubahan Agen AI telah disinkronkan ke memori global', 'success');
   };
   
-  const handleSetLlmEngine = async (engine: 'gemini' | 'gemini-3.1-pro-preview' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gemini-2.5-flash') => {
+  const handleSetLlmEngine = async (engine: 'gemini' | 'gemini-3.1-pro-preview' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gemini-3.6-flash') => {
     try {
       const res = await fetch('/api/fcc/llm-engine', {
         method: 'POST',
@@ -747,13 +747,13 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                       desc: 'Standar industri penalaran logis, instruksi JSON ketat, dan stabilitas tinggi.' 
                     },
                     { 
-                      id: 'gemini-2.5-flash', 
+                      id: 'gemini-3.6-flash', 
                       label: 'Google Gemini 3.7 Flash', 
                       badge: 'ULTRA FAST REASONING', 
                       desc: 'Eksekusi kilat sub-detik untuk brainstorming instan, visualisasi adegan, dan interaksi realtime.' 
                     }
                   ].map(eng => {
-                    const activeEngine = config.llmEngine || 'gemini-2.5-flash';
+                    const activeEngine = config.llmEngine || 'gemini-3.6-flash';
                     const isSelected = activeEngine === eng.id || 
                       (eng.id === 'gemini-3.1-pro-preview' && activeEngine === 'gemini') || 
                       (eng.id === 'claude-3-5-sonnet' && activeEngine === 'anthropic') || 
@@ -884,11 +884,17 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   {[
                     { 
+                      id: 'google_veo', 
+                      label: 'Google Veo (Asli) Video AI', 
+                      badge: 'GOOGLE VEO', 
+                      desc: 'Engine video resmi Google Veo 2.0 & Veo 3.0 via Google Generative AI API.' 
+                    },
+                    { 
                       id: 'fal', 
-                      label: 'Fal.ai Video Studio (11 Verified Models)', 
+                      label: 'Fal.ai Video Studio (11 Models)', 
                       badge: 'FAL.AI READY', 
                       desc: 'Akses ke 11 model video terverifikasi (Wan 2.1, Seedance, Kling, MiniMax, Hunyuan).' 
                     },
@@ -939,7 +945,9 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                           <div className="absolute top-full left-0 mt-1 w-64 z-10 p-2 bg-slate-900 border border-blue-500/40 rounded-xl shadow-xl flex flex-col gap-1 max-h-72 overflow-y-auto">
                             <span className="text-[9px] font-bold text-blue-300 px-1 mb-0.5">Pilih Model Fal.ai:</span>
                             {[
-                              { id: 'fal-ai/wan-i2v', label: 'Wan 2.1 (Budget - 720p)' },
+                              { id: 'fal-ai/veo3.1/lite/image-to-video', label: 'Veo 3.1 Lite Bisu (Paling Murah)' },
+                              { id: 'fal-ai/bytedance/seedance/v1/lite/image-to-video', label: 'Seedance 1.0 Lite (Budget Audio)' },
+                              { id: 'fal-ai/wan-i2v', label: 'Wan 2.1 (Budget Klasik)' },
                               { id: 'bytedance/seedance-2.0/fast/image-to-video', label: 'SeaDance 2.0 Fast (Budget)' },
                               { id: 'fal-ai/hunyuan-video-image-to-video', label: 'Hunyuan Video (Budget)' },
                               { id: 'bytedance/seedance-2.0/image-to-video', label: 'SeaDance 2.0 Std (Balanced)' },
@@ -1013,6 +1021,8 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                             <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-[#181818] border border-[#2a2a2a] text-gray-400 font-mono tracking-wider">{p.type}</span>
                           </div>
                           <p className="text-xs text-gray-400 mt-1">
+                            {p.id === 'google_veo' && 'Engine video Google Veo (Asli) resmi untuk pembuatan video sinematik dengan Veo 2.0 / Veo 3.0 / Veo Lite.'}
+                            {p.id === 'byteplus' && 'Engine video komersial BytePlus ModelArk PixelDance / Doubao untuk animasi visual yang dinamis.'}
                             {p.id === 'chatgpt_image_2' && 'Engine generasi gambar ChatGPT Image 2 (GPT Image 2) utama untuk merender keyframe adegan dan konsistensi karakter.'}
                             {p.id === 'tryaudio' && 'Gateway TTS TryAudioLab untuk rendering suara vokal Citra Kirana / Dimas Perkasa.'}
                             {p.id === 'elevenlabs' && 'Engine suara vokal ElevenLabs AI Studio Multilingual v2.'}
@@ -1296,9 +1306,9 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                       onChange={e => setInputModel(e.target.value)}
                       className="w-full bg-[#141414] border border-[#2a2a2a] focus:border-indigo-500 rounded-xl px-4 py-2.5 text-xs font-medium text-white outline-none transition-colors appearance-none cursor-pointer pr-10"
                     >
-                      <option value="fal-ai/wan-i2v" className="bg-[#1a1a1a] text-white py-2">
-                        fal-ai/wan-i2v (Wan 2.1 Standard 720p - Budget)
-                      </option>
+                      <option value="fal-ai/veo3.1/lite/image-to-video" className="bg-[#1a1a1a] text-white py-2">fal-ai/veo3.1/lite/image-to-video (Veo 3.1 Lite Bisu - Paling Murah)</option>
+<option value="fal-ai/bytedance/seedance/v1/lite/image-to-video" className="bg-[#1a1a1a] text-white py-2">fal-ai/bytedance/seedance/v1/lite/image-to-video (Seedance 1.0 Lite - Budget)</option>
+<option value="fal-ai/wan-i2v" className="bg-[#1a1a1a] text-white py-2">fal-ai/wan-i2v (Wan 2.1 Standard - Budget)</option>
                       <option value="bytedance/seedance-2.0/fast/image-to-video" className="bg-[#1a1a1a] text-white py-2">
                         bytedance/seedance-2.0/fast/image-to-video (SeaDance 2.0 Fast - Budget)
                       </option>

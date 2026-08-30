@@ -609,6 +609,19 @@ export default function App() {
     setAttachedAssets(prev => prev.filter(a => a.id !== id));
   };
 
+  const handleResetHub = () => {
+    setProject(null);
+    setProjectId(null);
+    localStorage.removeItem('neurona_current_project_id');
+    setIsThinking(false);
+    setIsDraftingNewProject(false);
+    setConversationalMessage(null);
+    setPrompt("");
+    setAttachedAssets([]);
+    setIsStoryboardMatrixOpen(false);
+    hasAutoOpenedStoryboardRef.current = null;
+  };
+
   const handleInteract = async (
     overridePrompt?: string, 
     overrideAssets?: ProductAsset[], 
@@ -893,6 +906,11 @@ export default function App() {
               return prev;
             });
           }
+        } else if (res.status === 404) {
+          console.warn(`[Auto-Clean] Stale projectId ${projectId} not found on backend. Resetting.`);
+          setProjectId(null);
+          setProject(null);
+          localStorage.removeItem('neurona_current_project_id');
         }
       } catch (err) {
         // ignore background poll errors
@@ -1080,7 +1098,7 @@ export default function App() {
     }
   };
 
-  const scenesWithVideo = project?.storyboard?.scenes?.filter(s => Boolean(s.videoUrl && (s.videoUrl.endsWith('.mp4') || s.videoUrl.endsWith('.webm') || s.videoUrl.includes('/videos/') || s.videoUrl.startsWith('data:video/')))) || [];
+  const scenesWithVideo = project?.storyboard?.scenes?.filter(s => Boolean(s.videoUrl && (!s.videoUrl.startsWith('data:image/')))) || [];
   const currentScene = project?.storyboard?.scenes?.[selectedSceneIndex];
   const activeVideoSrc = currentScene?.videoUrl 
     || project?.finalVideoUrl 
@@ -1166,7 +1184,7 @@ export default function App() {
               setPrompt("Tuliskan naskah video cinematic lengkap dengan hook, visual direction, dan voiceover");
               handleInteract("Tuliskan naskah video cinematic lengkap dengan hook, visual direction, dan voiceover");
             }}
-            onResetProject={() => { setProject(null); setProjectId(null); setIsStoryboardMatrixOpen(false); }}
+            onResetProject={handleResetHub}
             onOpenAudioStudio={() => {
               window.history.pushState({}, '', '/founder');
               setCurrentRoute('/founder');
@@ -1636,15 +1654,18 @@ export default function App() {
                           className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
                           style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right .5rem center', backgroundSize: '.65em auto' }}
                         >
-                          <option value="fal-wan21">Wan 2.1 (Budget)</option>
-                          <option value="fal-seedance20-fast">Seedance 2.0 Fast</option>
-                          <option value="fal-hunyuan">Hunyuan I2V</option>
-                          <option value="fal-kling21">Kling 2.1 Standard</option>
-                          <option value="fal-kling-o3">Kling O3 Standard</option>
-                          <option value="fal-minimax">MiniMax Video-01</option>
-                          <option value="fal-seedance20">Seedance 2.0 Standard</option>
-                          <option value="fal-seedance25">Seedance 2.5 Sinematik</option>
-                          <option value="fal-kling30-pro">Kling 3.0 Pro</option>
+                          <option value="veo-asli-lite">Veo Asli Lite (Google - 10 Cr)</option>
+                          <option value="veo-asli">Veo Asli Std (Google - 15 Cr)</option>
+                          <option value="veo-asli-pro">Veo Asli Pro (Google - 25 Cr)</option>
+                          <option value="fal-wan21">Wan 2.1 (Budget - 45 Cr)</option>
+                          <option value="fal-seedance20-fast">Seedance 2.0 Fast (10 Cr)</option>
+                          <option value="fal-hunyuan">Hunyuan I2V (10 Cr)</option>
+                          <option value="fal-kling21">Kling 2.1 Standard (15 Cr)</option>
+                          <option value="fal-kling-o3">Kling O3 Standard (15 Cr)</option>
+                          <option value="fal-minimax">MiniMax Video-01 (15 Cr)</option>
+                          <option value="fal-seedance20">Seedance 2.0 Standard (15 Cr)</option>
+                          <option value="fal-seedance25">Seedance 2.5 Sinematik (20 Cr)</option>
+                          <option value="fal-kling30-pro">Kling 3.0 Pro (25 Cr)</option>
                         </select>
                       </div>
                     </div>

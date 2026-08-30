@@ -20,14 +20,39 @@ export interface FalModelDefinition {
  * 11 Single Source of Truth VALID Image-to-Video models on fal.ai / bytedance
  */
 export const FAL_MODELS: FalModelDefinition[] = [
+
   // BUDGET TIER
+  {
+    id: 'fal-ai/veo3.1/lite/image-to-video',
+    name: 'Google Veo 3.1 Lite (Bisu)',
+    shortName: 'Veo 3.1 Lite (Bisu)',
+    tier: 'budget',
+    description: 'Video 720p termurah dari Google. Catatan: Video BISU (tanpa audio).',
+    costUsd: 0.15,
+    isTokenBased: false,
+    durationOptions: ['5'],
+    defaultDuration: '5',
+    supportsAudio: false
+  },
+  {
+    id: 'fal-ai/bytedance/seedance/v1/lite/image-to-video',
+    name: 'ByteDance Seedance 1.0 Lite',
+    shortName: 'Seedance 1.0 Lite',
+    tier: 'budget',
+    description: 'Model budget dari ByteDance dengan kualitas baik dan native audio.',
+    costUsd: 0.18,
+    isTokenBased: false,
+    durationOptions: ['5'],
+    defaultDuration: '5',
+    supportsAudio: true
+  },
   {
     id: 'fal-ai/wan-i2v',
     name: 'Wan 2.1 Image-to-Video',
     shortName: 'Wan 2.1',
     tier: 'budget',
     description: 'Model ultra efisien & hemat, gerakan natural untuk visual umum.',
-    costUsd: 0.05,
+    costUsd: 0.30,
     isTokenBased: false,
     durationOptions: ['5'],
     defaultDuration: '5',
@@ -237,7 +262,7 @@ export function buildFalPayload(modelId: string, params: FalPayloadParams): any 
   const imageUrl = params.imageUrl;
 
   // 1. ByteDance Seedance 2.0 / 2.5
-  if (modelId.startsWith('bytedance/seedance')) {
+  if (modelId.includes('seedance')) {
     const is25 = modelId.includes('2.5');
     const durStr = params.duration ? String(params.duration) : (is25 ? "10" : "5");
     const payload: any = {
@@ -318,7 +343,7 @@ export const FAL_IMAGE_MODELS: FalImageModelDefinition[] = [
     tier: 'balanced',
     category: 't2i',
     description: 'Text-to-Image resolusi tinggi 1K-4K untuk generate base character & konsep awal.',
-    costUsd: 0.08, // $0.08 per image (Official Fal.ai base price)
+    costUsd: 0.025, 
     defaultAspectRatio: '16:9',
     defaultResolution: '1K',
     supportsReferenceImages: false,
@@ -331,7 +356,7 @@ export const FAL_IMAGE_MODELS: FalImageModelDefinition[] = [
     tier: 'balanced',
     category: 'edit',
     description: 'Image-to-Image & Character Lock untuk studio Animasi dan Edukasi.',
-    costUsd: 0.08, // $0.08 per image (Official Fal.ai base price)
+    costUsd: 0.025, 
     defaultAspectRatio: '16:9',
     defaultResolution: '1K',
     supportsReferenceImages: true,
@@ -344,7 +369,7 @@ export const FAL_IMAGE_MODELS: FalImageModelDefinition[] = [
     tier: 'premium',
     category: 'edit',
     description: 'Model Pro Multimodal WAJIB untuk Studio Affiliate (Kunci Produk + Wajah Kreator).',
-    costUsd: 0.15, // $0.15 per image (Official Fal.ai base price)
+    costUsd: 0.05, 
     defaultAspectRatio: '9:16',
     defaultResolution: '1K',
     supportsReferenceImages: true,
