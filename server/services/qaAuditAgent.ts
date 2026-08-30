@@ -15,6 +15,7 @@ export interface QAAuditInput {
   durationSeconds?: number;
   videoType?: 'AFFILIATE' | 'ANIMATION' | 'EDUCATIONAL' | 'BRAND_COMMERCIAL' | 'CINEMATIC' | 'GENERAL';
   visualStyle?: 'ugc' | 'studio';
+  featuresProduct?: boolean;
 }
 
 export interface QAAuditBreakdown {
@@ -331,7 +332,7 @@ Return JSON with: passed (boolean), score (number), breakdown { productLockConsi
     const productName = input.productName || "Product";
     const keywords = [productName.toLowerCase()];
     const mentioned = keywords.some(kw => combinedVisualPrompt.includes(kw)) || combinedVisualPrompt.includes('product') || combinedVisualPrompt.includes('item');
-    if (!mentioned) {
+    if (!mentioned && input.featuresProduct !== false) {
       pScore -= QA_CONFIG.PRODUCT_MENTION_PENALTY;
       issues.push(`Prompt tidak menyebut nama produk asli ("${productName}") atau sinonimnya.`);
     }

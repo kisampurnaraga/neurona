@@ -1199,7 +1199,8 @@ export class ProductionOrchestrator {
             referenceImageUrl: project.characterProfile?.referenceImageUrl || project.affiliateConfig?.characterImage || '',
             durationSeconds: durSecs,
             videoType: vType,
-            visualStyle: s.visualStyle || (vType === 'AFFILIATE' ? 'ugc' : 'studio')
+            visualStyle: s.visualStyle || (vType === 'AFFILIATE' ? 'ugc' : 'studio'),
+            featuresProduct: s.featuresProduct
           });
 
           if (qaResult && qaResult.autoCorrected) {
@@ -2023,7 +2024,7 @@ export class ProductionOrchestrator {
           referenceImageUrl: project.characterProfile?.referenceImageUrl || '',
           durationSeconds: durSecs,
           videoType: project.videoType || 'AFFILIATE',
-          visualStyle: s.visualStyle || ((project.videoType || 'AFFILIATE') === 'AFFILIATE' ? 'ugc' : 'studio')
+          visualStyle: s.visualStyle || ((project.videoType || 'AFFILIATE') === 'AFFILIATE' ? 'ugc' : 'studio'), featuresProduct: s.featuresProduct
         });
         
         let lockedI2VPrompt = s.promptImageToVideo || s.promptTextToImage;
