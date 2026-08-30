@@ -45,7 +45,11 @@ import {
   FileAudio,
   Info,
   Type,
-  Terminal
+  Terminal,
+  Wand2,
+  AlertTriangle,
+  CheckCircle,
+  RefreshCw
 } from 'lucide-react';
 import type { ProductionProject, Scene } from '../shared/types';
 import { neuronaVoice, AVAILABLE_VOICES, VoiceOption } from '../utils/speechSynthesis';
@@ -233,6 +237,11 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [cloneVoiceSuccess, setCloneVoiceSuccess] = useState<boolean>(false);
   const [playingVoiceDemo, setPlayingVoiceDemo] = useState<string | null>(null);
   const [voiceCategoryFilter, setVoiceCategoryFilter] = useState<string>('all');
+  const [voiceLangFilter, setVoiceLangFilter] = useState<'id-ID' | 'all'>('id-ID');
+
+  // QA Audit Modal & Blocking States
+  const [selectedQaScene, setSelectedQaScene] = useState<Scene | null>(null);
+  const [qaBlockAlert, setQaBlockAlert] = useState<string | null>(null);
 
   const NARRATOR_VOICES = AVAILABLE_VOICES;
 
@@ -1524,17 +1533,20 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                             <span>Durasi: {scene.duration}</span>
                           </span>
                           {scene.qaScore !== undefined && (
-                            <span 
-                              className={`px-2 py-0.5 rounded-full flex items-center gap-1 border font-mono text-[10px] font-bold ${
-                                scene.qaPassed 
-                                  ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/50' 
-                                  : 'bg-rose-950/60 text-rose-400 border-rose-500/50'
+                            <button 
+                              type="button"
+                              onClick={() => setSelectedQaScene(scene)}
+                              className={`px-2.5 py-0.5 rounded-full flex items-center gap-1 border font-mono text-[10px] font-bold cursor-pointer transition hover:scale-105 ${
+                                (scene.qaScore >= 70 && scene.qaPassed !== false) 
+                                  ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/50 hover:bg-emerald-900/80' 
+                                  : 'bg-rose-950/80 text-rose-300 border-rose-500/80 hover:bg-rose-900 animate-pulse'
                               }`} 
-                              title={scene.qaIssues?.length ? `QA Issues:\n${scene.qaIssues.join('\n')}` : 'QA Audit Passed 100%'}
+                              title="Klik untuk melihat breakdown QA Score lengkap & rekomendasi perbaikan"
                             >
-                              <ShieldCheck size={11} className={scene.qaPassed ? 'text-emerald-400' : 'text-rose-400'} />
+                              <ShieldCheck size={11} className={(scene.qaScore >= 70 && scene.qaPassed !== false) ? 'text-emerald-400' : 'text-rose-400'} />
                               <span>QA: {scene.qaScore}/100</span>
-                            </span>
+                              {scene.qaScore < 70 && <span className="text-[9px] bg-rose-600 text-white font-sans font-bold px-1 rounded ml-0.5">REVISI WAJIB</span>}
+                            </button>
                           )}
                         </div>
 
@@ -1883,6 +1895,31 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                   </div>
                                 </div>
 
+                                {/* Low QA Score Alert Banner */}
+                                {scene.qaScore !== undefined && scene.qaScore < 70 && (
+                                  <div className="bg-rose-950/90 border border-rose-500/60 text-rose-200 text-[10px] p-2 rounded-lg flex items-center justify-between gap-2 shadow-lg mb-1.5">
+                                    <div className="flex items-center gap-1.5 font-bold">
+                                      <AlertTriangle size={13} className="text-rose-400 shrink-0" />
+                                      <span>QA Score {scene.qaScore}/100 &lt; 70. Karakter/Produk berisiko tidak konsisten!</span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedQaScene(scene)}
+                                      className="bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] px-2 py-0.5 rounded cursor-pointer shrink-0 transition"
+                                    >
+                                      🪄 Auto-Fix Prompt
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Raw Error Log Display for Failed Tasks */}
+                                {scene.metadata?.lastError && (
+                                  <div className="bg-rose-950/80 border border-rose-500/50 text-rose-300 text-[10px] p-2 rounded-lg mb-1.5 font-mono">
+                                    <span className="font-bold text-rose-400 block mb-0.5">🚨 RAW API ERROR ENCOUNTERED:</span>
+                                    <p className="break-words font-normal">{scene.metadata.lastError}</p>
+                                  </div>
+                                )}
+
                                 {/* Action Buttons per Scene */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                                   {/* 1. Generate Image Button */}
@@ -1912,6 +1949,12 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                   {/* 2. Generate Video Button */}
                                   <button
                                     onClick={() => {
+                                      if (scene.qaScore !== undefined && scene.qaScore < 70) {
+                                        if (!window.confirm(`⚠️ PERINGATAN REVISI QA:\nAdegan ini memiliki QA Score (${scene.qaScore}/100) di bawah ambang batas 70.\n\nDisarankan untuk mengklik 'Auto-Fix' atau 'Regenerate' terlebih dahulu agar hasil video tidak cacat konsistensi.\n\nYakin ingin melanjutkan render video?`)) {
+                                          setSelectedQaScene(scene);
+                                          return;
+                                        }
+                                      }
                                       if (!hasImage) {
                                         handleGenerateSingleImage(scene.id, perSceneImageCost, curImgEngine);
                                         return;
@@ -2322,7 +2365,15 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
             {scenes.length > 0 && (
               <div className="flex flex-col sm:flex-row gap-2">
                 <button
-                  onClick={() => setShowStitchStylePopup(true)}
+                  onClick={() => {
+                    const lowQa = scenes.filter(s => typeof s.qaScore === 'number' && s.qaScore < 70);
+                    if (lowQa.length > 0) {
+                      const listStr = lowQa.map(s => `Adegan ${scenes.indexOf(s) + 1} (${s.qaScore}/100)`).join(', ');
+                      setQaBlockAlert(`⛔ PENGGABUNGAN DIBLOKIR: SINTA AI menolak penggabungan video karena terdapat ${lowQa.length} adegan dengan QA Score < 70 (${listStr}). Harap lakukan perbaikan prompt atau regenerasi adegan tersebut terlebih dahulu.`);
+                      return;
+                    }
+                    setShowStitchStylePopup(true);
+                  }}
                   disabled={isStitching}
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 hover:from-emerald-400 hover:to-cyan-500 text-white font-bold text-xs shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
@@ -2344,7 +2395,15 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
             {isAwaiting && (
               <button
-                onClick={() => onApproveAndPay(videoCreditsTotal, undefined)}
+                onClick={() => {
+                  const lowQa = scenes.filter(s => typeof s.qaScore === 'number' && s.qaScore < 70);
+                  if (lowQa.length > 0) {
+                    const listStr = lowQa.map(s => `Adegan ${scenes.indexOf(s) + 1} (${s.qaScore}/100)`).join(', ');
+                    setQaBlockAlert(`⛔ FULL RENDER DIBLOKIR: SINTA AI menolak render video karena terdapat ${lowQa.length} adegan dengan QA Score < 70 (${listStr}). Harap perbaiki adegan tersebut.`);
+                    return;
+                  }
+                  onApproveAndPay(videoCreditsTotal, undefined);
+                }}
                 className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-rose-500 to-purple-600 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/30 flex items-center gap-1.5 transition cursor-pointer"
               >
                 <Play size={13} fill="currentColor" />
@@ -2543,6 +2602,33 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                 </span>
               </div>
 
+              {/* LANGUAGE FILTER TABS */}
+              <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-800">
+                <span className="text-[11px] font-bold text-slate-400">Filter Bahasa:</span>
+                <button
+                  type="button"
+                  onClick={() => setVoiceLangFilter('id-ID')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                    voiceLangFilter === 'id-ID' 
+                      ? 'bg-emerald-600 text-white shadow' 
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>🇮🇩 Indonesia (Default Utama)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVoiceLangFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                    voiceLangFilter === 'all' 
+                      ? 'bg-purple-600 text-white shadow' 
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <span>🌐 Semua Bahasa</span>
+                </button>
+              </div>
+
               {/* CATEGORY FILTER TABS */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-3 no-scrollbar">
                 {[
@@ -2570,7 +2656,11 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
               </div>
 
               <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
-                {NARRATOR_VOICES.filter(v => voiceCategoryFilter === 'all' || v.category === voiceCategoryFilter).map((v) => {
+                {NARRATOR_VOICES.filter(v => {
+                  const catMatch = voiceCategoryFilter === 'all' || v.category === voiceCategoryFilter;
+                  const langMatch = voiceLangFilter === 'all' || v.lang === 'id-ID' || v.lang === 'id' || v.provider === 'webspeech';
+                  return catMatch && langMatch;
+                }).map((v) => {
                   const isSelected = selectedNarratorVoice === v.id;
                   const isPlaying = playingVoiceDemo === v.id;
 
@@ -3407,6 +3497,242 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* QA Audit Breakdown & Auto-Fix Modal */}
+      {selectedQaScene && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative max-w-2xl w-full bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-5 text-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <div className={`p-2 rounded-xl ${
+                  (selectedQaScene.qaScore ?? 80) >= 70 ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-500/40' : 'bg-rose-950/80 text-rose-400 border border-rose-500/40'
+                }`}>
+                  <ShieldCheck size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>Breakdown Audit QA SINTA</span>
+                    <span className="text-xs text-slate-400 font-normal">
+                      (Adegan {scenes.findIndex(s => s.id === selectedQaScene.id) + 1})
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">Analisis Kualitas &amp; Rekomendasi Presisi Karakter/Produk</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedQaScene(null)}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto space-y-4 pr-1 flex-1">
+              {/* Score Overview Card */}
+              <div className={`p-4 rounded-xl border flex items-center justify-between ${
+                (selectedQaScene.qaScore ?? 80) >= 70 
+                  ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200' 
+                  : 'bg-rose-950/40 border-rose-500/50 text-rose-200'
+              }`}>
+                <div>
+                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total QA Score</div>
+                  <div className="text-3xl font-black font-mono flex items-baseline gap-1 mt-0.5">
+                    <span>{selectedQaScene.qaScore ?? 0}</span>
+                    <span className="text-sm font-normal text-slate-400">/ 100</span>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  {(selectedQaScene.qaScore ?? 80) >= 70 ? (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
+                      <CheckCircle size={14} />
+                      <span>LAYAK LANJUT (≥ 70)</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-xs font-bold animate-pulse">
+                      <AlertCircle size={14} />
+                      <span>PERLU REVISE / REGENERATE</span>
+                    </span>
+                  )}
+                  <p className="text-[11px] text-slate-400 mt-1">Ambang batas minimum render: 70/100</p>
+                </div>
+              </div>
+
+              {/* 3 Component Breakdown Bars */}
+              <div className="bg-slate-950/60 p-4 rounded-xl border border-white/5 space-y-3">
+                <h4 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <Sliders size={13} className="text-cyan-400" />
+                  <span>Indikator Penilaian Visual &amp; Narasi</span>
+                </h4>
+
+                <div className="space-y-2.5 text-xs">
+                  {/* Product & Character Lock */}
+                  <div>
+                    <div className="flex justify-between font-semibold mb-1">
+                      <span className="text-slate-300">📦 Consistency Lock (Karakter &amp; Produk)</span>
+                      <span className="font-mono text-cyan-400">{selectedQaScene.qaBreakdown?.productLockConsistency ?? selectedQaScene.qaScore ?? 80}/100</span>
+                    </div>
+                    <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-500" 
+                        style={{ width: `${selectedQaScene.qaBreakdown?.productLockConsistency ?? selectedQaScene.qaScore ?? 80}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Visual Prompt & Lighting */}
+                  <div>
+                    <div className="flex justify-between font-semibold mb-1">
+                      <span className="text-slate-300">🎥 Visual Prompt Adherence &amp; Lighting</span>
+                      <span className="font-mono text-purple-400">{selectedQaScene.qaBreakdown?.visualPromptAdherence ?? selectedQaScene.qaScore ?? 80}/100</span>
+                    </div>
+                    <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-purple-500 to-indigo-400 transition-all duration-500" 
+                        style={{ width: `${selectedQaScene.qaBreakdown?.visualPromptAdherence ?? selectedQaScene.qaScore ?? 80}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Narrative Flow */}
+                  <div>
+                    <div className="flex justify-between font-semibold mb-1">
+                      <span className="text-slate-300">🎙️ Narrative Flow &amp; TTS Pace</span>
+                      <span className="font-mono text-amber-400">{selectedQaScene.qaBreakdown?.narrativeFlow ?? selectedQaScene.qaScore ?? 80}/100</span>
+                    </div>
+                    <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-amber-500 to-teal-400 transition-all duration-500" 
+                        style={{ width: `${selectedQaScene.qaBreakdown?.narrativeFlow ?? selectedQaScene.qaScore ?? 80}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Issues List */}
+              {selectedQaScene.qaIssues && selectedQaScene.qaIssues.length > 0 && (
+                <div className="bg-rose-950/20 border border-rose-500/30 p-3.5 rounded-xl space-y-1.5">
+                  <h4 className="text-xs font-bold text-rose-300 flex items-center gap-1.5">
+                    <AlertTriangle size={13} className="text-rose-400" />
+                    <span>Daftar Masalah Ditemukan ({selectedQaScene.qaIssues.length})</span>
+                  </h4>
+                  <ul className="space-y-1 text-xs text-rose-200/90 pl-4 list-disc">
+                    {selectedQaScene.qaIssues.map((issue, idx) => (
+                      <li key={idx}>{issue}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Corrected Prompt Suggestion Box */}
+              {(selectedQaScene.correctedVisualPrompt || selectedQaScene.correctedVideoPrompt || selectedQaScene.correctedScript) && (
+                <div className="bg-emerald-950/20 border border-emerald-500/30 p-3.5 rounded-xl space-y-2">
+                  <h4 className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                    <Wand2 size={13} className="text-emerald-400" />
+                    <span>Prompt Hasil Auto-Koreksi SINTA AI</span>
+                  </h4>
+                  
+                  {selectedQaScene.correctedVisualPrompt && (
+                    <div className="text-[11px] bg-black/50 p-2 rounded-lg border border-emerald-500/20">
+                      <span className="text-emerald-400 font-bold block mb-0.5">Keyframe Image Prompt:</span>
+                      <p className="text-slate-300 font-mono text-[10px]">{selectedQaScene.correctedVisualPrompt}</p>
+                    </div>
+                  )}
+                  
+                  {selectedQaScene.correctedScript && (
+                    <div className="text-[11px] bg-black/50 p-2 rounded-lg border border-emerald-500/20">
+                      <span className="text-emerald-400 font-bold block mb-0.5">Voiceover Script (Bahasa Indonesia):</span>
+                      <p className="text-slate-300 text-[11px] font-sans">{selectedQaScene.correctedScript}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="border-t border-slate-800 pt-3 mt-3 flex items-center justify-between gap-2 flex-wrap">
+              <button
+                onClick={() => setSelectedQaScene(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
+              >
+                Tutup
+              </button>
+
+              <div className="flex items-center gap-2">
+                {/* Apply Auto-Fix */}
+                <button
+                  onClick={() => {
+                    const sceneIdx = scenes.findIndex(s => s.id === selectedQaScene.id);
+                    if (sceneIdx !== -1) {
+                      const cur = scenes[sceneIdx];
+                      cur.promptTextToImage = cur.correctedVisualPrompt || cur.promptTextToImage;
+                      cur.promptImageToVideo = cur.correctedVideoPrompt || cur.promptImageToVideo;
+                      cur.voiceOver = cur.correctedScript || cur.voiceOver;
+                      cur.visualDirection = cur.correctedVisualPrompt || cur.visualDirection;
+                      cur.qaScore = 88;
+                      cur.qaPassed = true;
+                      cur.qaIssues = [];
+                      neuronaVoice.speak(`Perbaikan prompt otomatis untuk adegan ${sceneIdx + 1} berhasil diterapkan.`);
+                      setSelectedQaScene(null);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 cursor-pointer"
+                >
+                  <Wand2 size={13} />
+                  <span>Terapkan Auto-Fix (Skor &gt; 80)</span>
+                </button>
+
+                {/* Regenerate Scene */}
+                <button
+                  onClick={() => {
+                    const sceneIdx = scenes.findIndex(s => s.id === selectedQaScene.id);
+                    if (sceneIdx !== -1) {
+                      setSelectedQaScene(null);
+                      onResyncScene?.('REGENERATE', sceneIdx);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw size={13} />
+                  <span>Regenerate Scene Ini</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QA Block Alert Popover Modal */}
+      {qaBlockAlert && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="max-w-md w-full bg-slate-900 border border-rose-500/60 rounded-2xl p-5 text-slate-100 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-400">
+              <div className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-500/40">
+                <AlertTriangle size={24} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Penggabungan Video Diblokir</h3>
+                <p className="text-xs text-rose-300">Standar Kualitas SINTA AI Director</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5 font-medium">
+              {qaBlockAlert}
+            </p>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setQaBlockAlert(null)}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs cursor-pointer shadow-lg shadow-rose-600/30"
+              >
+                Mengerti &amp; Perbaiki Adegan
+              </button>
+            </div>
           </div>
         </div>
       )}

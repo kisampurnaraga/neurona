@@ -731,8 +731,7 @@ ATURAN WAJIB & LOGIKA KONSISTENSI VISUAL (MANDATORY RULES):
 - Masukkan \`consistencyAnchorPrompt\` yang mengunci karakter tersebut di semua adegan.
 
 3. DUAL VISUAL LOCK & ACTION-DRIVEN ANCHORS DI PROMPT PER ADEGAN:
-- Di dalam field \`promptTextToImage\` dan \`promptImageToVideo\` (I2V), gunakan struktur Action-Driven Anchor di 20 token pertama:
-  "Photorealistic 35mm commercial photo of hands holding [Detail Produk] at chest level, presented by [Detail Model], medium close-up product shot, 50mm lens f/2.8, authentic skin texture, clean dark studio backdrop, cool blue accent edge lighting, sharp focus, 8k resolution"
+- Di dalam field \`promptTextToImage\` dan \`promptImageToVideo\` (I2V), gunakan struktur yang konsisten. JIKA visualStyle="ugc", gunakan gaya kamera HP (misal: "Selfie perspective, shot on iPhone 15..."). JIKA visualStyle="studio", gunakan DSLR (misal: "35mm DSLR, clean dark studio backdrop...").
 - JANGAN gunakan kata-kata negatif seperti "preserve exact", "do not alter", "no distortion" di dalam positive prompt string.
 
 4. VOICE OVER & TEKS SUBTITLE:
@@ -776,21 +775,33 @@ Kembalikan JSON dengan struktur baku:
       "scene_number": 1,
       "duration": "4s",
       "visual_direction": "Deskripsi sinematik Bahasa Indonesia untuk pratinjau user...",
-      "promptImageToVideo": "Character identity locked: ... Setting locked: ... Visual Scene: ...",
-      "promptTextToImage": "Photorealistic 35mm commercial photo of...",
+      "promptImageToVideo": "[Insert Camera Movement: pan/zoom/tracking]. Character identity locked: ... Setting locked: ... Visual Scene: ...",
+      "promptTextToImage": "[Insert Detailed Image Prompt Matching Visual Style]",
       "voiceover_script": "Naskah narasi suara adegan...",
       "text_overlay": "TEKS HOOK DI LAYAR",
       "featuresProduct": true,
       "backgroundLock": "locked",
+      "visualStyle": "${videoType === 'AFFILIATE' ? 'ugc' : 'studio'}",
       "location": "Modern minimalist indoor setting"
     }
   ]
 }
 
 ATURAN LOGIKA SCENE-BY-SCENE (CRITICAL):
+- "visualStyle" (STRING): WAJIB "ugc" jika Affiliate, WAJIB "studio" jika bukan Affiliate.
 - "featuresProduct" (BOOLEAN): Bernilai true HANYA jika adegan ini secara visual memegang, mengoleskan, memakai, atau menyorot produk fisik. Bernilai false jika adegan ini murni menceritakan masalah, keluhan emosional (pain point), menggunakan "sepatu biasa/produk lain", atau hook sebelum produk SOLUSI diperkenalkan.
 - "backgroundLock" (STRING: "locked" | "free"): Bernilai "locked" jika adegan bertempat di ruangan/setting fisik yang sama dengan adegan sebelumnya demi kontinuitas. Bernilai "free" jika adegan berganti lokasi/suasana baru.
 - "location" (STRING): Deskripsi singkat setting fisik (misal: "Kamar tidur minimalis", "Kamar mandi modern", "Studio foto komersial").
+
+CRITICAL RULES FOR QA COMPLIANCE (MUST FOLLOW STRICTLY):
+1. PACING: Voiceover max 2.2 words/second for Indonesian TTS. 3s scene = max 6 words, 4s scene = max 8 words. Keep it punchy!
+2. VISUAL STYLE: You must explicitly set \`visualStyle\` field to "ugc" or "studio" based on videoType!
+   - AFFILIATE default -> "ugc" (Authentic UGC creator perspective, shot on iPhone 15 front camera)
+   - CONTENT/ANIMATION -> "studio" (Cinematic 35mm commercial shot, 50mm lens f/2.8)
+   Never mix DSLR/35mm prompts inside UGC style.
+3. PRODUCT REFERENCE: Every visual prompt MUST mention the actual product name explicitly (not generic words).
+4. CAMERA MOVEMENT: \`promptImageToVideo\` MUST contain one of: "pan", "dolly", "zoom", "tracking", "orbital", "tilt", "pedestal", "crane", "handheld camera movement".
+5. NEVER include: "text on screen", "subtitle", "typography", "writing", "font".
 
 FORMAT OUTPUT MUTLAK: JSON`;
 
@@ -806,7 +817,16 @@ FORMAT OUTPUT MUTLAK: JSON`;
               messages: [
                 { 
                   role: "system", 
-                  content: `You are SINTA, NEURONA Master Storyboard & Product/Character Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' (caption, hashtags, voiceProfile) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[], featuresProduct: boolean, backgroundLock: "locked" | "free", location: string }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with an Action-Driven Anchor linking subject and product in the first 20 tokens: 'Photorealistic 35mm commercial photo of hands holding [Product name and physical details] at chest level, presented by [Model description], medium close-up product shot, 50mm lens f/2.8, authentic skin texture with pores, clean dark backdrop, cool blue accent edge lighting, sharp focus, 8k resolution'. DO NOT include negative phrases like 'preserve exact', 'do not alter', or 'no distortion' in the positive prompt.` 
+                  content: `You are SINTA, NEURONA Master Storyboard & Product/Character Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' (caption, hashtags, voiceProfile) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[], featuresProduct: boolean, backgroundLock: "locked" | "free", location: string, visualStyle: "ugc" | "studio" }.
+
+CRITICAL RULES FOR QA COMPLIANCE:
+1. PACING: Voiceover max 2.2 words/second for Indonesian TTS. 3s scene = max 6 words. Keep it punchy.
+2. VISUAL STYLE (must set \`visualStyle\` field explicitly as "ugc" or "studio" based on videoType):
+   - AFFILIATE default → "ugc": "Authentic UGC creator perspective, shot on iPhone 15 front camera, natural indoor lighting"
+   - CONTENT/ANIMATION → "studio": "Cinematic 35mm commercial shot, 50mm lens f/2.8, atmospheric lighting"
+3. PRODUCT REFERENCE: Every visual prompt MUST mention the actual product name explicitly (not generic words).
+4. CAMERA MOVEMENT: promptImageToVideo MUST contain one of: "pan", "dolly", "zoom", "tracking", "orbital".
+5. NEVER include: "text on screen", "subtitle", "typography", "writing", "font".` 
                 },
                 { role: "user", content: storyboardPrompt }
               ],
@@ -832,6 +852,11 @@ FORMAT OUTPUT MUTLAK: JSON`;
               voiceover_script: s.voiceover_script || s.voiceOver || '',
               promptTextToImage: s.promptTextToImage || s.promptImageToVideo || '',
               promptImageToVideo: s.promptImageToVideo || s.promptTextToImage || '',
+              visualStyle: s.visualStyle,
+              styleKeywords: s.styleKeywords || [],
+              featuresProduct: s.featuresProduct || false,
+              backgroundLock: s.backgroundLock || 'free',
+              location: s.location || '',
               featuresProduct: s.featuresProduct !== undefined ? Boolean(s.featuresProduct) : (s.features_product !== undefined ? Boolean(s.features_product) : true),
               backgroundLock: (s.backgroundLock === 'free' || s.background_lock === 'free') ? 'free' : 'locked',
               location: s.location || '',
@@ -954,7 +979,8 @@ FORMAT OUTPUT MUTLAK: JSON`;
                         promptImageToVideo: { type: Type.STRING },
                         featuresProduct: { type: Type.BOOLEAN },
                         backgroundLock: { type: Type.STRING },
-                        location: { type: Type.STRING }
+                        location: { type: Type.STRING },
+                        visualStyle: { type: Type.STRING }
                       }
                     }
                   },
@@ -1006,6 +1032,11 @@ FORMAT OUTPUT MUTLAK: JSON`;
             voiceover_script: s.voiceover_script || s.voiceOver || '',
             promptTextToImage: s.promptTextToImage || s.promptImageToVideo || '',
             promptImageToVideo: s.promptImageToVideo || s.promptTextToImage || '',
+              visualStyle: s.visualStyle,
+              styleKeywords: s.styleKeywords || [],
+              featuresProduct: s.featuresProduct || false,
+              backgroundLock: s.backgroundLock || 'free',
+              location: s.location || '',
             featuresProduct: s.featuresProduct !== undefined ? Boolean(s.featuresProduct) : (s.features_product !== undefined ? Boolean(s.features_product) : true),
             backgroundLock: (s.backgroundLock === 'free' || s.background_lock === 'free') ? 'free' : 'locked',
             location: s.location || '',
@@ -1063,7 +1094,16 @@ FORMAT OUTPUT MUTLAK: JSON`;
                   messages: [
                     { 
                       role: "system", 
-                      content: `You are SINTA, NEURONA Master Storyboard & Product Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' ({ caption, hashtags, tiktok_caption, instagram_caption, youtube_caption, hashtags_tiktok, hashtags_instagram, hashtags_youtube, voiceProfile }) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[], featuresProduct: boolean, backgroundLock: "locked" | "free", location: string }. MANDATORY: Every scene's 'promptTextToImage' MUST strictly begin with an Action-Driven Anchor linking subject and product in the first 20 tokens: 'Photorealistic 35mm commercial photo of hands holding [Product name and physical details] at chest level, presented by [Model description], medium close-up product shot, 50mm lens f/2.8, authentic skin texture with pores, clean dark backdrop, cool blue accent edge lighting, sharp focus, 8k resolution'. DO NOT include negative phrases like 'preserve exact', 'do not alter', or 'no distortion' in the positive prompt.` 
+                      content: `You are SINTA, NEURONA Master Storyboard & Product Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' ({ caption, hashtags, tiktok_caption, instagram_caption, youtube_caption, hashtags_tiktok, hashtags_instagram, hashtags_youtube, voiceProfile }) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[], featuresProduct: boolean, backgroundLock: "locked" | "free", location: string, visualStyle: "ugc" | "studio" }.
+
+CRITICAL RULES FOR QA COMPLIANCE:
+1. PACING: Voiceover max 2.2 words/second for Indonesian TTS. 3s scene = max 6 words. Keep it punchy.
+2. VISUAL STYLE (must set \`visualStyle\` field explicitly as "ugc" or "studio" based on videoType):
+   - AFFILIATE default → "ugc": "Authentic UGC creator perspective, shot on iPhone 15 front camera, natural indoor lighting"
+   - CONTENT/ANIMATION → "studio": "Cinematic 35mm commercial shot, 50mm lens f/2.8, atmospheric lighting"
+3. PRODUCT REFERENCE: Every visual prompt MUST mention the actual product name explicitly (not generic words).
+4. CAMERA MOVEMENT: promptImageToVideo MUST contain one of: "pan", "dolly", "zoom", "tracking", "orbital".
+5. NEVER include: "text on screen", "subtitle", "typography", "writing", "font".` 
                     },
                     { role: "user", content: storyboardPrompt }
                   ],
@@ -1089,6 +1129,11 @@ FORMAT OUTPUT MUTLAK: JSON`;
                   voiceover_script: s.voiceOver || s.voiceover_script || '',
                   promptTextToImage: s.promptTextToImage || s.promptImageToVideo || '',
                   promptImageToVideo: s.promptImageToVideo || s.promptTextToImage || '',
+              visualStyle: s.visualStyle,
+              styleKeywords: s.styleKeywords || [],
+              featuresProduct: s.featuresProduct || false,
+              backgroundLock: s.backgroundLock || 'free',
+              location: s.location || '',
                   featuresProduct: s.featuresProduct !== undefined ? Boolean(s.featuresProduct) : (s.features_product !== undefined ? Boolean(s.features_product) : true),
                   backgroundLock: (s.backgroundLock === 'free' || s.background_lock === 'free') ? 'free' : 'locked',
                   location: s.location || '',

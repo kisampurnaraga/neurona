@@ -354,6 +354,9 @@ export class FounderService {
 
   static getGeminiBananaConfig() {
     let key = this.customGeminiBananaConfig.apiKey || process.env.GEMINI_MANUAL_API_KEY || process.env.GEMINI_API_KEY || '';
+    if (key.startsWith('AQ.') || key.startsWith('fal_') || (key.includes(':') && !key.startsWith('AIza'))) {
+      key = '';
+    }
     const vCheck = validateCredentialFormat('gemini', key, 'FounderService.getGeminiBananaConfig');
     if (!vCheck.valid) {
       key = '';
@@ -364,7 +367,7 @@ export class FounderService {
     }
     return {
       apiKey: key,
-      model: this.customGeminiBananaConfig.model || 'gemini-3.1-flash-image',
+      model: this.customGeminiBananaConfig.model || 'imagen-3.0-generate-002',
       endpoint: endpoint,
       status: key ? 'READY' : 'NOT_CONFIGURED'
     };

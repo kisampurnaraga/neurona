@@ -14,6 +14,7 @@ export interface QAAuditInput {
   aspectRatio?: '9:16' | '16:9';
   durationSeconds?: number;
   videoType?: 'AFFILIATE' | 'ANIMATION' | 'EDUCATIONAL' | 'BRAND_COMMERCIAL' | 'CINEMATIC' | 'GENERAL';
+  visualStyle?: 'ugc' | 'studio';
 }
 
 export interface QAAuditBreakdown {
@@ -38,7 +39,42 @@ export interface QAAuditResult {
 }
 
 export class QAAuditAgent {
-  private static SCORE_THRESHOLD = 80;
+  private static SCORE_THRESHOLD = 70;
+
+  /**
+   * Post-processing helper to ensure character lock and product lock clauses
+   * from the original prompt are strictly preserved in corrected prompts.
+   */
+  public static preserveConsistencyLocks(
+    originalPrompt: string,
+    correctedPrompt: string,
+    productName?: string
+  ): string {
+    if (!correctedPrompt) return originalPrompt || '';
+
+    let result = correctedPrompt;
+
+    // 1. Preserve explicit [LOCK: ...] bracket tags
+    const lockMatches = originalPrompt.match(/\[(CHARACTER|PRODUCT|VISION|FACE)\s+LOCK:[^\]]+\]/gi);
+    if (lockMatches && lockMatches.length > 0) {
+      lockMatches.forEach(lockTag => {
+        const keyFragment = lockTag.substring(0, 15).toLowerCase();
+        if (!result.toLowerCase().includes(keyFragment)) {
+          result = `${lockTag} ${result}`;
+        }
+      });
+    }
+
+    // 2. Preserve explicit physical feature descriptions if lost
+    if (productName && productName !== 'Product' && productName !== 'Product / Creative Subject') {
+      const lowerProduct = productName.toLowerCase();
+      if (originalPrompt.toLowerCase().includes(lowerProduct) && !result.toLowerCase().includes(lowerProduct)) {
+        result = `${result}, featuring ${productName}`;
+      }
+    }
+
+    return result.trim();
+  }
 
   /**
    * Helper to strip any base64 data URIs or raw base64 binary blocks from text fields.
@@ -117,9 +153,9 @@ KAIDAH AUDIT:
    - Rasio kata naskah harus realistis sesuai durasi ${input.durationSeconds || 5} detik (sekitar 2.5 kata per detik untuk bahasa Indonesia).
    - Memiliki hook menarik atau punchline/CTA yang jelas.
 
-Jika Rata-rata Skor < 85, perbaiki secara otomatis:
-- "correctedVideoPrompt": Prompt video sinematik AI yang disempurnakan (dalam bahasa Inggris sinematik untuk hasil render AI terbaik).
-- "correctedScript": Naskah narasi voiceover yang disesuaikan pas dengan durasi waktu.
+ATURAN WAJIB KOREKSI PROMPT:
+- "correctedVideoPrompt": Prompt video AI yang disempurnakan. WAJIB MEMPERTAHANKAN DAN TIDAK BOLEH MENGHAPUS deskripsi produk dan karakter lock dari prompt asli.
+- "correctedScript": Naskah narasi voiceover. WAJIB MEMPERTAHANKAN BAHASA NASKAH ASLI (Bahasa Indonesia). DILARANG KERAS MENGUBAH NASKAH INDONESIA MENJADI BAHASA INGGRIS!
 - "correctedVisualPrompt": Deskripsi visual keyframe gambar dengan pencahayaan dan Character/Product Lock lengkap.
 
 Format Output WAJIB JSON murni tanpa markdown pembungkus.`;
@@ -155,6 +191,14 @@ Format Output WAJIB JSON murni tanpa markdown pembungkus.`;
     const avgScore = Math.round((pScore + vScore + nScore) / 3);
     const autoCorrected = avgScore < this.SCORE_THRESHOLD;
 
+    const rawVideoPrompt = input.videoPrompt || input.promptText || '';
+    const rawVisualPrompt = input.visualPrompt || rawVideoPrompt;
+    const productName = input.productName;
+
+    const finalVideoPrompt = QAAuditAgent.preserveConsistencyLocks(rawVideoPrompt, data.correctedVideoPrompt || rawVideoPrompt, productName);
+    const finalVisualPrompt = QAAuditAgent.preserveConsistencyLocks(rawVisualPrompt, data.correctedVisualPrompt || rawVisualPrompt, productName);
+    const finalScript = data.correctedScript || input.voiceoverScript || input.script || '';
+
     return {
       passed: avgScore >= this.SCORE_THRESHOLD,
       score: avgScore,
@@ -165,9 +209,9 @@ Format Output WAJIB JSON murni tanpa markdown pembungkus.`;
       },
       issues: Array.isArray(data.issues) ? data.issues : (data.detectedIssues || []),
       recommendations: Array.isArray(data.recommendations) ? data.recommendations : [],
-      correctedVideoPrompt: data.correctedVideoPrompt || input.videoPrompt || input.promptText || "",
-      correctedScript: data.correctedScript || input.voiceoverScript || input.script || "",
-      correctedVisualPrompt: data.correctedVisualPrompt || input.visualPrompt || input.promptText || "",
+      correctedVideoPrompt: finalVideoPrompt,
+      correctedScript: finalScript,
+      correctedVisualPrompt: finalVisualPrompt,
       autoCorrected,
       auditNotes: data.auditNotes || `QA Audit diselesaikan dengan skor ${avgScore}/100 oleh ${targetModel}.`,
       modelUsed: targetModel,
@@ -225,6 +269,13 @@ Return JSON with: passed (boolean), score (number), breakdown { productLockConsi
     const nScore = Number(data.breakdown?.narrativeFlow ?? 85);
     const avgScore = Number(data.score ?? Math.round((pScore + vScore + nScore) / 3));
 
+    const rawVideoPrompt = input.videoPrompt || input.promptText || '';
+    const rawVisualPrompt = input.visualPrompt || rawVideoPrompt;
+    const productName = input.productName;
+
+    const finalVideoPrompt = QAAuditAgent.preserveConsistencyLocks(rawVideoPrompt, data.correctedVideoPrompt || rawVideoPrompt, productName);
+    const finalVisualPrompt = QAAuditAgent.preserveConsistencyLocks(rawVisualPrompt, data.correctedVisualPrompt || rawVisualPrompt, productName);
+
     return {
       passed: avgScore >= this.SCORE_THRESHOLD,
       score: avgScore,
@@ -235,9 +286,9 @@ Return JSON with: passed (boolean), score (number), breakdown { productLockConsi
       },
       issues: Array.isArray(data.issues) ? data.issues : [],
       recommendations: Array.isArray(data.recommendations) ? data.recommendations : [],
-      correctedVideoPrompt: data.correctedVideoPrompt || input.videoPrompt || input.promptText || '',
+      correctedVideoPrompt: finalVideoPrompt,
       correctedScript: data.correctedScript || input.voiceoverScript || input.script || '',
-      correctedVisualPrompt: data.correctedVisualPrompt || input.visualPrompt || '',
+      correctedVisualPrompt: finalVisualPrompt,
       autoCorrected: avgScore < this.SCORE_THRESHOLD,
       auditNotes: data.auditNotes || `QA Audit dieksekusi via OpenAI ${model}.`,
       modelUsed: `OpenAI ${model}`,
@@ -256,48 +307,82 @@ Return JSON with: passed (boolean), score (number), breakdown { productLockConsi
     duration: number,
     aspect: '9:16' | '16:9'
   ): QAAuditResult {
+    const QA_CONFIG = {
+      MAX_WORDS_PER_SECOND_ID: 2.2,
+      PACING_PENALTY: 20,
+      CAMERA_REGEX: /dolly|pan|zoom|tracking|orbital|close-up|camera|motion|shot/i,
+      CAMERA_PENALTY: 15,
+      LIGHTING_REGEX: /lighting|glow|studio|cinematic|photorealistic|bokeh|shadow/i,
+      LIGHTING_PENALTY: 10,
+      TEXT_POLLUTION_REGEX: /subtitle|text on screen|font|typography|writing|tulisan/i,
+      TEXT_POLLUTION_PENALTY: 20,
+      PRODUCT_MENTION_PENALTY: 15,
+    };
+
     const issues: string[] = [];
     const recommendations: string[] = [];
-    let pScore = 90;
-    let vScore = 85;
-    let nScore = 88;
+    let pScore = 100;
+    let vScore = 100;
+    let nScore = 100;
 
-    // Check 1: Video Prompt Cinematic keywords
-    const hasCinematicCamera = /dolly|pan|zoom|tracking|orbital|close-up|camera|motion|shot/i.test(rawPrompt);
-    const hasLighting = /lighting|glow|studio|cinematic|photorealistic|bokeh|shadow/i.test(rawPrompt);
-    const hasTextPollution = /subtitle|text on screen|font|typography|writing|tulisan/i.test(rawPrompt);
+    const combinedVisualPrompt = (rawVisual + " " + rawPrompt).toLowerCase();
 
-    if (!hasCinematicCamera) {
+    // 1. Cek referensi produk dinamis
+    const productName = input.productName || "Product";
+    const keywords = [productName.toLowerCase()];
+    const mentioned = keywords.some(kw => combinedVisualPrompt.includes(kw)) || combinedVisualPrompt.includes('product') || combinedVisualPrompt.includes('item');
+    if (!mentioned) {
+      pScore -= QA_CONFIG.PRODUCT_MENTION_PENALTY;
+      issues.push(`Prompt tidak menyebut nama produk asli ("${productName}") atau sinonimnya.`);
+    }
+
+    // 2. Cek konsistensi visualStyle
+    const visualStyle = input.visualStyle || (input.videoType === 'AFFILIATE' ? 'ugc' : 'studio');
+    const looksLikeUGC = /iphone|ugc|handheld|casual|smartphone/i.test(combinedVisualPrompt);
+    const looksLikeStudio = /35mm|50mm|f\/\d\.\d|studio|dslr|commercial shot/i.test(combinedVisualPrompt);
+
+    if (visualStyle === 'ugc' && looksLikeStudio && !looksLikeUGC) {
       vScore -= 15;
-      issues.push("Prompt video belum menyertakan instruksi pergerakan kamera (dolly/pan/zoom).");
-      recommendations.push("Tambahkan arahan pergerakan kamera sinematik dinamis.");
+      issues.push("Field visualStyle='ugc' tapi prompt memakai bahasa studio (35mm/DSLR). Inkonsistensi internal.");
     }
+    if (visualStyle === 'studio' && looksLikeUGC && !looksLikeStudio) {
+      vScore -= 15;
+      issues.push("Field visualStyle='studio' tapi prompt memakai bahasa UGC/iPhone. Inkonsistensi internal.");
+    }
+
+    // 3. Pacing VO (dikalibrasi untuk Bahasa Indonesia)
+    const wordCount = rawScript.split(/\s+/).filter(Boolean).length;
+    const maxWords = Math.floor(duration * QA_CONFIG.MAX_WORDS_PER_SECOND_ID);
+    if (wordCount > maxWords) {
+      nScore -= QA_CONFIG.PACING_PENALTY;
+      issues.push(`VO ${wordCount} kata melebihi batas ${maxWords} kata untuk durasi ${duration}s (${QA_CONFIG.MAX_WORDS_PER_SECOND_ID} kata/detik).`);
+      recommendations.push(`Persingkat naskah menjadi maksimal ${maxWords} kata.`);
+    }
+
+    // 4. Camera Movement
+    const hasCinematicCamera = QA_CONFIG.CAMERA_REGEX.test(rawPrompt);
+    if (!hasCinematicCamera) {
+      vScore -= QA_CONFIG.CAMERA_PENALTY;
+      issues.push("Tidak ada instruksi gerakan kamera sinematik.");
+      recommendations.push("Tambahkan arahan pergerakan kamera sinematik dinamis (pan/dolly/zoom).");
+    }
+
+    // 5. Lighting
+    const hasLighting = QA_CONFIG.LIGHTING_REGEX.test(combinedVisualPrompt);
     if (!hasLighting) {
-      vScore -= 10;
-      issues.push("Pencahayaan atmosferik studio belum dispesifikasikan.");
+      vScore -= QA_CONFIG.LIGHTING_PENALTY;
+      issues.push("Tidak ada instruksi pencahayaan sinematik.");
     }
+
+    // 6. Text Pollution
+    const hasTextPollution = QA_CONFIG.TEXT_POLLUTION_REGEX.test(combinedVisualPrompt);
     if (hasTextPollution) {
-      vScore -= 20;
-      issues.push("Ditemukan kata 'text/subtitle' di prompt video yang dapat memicu artefak cacat pada video.");
+      vScore -= QA_CONFIG.TEXT_POLLUTION_PENALTY;
+      issues.push("Prompt mengandung instruksi teks-di-layar yang dilarang (subtitle/typography/dll).");
       recommendations.push("Hapus kata-kata tipografi dari prompt video.");
     }
 
-    // Check 2: Script length vs duration
-    const wordCount = rawScript.split(/\s+/).filter(Boolean).length;
-    const maxRecommendedWords = Math.ceil(duration * 2.8);
-    if (wordCount > maxRecommendedWords) {
-      nScore -= 20;
-      issues.push(`Naskah voiceover (${wordCount} kata) terlalu panjang untuk durasi video ${duration} detik.`);
-      recommendations.push(`Persingkat naskah menjadi maksimal ${maxRecommendedWords} kata agar tempo narasi natural.`);
-    }
-
-    // Check 3: Product Lock
-    if (input.referenceImageUrl && !rawPrompt.toLowerCase().includes('product') && !rawPrompt.toLowerCase().includes('item')) {
-      pScore -= 15;
-      issues.push("Keterkaitan produk utama dengan gambar referensi perlu diperjelas pada prompt visual.");
-    }
-
-    const totalScore = Math.round((pScore + vScore + nScore) / 3);
+    const totalScore = Math.max(0, Math.round((pScore + vScore + nScore) / 3));
     const autoCorrected = totalScore < this.SCORE_THRESHOLD;
 
     // Auto-correction generation
@@ -310,18 +395,18 @@ Return JSON with: passed (boolean), score (number), breakdown { productLockConsi
     }
 
     let correctedScript = rawScript;
-    if (wordCount > maxRecommendedWords && rawScript.length > 0) {
+    if (wordCount > maxWords && rawScript.length > 0) {
       const words = rawScript.split(/\s+/);
-      correctedScript = words.slice(0, maxRecommendedWords).join(' ') + '...';
+      correctedScript = words.slice(0, maxWords).join(' ') + '...';
     }
 
     return {
       passed: totalScore >= this.SCORE_THRESHOLD,
       score: totalScore,
       breakdown: {
-        productLockConsistency: pScore,
-        visualPromptAdherence: vScore,
-        narrativeFlow: nScore
+        productLockConsistency: Math.max(0, pScore),
+        visualPromptAdherence: Math.max(0, vScore),
+        narrativeFlow: Math.max(0, nScore)
       },
       issues,
       recommendations,

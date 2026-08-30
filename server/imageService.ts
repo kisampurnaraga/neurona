@@ -1305,23 +1305,31 @@ export class ImageGenerationService {
       const bananaConfig = FounderService.getGeminiBananaConfig();
       const customKey = bananaConfig.apiKey;
 
-      let candidateModels = ['gemini-3.1-flash-image', 'gemini-3.1-flash-lite-image', 'gemini-3-pro-image'];
+      let candidateModels = ['imagen-3.0-generate-002', 'imagen-3.0-fast-generate-001', 'gemini-2.5-flash'];
 
       if (rawEngine === 'nano-asli-lite') {
-        candidateModels = ['gemini-3.1-flash-lite-image', 'gemini-3.1-flash-image'];
+        candidateModels = ['imagen-3.0-fast-generate-001', 'imagen-3.0-generate-002', 'gemini-2.5-flash'];
       } else if (rawEngine === 'nano-asli-pro' || rawEngine.includes('pro')) {
-        candidateModels = ['gemini-3.1-flash-image', 'gemini-3-pro-image'];
+        candidateModels = ['imagen-3.0-generate-002', 'gemini-2.5-flash', 'gemini-2.5-pro'];
       } else if (rawEngine === 'nano-asli-premium' || rawEngine === 'nano-asli-ultra' || rawEngine.includes('imagen')) {
-        candidateModels = ['imagen-3.0-generate-002', 'gemini-3.1-flash-image'];
+        candidateModels = ['imagen-3.0-generate-002', 'imagen-3.0-fast-generate-001'];
       }
 
       const uniqueBananaModels = Array.from(new Set(candidateModels));
 
       const maxAttempts = 3;
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const apiKey = (attempt === 0 && customKey) ? customKey : keyRotator.getNextGeminiKey();
-        if (!apiKey) {
-          lastGeminiError = 'API Key Google Gemini belum dikonfigurasi di server.';
+        let apiKey = (attempt === 0 && customKey) ? customKey : keyRotator.getNextGeminiKey();
+        
+        // Filter out keys that are clearly Fal.ai format keys
+        if (apiKey && (apiKey.startsWith('AQ.') || apiKey.startsWith('fal_') || (apiKey.includes(':') && !apiKey.startsWith('AIza')))) {
+          console.warn(`[runGeminiBanana] Ignored Fal format key in Gemini request: ${apiKey.substring(0, 8)}...`);
+          keyRotator.reportKeyError('gemini', apiKey, new Error('Fal format key passed to Gemini endpoint'));
+          apiKey = keyRotator.getNextGeminiKey();
+        }
+
+        if (!apiKey || apiKey.startsWith('AQ.') || apiKey.startsWith('fal_')) {
+          lastGeminiError = 'API Key Google Gemini resmi belum dikonfigurasi atau tidak valid di server.';
           return null;
         }
 
@@ -1352,9 +1360,9 @@ export class ImageGenerationService {
               }
             });
 
-            if (modelName === 'imagen-3.0-generate-002') {
+            if (modelName.startsWith('imagen-')) {
               const imgRes = await ai.models.generateImages({
-                model: 'imagen-3.0-generate-002',
+                model: modelName as any,
                 prompt: finalPrompt,
                 config: {
                   numberOfImages: 1,
@@ -1363,7 +1371,7 @@ export class ImageGenerationService {
               });
 
               if (imgRes.generatedImages?.[0]?.image?.imageBytes) {
-                if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate via Google Imagen 3!`, 'SUCCESS');
+                if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate via Google ${modelName}!`, 'SUCCESS');
                 return `data:image/png;base64,${imgRes.generatedImages[0].image.imageBytes}`;
               }
             } else {
@@ -1372,7 +1380,7 @@ export class ImageGenerationService {
               const imageConfig: any = {
                 aspectRatio: (cleanAspect === '9:16' ? '9:16' : (cleanAspect === '16:9' ? '16:9' : '1:1')) as any
               };
-              if (modelName !== 'gemini-3.1-flash-lite-image' && (resolution === '4K' || resolution === '2K')) {
+              if (resolution === '4K' || resolution === '2K') {
                 imageConfig.imageSize = '2K';
               }
 

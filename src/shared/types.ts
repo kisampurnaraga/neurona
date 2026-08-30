@@ -59,6 +59,15 @@ export interface Scene {
   qaScore?: number;
   qaPassed?: boolean;
   qaIssues?: string[];
+  qaBreakdown?: {
+    productLockConsistency: number;
+    visualPromptAdherence: number;
+    narrativeFlow: number;
+  };
+  qaRecommendations?: string[];
+  correctedVisualPrompt?: string;
+  correctedVideoPrompt?: string;
+  correctedScript?: string;
 }
 
 export interface Storyboard {

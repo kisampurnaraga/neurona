@@ -30,7 +30,7 @@ export const KeyRotatorModal: React.FC<KeyRotatorModalProps> = ({ isOpen, onClos
   const fetchHealthReport = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/fcc/key-rotator');
+      const res = await fetch('/api/fcc/key-rotator?t=' + Date.now(), { headers: { 'Cache-Control': 'no-cache' } });
       if (res.ok) {
         const data = await res.json();
         setReport({

@@ -1,0 +1,15 @@
+{
+  "gemini": [
+    {
+      "key": "AIzaSyMyFakeTestKeyThatWillBeSavedAcrossRestarts_123456",
+      "maskedKey": "AIzaSy...3456",
+      "provider": "gemini",
+      "status": "ACTIVE",
+      "totalRequests": 0,
+      "totalErrors": 0
+    }
+  ],
+  "veo": [],
+  "openai": [],
+  "fal": []
+}

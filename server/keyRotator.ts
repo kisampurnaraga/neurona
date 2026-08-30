@@ -1,5 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
+import * as fs from "fs";
+import * as path from "path";
+
+const KEYS_CONFIG_FILE = path.join(process.cwd(), 'outputs', '.neurona_api_keys.json');
 import { validateCredentialFormat, logCredentialAudit } from "./utils/credentialValidator";
 
 export interface KeyHealth {
@@ -26,9 +30,44 @@ class ApiKeyRotatorService {
 
   private userClearedPool = true;
 
+  private saveState(): void {
+    try {
+      const state = {
+        gemini: Array.from(this.geminiKeys.values()),
+        veo: Array.from(this.veoKeys.values()),
+        openai: Array.from(this.openAIKeys.values()),
+        fal: Array.from(this.falKeys.values())
+      };
+      fs.writeFileSync(KEYS_CONFIG_FILE, JSON.stringify(state, null, 2), 'utf8');
+      console.log(`[KeyRotator] Saved keys state to disk.`);
+    } catch (err) {
+      console.error('[KeyRotator] Failed to save keys state:', err);
+    }
+  }
+
+  private loadState(): void {
+    try {
+      console.log(`[KeyRotator] Attempting to load from: ${KEYS_CONFIG_FILE}`);
+      if (fs.existsSync(KEYS_CONFIG_FILE)) {
+        const raw = fs.readFileSync(KEYS_CONFIG_FILE, 'utf8');
+        const state = JSON.parse(raw);
+        
+        if (state.gemini) state.gemini.forEach((k: any) => this.geminiKeys.set(k.key, k));
+        if (state.veo) state.veo.forEach((k: any) => this.veoKeys.set(k.key, k));
+        if (state.openai) state.openai.forEach((k: any) => this.openAIKeys.set(k.key, k));
+        if (state.fal) state.fal.forEach((k: any) => this.falKeys.set(k.key, k));
+        
+        console.log(`[KeyRotator] Loaded keys from disk: Gemini(${this.geminiKeys.size}), Veo(${this.veoKeys.size}), OpenAI(${this.openAIKeys.size}), Fal(${this.falKeys.size})`);
+      }
+    } catch (err) {
+      console.error('[KeyRotator] Failed to load keys state:', err);
+    }
+  }
+
+
   constructor() {
-    // Start with empty pool as requested by user, allowing manual key entry
-    this.clearAllKeys('all');
+    // Load previous state if available
+    this.loadState();
   }
 
   public clearAllKeys(provider?: 'gemini' | 'veo' | 'openai' | 'fal' | 'all'): void {
@@ -48,6 +87,7 @@ class ApiKeyRotatorService {
       this.falKeys.clear();
     }
     console.log(`[KeyRotator] Pool cleared for provider: ${provider || 'all'}`);
+    this.saveState();
   }
 
   public reloadKeysFromEnv(): void {
@@ -67,24 +107,10 @@ class ApiKeyRotatorService {
     }
 
     envGeminiList.forEach(key => {
+
       const vRes = validateCredentialFormat('gemini', key, 'GEMINI_ENV');
       if (!vRes.valid) {
         logCredentialAudit('gemini', 'GEMINI_ENV', key, 'LOAD_KEYS', 'BLOCKED', vRes.reason);
-        // Auto-recover Fal.ai key if mistakenly placed in GEMINI_ENV
-        if (key.startsWith('AQ.') || key.startsWith('fal_') || key.includes(':')) {
-          const falV = validateCredentialFormat('fal', key, 'GEMINI_ENV_FAL_RECOVERY');
-          if (falV.valid && !this.falKeys.has(key)) {
-            this.falKeys.set(key, {
-              key,
-              maskedKey: this.maskKey(key),
-              provider: 'fal',
-              status: 'ACTIVE',
-              totalRequests: 0,
-              totalErrors: 0
-            });
-            logCredentialAudit('fal', 'GEMINI_ENV_FAL_RECOVERY', key, 'LOAD_KEYS', 'SUCCESS', 'Auto-recovered Fal key misassigned to GEMINI_ENV');
-          }
-        }
         return;
       }
       if (!this.geminiKeys.has(key)) {
@@ -203,13 +229,15 @@ class ApiKeyRotatorService {
    */
   public addKey(provider: 'gemini' | 'veo' | 'openai' | 'fal', key: string): KeyHealth {
     const cleanKey = key.trim();
-    const vRes = validateCredentialFormat(provider, cleanKey, 'DYNAMIC_ADD');
+    let targetProvider = provider;
+
+    const vRes = validateCredentialFormat(targetProvider, cleanKey, 'DYNAMIC_ADD');
     if (!vRes.valid) {
-      logCredentialAudit(provider, 'DYNAMIC_ADD', cleanKey, 'ADD_KEY', 'BLOCKED', vRes.reason);
+      logCredentialAudit(targetProvider, 'DYNAMIC_ADD', cleanKey, 'ADD_KEY', 'BLOCKED', vRes.reason);
       throw new Error(`[Kredensial Tidak Sesuai Provider] ${vRes.reason}`);
     }
 
-    const map = this.getMap(provider);
+    const map = this.getMap(targetProvider);
     
     const existing = map.get(cleanKey);
     if (existing) {
@@ -221,14 +249,15 @@ class ApiKeyRotatorService {
     const health: KeyHealth = {
       key: cleanKey,
       maskedKey: this.maskKey(cleanKey),
-      provider,
+      provider: targetProvider,
       status: 'ACTIVE',
       totalRequests: 0,
       totalErrors: 0
     };
 
     map.set(cleanKey, health);
-    console.log(`[KeyRotator] Registered new ${provider} key (${health.maskedKey})`);
+    console.log(`[KeyRotator] Registered new ${targetProvider} key (${health.maskedKey})`);
+    this.saveState();
     return health;
   }
 

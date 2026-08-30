@@ -1,0 +1,49 @@
+{
+  "gemini": [
+    {
+      "key": "AIzaSyMyFakeTestKeyThatWillBeSavedAcrossRestarts_FINAL",
+      "maskedKey": "AIzaSy...INAL",
+      "provider": "gemini",
+      "status": "ACTIVE",
+      "totalRequests": 0,
+      "totalErrors": 0
+    },
+    {
+      "key": "AIzaSyTestGeminiKey123",
+      "maskedKey": "AIzaSy...y123",
+      "provider": "gemini",
+      "status": "ACTIVE",
+      "totalRequests": 0,
+      "totalErrors": 0
+    },
+    {
+      "key": "AQ.TestGeminiKeyStartingWithAQ",
+      "maskedKey": "AQ.Tes...thAQ",
+      "provider": "gemini",
+      "status": "ACTIVE",
+      "totalRequests": 0,
+      "totalErrors": 0
+    },
+    {
+      "key": "SEMBARANG_KODE_GEMINI:1234",
+      "maskedKey": "SEMBAR...1234",
+      "provider": "gemini",
+      "status": "ACTIVE",
+      "totalRequests": 0,
+      "totalErrors": 0
+    }
+  ],
+  "veo": [],
+  "openai": [],
+  "fal": [
+    {
+      "key": "AQ.Ab8RN6J86de4QYBu5_5n04V8VNKSADG9sn5vh6XQOrh8mVrmfQ",
+      "maskedKey": "AQ.Ab8...rmfQ",
+      "provider": "fal",
+      "status": "ACTIVE",
+      "totalRequests": 2,
+      "totalErrors": 0,
+      "lastUsedAt": "2026-08-30T10:22:20.701Z"
+    }
+  ]
+}
