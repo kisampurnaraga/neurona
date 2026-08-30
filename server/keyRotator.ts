@@ -506,6 +506,7 @@ class ApiKeyRotatorService {
       if (fullKey === maskedOrFullKey || health.maskedKey === maskedOrFullKey) {
         map.delete(fullKey);
         console.log(`[KeyRotator] Removed ${provider} key (${health.maskedKey})`);
+        this.saveState();
         return true;
       }
     }

@@ -49,7 +49,34 @@ export function validateCredentialFormat(
     };
   }
 
-  // Permissive acceptance: any non-empty key user pastes is allowed
+  // Cross-provider strict validation
+  if (provider === 'gemini' || provider === 'veo') {
+    if (cleanKey.startsWith('fal_') || cleanKey.startsWith('AQ.') || (cleanKey.includes(':') && !cleanKey.startsWith('AIza'))) {
+       return { valid: false, provider, maskedKey, reason: "Kunci berformat Fal.ai dimasukkan ke provider Gemini/Veo." };
+    }
+    if (cleanKey.startsWith('sk-')) {
+       return { valid: false, provider, maskedKey, reason: "Kunci berformat OpenAI dimasukkan ke provider Gemini/Veo." };
+    }
+  }
+
+  if (provider === 'fal') {
+    if (cleanKey.startsWith('AIza')) {
+       return { valid: false, provider, maskedKey, reason: "Kunci berformat Gemini dimasukkan ke provider Fal.ai." };
+    }
+    if (cleanKey.startsWith('sk-')) {
+       return { valid: false, provider, maskedKey, reason: "Kunci berformat OpenAI dimasukkan ke provider Fal.ai." };
+    }
+  }
+  
+  if (provider === 'openai') {
+    if (cleanKey.startsWith('AIza')) {
+       return { valid: false, provider, maskedKey, reason: "Kunci berformat Gemini dimasukkan ke provider OpenAI." };
+    }
+    if (cleanKey.startsWith('fal_') || cleanKey.startsWith('AQ.') || (cleanKey.includes(':') && !cleanKey.startsWith('sk-'))) {
+       return { valid: false, provider, maskedKey, reason: "Kunci berformat Fal.ai dimasukkan ke provider OpenAI." };
+    }
+  }
+
   return { valid: true, provider, maskedKey, detectedFormat: 'User Provided Key' };
 }
 
