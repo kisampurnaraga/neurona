@@ -4,29 +4,25 @@
       "key": "AIzaSyMyFakeTestKeyThatWillBeSavedAcrossRestarts_FINAL",
       "maskedKey": "AIzaSy...INAL",
       "provider": "gemini",
-      "status": "ACTIVE",
-      "totalRequests": 0,
-      "totalErrors": 0
+      "status": "DISABLED",
+      "totalRequests": 1,
+      "totalErrors": 1,
+      "lastUsedAt": "2026-08-30T15:09:31.903Z",
+      "lastErrorReason": "{\"error\":{\"code\":400,\"message\":\"API key not valid. Please pass a valid API key.\",\"status\":\"INVALID_ARGUMENT\",\"details\":[{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",\"reason\":\"API_KEY_INVALID\",\"domain\":\"googleapis.com\",\"metadata\":{\"service\":\"generativelanguage.googleapis.com\"}},{\"@type\":\"type.googleapis.com/google.rpc.LocalizedMessage\",\"locale\":\"en-US\",\"message\":\"API key not valid. Please pass a valid API key.\"}]}}"
     },
     {
       "key": "AIzaSyTestGeminiKey123",
       "maskedKey": "AIzaSy...y123",
       "provider": "gemini",
-      "status": "ACTIVE",
-      "totalRequests": 0,
-      "totalErrors": 0
+      "status": "DISABLED",
+      "totalRequests": 1,
+      "totalErrors": 1,
+      "lastUsedAt": "2026-08-30T15:09:31.836Z",
+      "lastErrorReason": "{\"error\":{\"code\":400,\"message\":\"API key not valid. Please pass a valid API key.\",\"status\":\"INVALID_ARGUMENT\",\"details\":[{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",\"reason\":\"API_KEY_INVALID\",\"domain\":\"googleapis.com\",\"metadata\":{\"service\":\"generativelanguage.googleapis.com\"}},{\"@type\":\"type.googleapis.com/google.rpc.LocalizedMessage\",\"locale\":\"en-US\",\"message\":\"API key not valid. Please pass a valid API key.\"}]}}"
     },
     {
-      "key": "AQ.TestGeminiKeyStartingWithAQ",
-      "maskedKey": "AQ.Tes...thAQ",
-      "provider": "gemini",
-      "status": "ACTIVE",
-      "totalRequests": 0,
-      "totalErrors": 0
-    },
-    {
-      "key": "SEMBARANG_KODE_GEMINI:1234",
-      "maskedKey": "SEMBAR...1234",
+      "key": "AQ.Ab8RN6J86de4QYBu5_5n04V8VNKSADG9sn5vh6XQOrh8mVrmfQ",
+      "maskedKey": "AQ.Ab8...rmfQ",
       "provider": "gemini",
       "status": "ACTIVE",
       "totalRequests": 0,
@@ -35,15 +31,5 @@
   ],
   "veo": [],
   "openai": [],
-  "fal": [
-    {
-      "key": "AQ.Ab8RN6J86de4QYBu5_5n04V8VNKSADG9sn5vh6XQOrh8mVrmfQ",
-      "maskedKey": "AQ.Ab8...rmfQ",
-      "provider": "fal",
-      "status": "ACTIVE",
-      "totalRequests": 2,
-      "totalErrors": 0,
-      "lastUsedAt": "2026-08-30T10:22:20.701Z"
-    }
-  ]
+  "fal": []
 }

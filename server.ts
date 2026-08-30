@@ -721,6 +721,17 @@ createdAt: new Date().toISOString()
   });
 
   
+  app.post('/api/fcc/qa-thresholds', (req, res) => {
+     if (req.headers['x-role'] !== 'founder') return res.status(403).json({error: 'Forbidden'});
+     try {
+       const { minScore, autoFix } = req.body;
+       const result = FounderService.setQaThresholds(minScore, autoFix);
+       res.json(result);
+     } catch (e: any) {
+       res.status(400).json({ error: e.message });
+     }
+  });
+
   app.post('/api/fcc/llm-engine', (req, res) => {
      if (req.headers['x-role'] !== 'founder') return res.status(403).json({error: 'Forbidden. Founder access required.'});
      try {
@@ -1266,6 +1277,13 @@ createdAt: new Date().toISOString()
     const allProjects = Array.from(projects.values()).filter((p: any) => p.status !== 'deleted');
     allProjects.forEach(checkAndValidateProjectVideo);
     res.json(allProjects);
+  });
+
+  app.get('/api/config/client', (req, res) => {
+    res.json({
+      qaMinScoreThreshold: FounderService.qaMinScoreThreshold || 70,
+      qaAutoFixThreshold: FounderService.qaAutoFixThreshold || 80
+    });
   });
 
   // Showcase API endpoint for Landing Page

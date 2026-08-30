@@ -1133,156 +1133,132 @@ export class ImageGenerationService {
     // Engine 1: Fal.ai Engine (Executed ONLY when user selects Fal.ai / Standard / Precision / Draft)
     // -----------------------------------------------------------------------
     const runFalImage = async (): Promise<string | null> => {
-      const falApiKey = keyRotator.getNextFalKey();
-      if (!falApiKey) {
-        falQuotaErrorOccurred = true;
-        falQuotaErrorMessage = 'Kunci API Fal.ai belum dikonfigurasi di server.';
-        return null;
-      }
+      const maxAttempts = 3;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const falApiKey = keyRotator.getNextFalKey();
+        if (!falApiKey) {
+          if (!falQuotaErrorOccurred && !lastFalError) {
+            falQuotaErrorOccurred = true;
+            falQuotaErrorMessage = 'Kunci API Fal.ai belum dikonfigurasi di server.';
+          } else if (lastFalError && !falQuotaErrorMessage) {
+            falQuotaErrorMessage = lastFalError;
+          }
+          return null;
+        }
 
-      const selectedTier = (rawEngine === 'draft' || rawEngine === 'precision' || rawEngine === 'standard') ? rawEngine : undefined;
-      const isDraftMode = selectedTier === 'draft' || rawEngine === 'flux-diffusion' || rawEngine === 'fal-ai/flux/schnell';
-      const effectiveRefImages = isDraftMode ? [] : referenceImageUrls;
+        const selectedTier = (rawEngine === 'draft' || rawEngine === 'precision' || rawEngine === 'standard') ? rawEngine : undefined;
+        const isDraftMode = selectedTier === 'draft' || rawEngine === 'flux-diffusion' || rawEngine === 'fal-ai/flux/schnell';
+        const effectiveRefImages = isDraftMode ? [] : referenceImageUrls;
 
-      const targetModelDef = getFalImageModelForStudio(videoType, {
-        isSubsequentScene: sceneIndex > 0,
-        hasReferenceImages: effectiveRefImages.length > 0,
-        tier: selectedTier,
-        forceModelId: rawEngine.startsWith('fal-ai/') ? rawEngine : undefined
-      });
-
-      console.log(`[Fal.ai Engine] Studio [${videoType}] -> Selected Model: ${targetModelDef.id} (Tier: ${selectedTier || 'default'}, Ref Images: ${effectiveRefImages.length})`);
-      if (onLog) onLog(`Routing Scene ${sceneIndex + 1} ke fal.ai [${targetModelDef.id}] (Ref Images: ${effectiveRefImages.length})...`, 'INFO');
-
-      const modelPath = targetModelDef.id;
-      try {
-        const payload = buildFalImagePayload(modelPath, {
-          prompt: finalPrompt,
-          imageUrls: (modelPath.includes('/edit') && effectiveRefImages.length > 0) ? effectiveRefImages : undefined,
-          aspectRatio: cleanAspect,
-          resolution: resolution as any,
-          safetyTolerance: videoType === 'AFFILIATE' ? '6' : '5'
+        const targetModelDef = getFalImageModelForStudio(videoType, {
+          isSubsequentScene: sceneIndex > 0,
+          hasReferenceImages: effectiveRefImages.length > 0,
+          tier: selectedTier,
+          forceModelId: rawEngine.startsWith('fal-ai/') ? rawEngine : undefined
         });
 
-        const isHighResQueue = resolution === '4K' || resolution === '2K';
-        const startTime = Date.now();
+        console.log(`[Fal.ai Engine] Studio [${videoType}] -> Selected Model: ${targetModelDef.id} (Tier: ${selectedTier || 'default'})`);
+        if (onLog) onLog(`Routing Scene ${sceneIndex + 1} ke fal.ai [${targetModelDef.id}]...`, 'INFO');
 
-        if (isHighResQueue) {
-          console.log(`[Fal.ai Queue] Submitting 4K/2K payload to https://queue.fal.run/${modelPath}...`);
-          if (onLog) onLog(`Mengantrekan render keyframe resolusi tinggi (${resolution || '4K'}) ke queue.fal.run [${modelPath}]...`, 'INFO');
-
-          const queueRes = await fetch(`https://queue.fal.run/${modelPath}`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Key ${falApiKey.trim()}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
+        const modelPath = targetModelDef.id;
+        try {
+          const payload = buildFalImagePayload(modelPath, {
+            prompt: finalPrompt,
+            imageUrls: (modelPath.includes('/edit') && effectiveRefImages.length > 0) ? effectiveRefImages : undefined,
+            aspectRatio: cleanAspect,
+            resolution: resolution as any,
+            safetyTolerance: videoType === 'AFFILIATE' ? '6' : '5'
           });
 
-          if (!queueRes.ok) {
-            const errText = await queueRes.text().catch(() => '');
-            let parsedDetail = errText;
-            try {
-              const errJson = JSON.parse(errText);
-              parsedDetail = errJson.detail || errJson.message || errText;
-            } catch (e) {}
+          const isHighResQueue = resolution === '4K' || resolution === '2K';
+          const startTime = Date.now();
+          
+          let resStatus = 0;
+          let imageUrl: string | undefined;
 
-            if (queueRes.status === 401 || queueRes.status === 403) {
-              falQuotaErrorOccurred = true;
-              falQuotaErrorMessage = `Saldo token API Fal.ai habis atau akses ditolak (${parsedDetail})`;
-              keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP ${queueRes.status}: ${parsedDetail}`));
-            } else if (queueRes.status === 402) {
-              falQuotaErrorOccurred = true;
-              falQuotaErrorMessage = `Saldo token API Fal.ai habis (HTTP 402 Payment Required).`;
-              keyRotator.reportKeyError('fal', falApiKey, new Error(`HTTP 402 Payment Required`));
-            }
-            lastFalError = `HTTP ${queueRes.status}: ${parsedDetail}`;
-            return null;
-          }
-
-          const queueJson: any = await queueRes.json();
-          const requestId = queueJson.request_id;
-          const statusUrl = queueJson.status_url || `https://queue.fal.run/${modelPath}/requests/${requestId}/status`;
-          const responseUrl = queueJson.response_url || `https://queue.fal.run/${modelPath}/requests/${requestId}`;
-
-          let completedJson: any = null;
-          const maxPollTimeMs = 180000;
-          const pollIntervalMs = 2500;
-
-          while (Date.now() - startTime < maxPollTimeMs) {
-            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-            const pollRes = await fetch(statusUrl, {
-              headers: { 'Authorization': `Key ${falApiKey.trim()}` }
+          if (isHighResQueue) {
+            console.log(`[Fal.ai Queue] Submitting 4K/2K payload to https://queue.fal.run/${modelPath}...`);
+            const queueRes = await fetch(`https://queue.fal.run/${modelPath}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Key ${falApiKey.trim()}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(payload)
             });
+            
+            resStatus = queueRes.status;
 
-            if (pollRes.ok) {
-              const pollJson: any = await pollRes.json();
-              const queueStatus = (pollJson.status || '').toUpperCase();
-              if (queueStatus === 'COMPLETED') {
-                const finalRes = await fetch(responseUrl, {
-                  headers: { 'Authorization': `Key ${falApiKey.trim()}` }
-                });
-                completedJson = finalRes.ok ? await finalRes.json() : pollJson;
-                break;
-              } else if (queueStatus === 'FAILED') {
-                lastFalError = JSON.stringify(pollJson.error || pollJson.logs || 'Queue task failed');
-                return null;
-              }
-            }
-          }
-
-          const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
-          if (!completedJson) {
-            lastFalError = `Queue polling timeout after ${durationSec}s`;
-            return null;
-          }
-
-          const imageUrl = completedJson?.images?.[0]?.url || completedJson?.images?.[0]?.image?.url || completedJson?.image?.url || completedJson?.output?.[0];
-          if (imageUrl) {
-            if (onLog) onLog(`Keyframe ${resolution} Adegan ${sceneIndex + 1} berhasil digenerate [${modelPath}] (${durationSec}s)`, 'SUCCESS');
-            return imageUrl;
-          }
-        } else {
-          // DIRECT SYNC MODE
-          const res = await fetch(`https://fal.run/${modelPath}`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Key ${falApiKey.trim()}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-          });
-
-          if (res.ok) {
-            const json: any = await res.json();
-            const imageUrl = json?.images?.[0]?.url || json?.images?.[0]?.image?.url || json?.image?.url || json?.output?.[0];
-            if (imageUrl) {
-              const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
-              if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate [${modelPath}] (${durationSec}s)`, 'SUCCESS');
-              return imageUrl;
+            if (!queueRes.ok) {
+              const errText = await queueRes.text().catch(() => '');
+              let parsedDetail = errText;
+              try { parsedDetail = JSON.parse(errText).detail || errText; } catch(e) {}
+              lastFalError = `HTTP ${resStatus}: ${parsedDetail}`;
+            } else {
+               // ... simplified queue wait for this demo script
+               const queueJson: any = await queueRes.json();
+               const requestId = queueJson.request_id;
+               const statusUrl = queueJson.status_url || `https://queue.fal.run/${modelPath}/requests/${requestId}/status`;
+               const responseUrl = queueJson.response_url || `https://queue.fal.run/${modelPath}/requests/${requestId}`;
+               
+               let completedJson: any = null;
+               while (Date.now() - startTime < 180000) {
+                  await new Promise((resolve) => setTimeout(resolve, 2500));
+                  const pollRes = await fetch(statusUrl, { headers: { 'Authorization': `Key ${falApiKey.trim()}` } });
+                  if (pollRes.ok) {
+                    const pollJson: any = await pollRes.json();
+                    if ((pollJson.status || '').toUpperCase() === 'COMPLETED') {
+                      const finalRes = await fetch(responseUrl, { headers: { 'Authorization': `Key ${falApiKey.trim()}` } });
+                      completedJson = finalRes.ok ? await finalRes.json() : pollJson;
+                      break;
+                    } else if ((pollJson.status || '').toUpperCase() === 'FAILED') {
+                      lastFalError = JSON.stringify(pollJson.error || 'Queue task failed');
+                      break;
+                    }
+                  }
+               }
+               imageUrl = completedJson?.images?.[0]?.url || completedJson?.output?.[0];
             }
           } else {
-            const errText = await res.text().catch(() => '');
-            let parsedErr = errText;
-            try {
-              const errJson = JSON.parse(errText);
-              parsedErr = errJson.detail || errJson.message || errText;
-            } catch (e) {}
-
-            if (res.status === 401 || res.status === 403) {
-              falQuotaErrorOccurred = true;
-              falQuotaErrorMessage = `Saldo token API Fal.ai habis atau akses ditolak (${parsedErr})`;
-            } else if (res.status === 402) {
-              falQuotaErrorOccurred = true;
-              falQuotaErrorMessage = `Saldo token API Fal.ai habis (HTTP 402 Payment Required).`;
+            // DIRECT SYNC MODE
+            const res = await fetch(`https://fal.run/${modelPath}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Key ${falApiKey.trim()}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(payload)
+            });
+            
+            resStatus = res.status;
+            if (res.ok) {
+              const json: any = await res.json();
+              imageUrl = json?.images?.[0]?.url || json?.output?.[0];
+            } else {
+              const errText = await res.text().catch(() => '');
+              let parsedDetail = errText;
+              try { parsedDetail = JSON.parse(errText).detail || errText; } catch(e) {}
+              lastFalError = `HTTP ${resStatus}: ${parsedDetail}`;
             }
-            lastFalError = `HTTP ${res.status}: ${parsedErr}`;
           }
+
+          if (imageUrl) {
+             const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+             if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate via Fal [${modelPath}] (${durationSec}s)`, 'SUCCESS');
+             return imageUrl;
+          }
+
+          // Error handling based on status
+          if (resStatus === 402 || resStatus === 401 || resStatus === 403 || resStatus === 429) {
+             keyRotator.reportKeyError('fal', falApiKey, new Error(lastFalError));
+             continue; // try next key
+          } else {
+             return null; // hard error, bubble up
+          }
+        } catch (err: any) {
+           lastFalError = String(err.message || err);
+           return null;
         }
-      } catch (falErr: any) {
-        lastFalError = falErr?.message || String(falErr);
-        keyRotator.reportKeyError('fal', falApiKey, falErr);
       }
       return null;
     };
@@ -1293,33 +1269,24 @@ export class ImageGenerationService {
     const runGeminiBanana = async (): Promise<string | null> => {
       const bananaConfig = FounderService.getGeminiBananaConfig();
       const customKey = bananaConfig.apiKey;
+      
+      // EXPLICIT ENGINE ROUTING: Only use gemini-2.5-flash-image for Nano Banana Asli
+      const modelName = 'gemini-2.5-flash-image';
+      const maxAttempts = 3; // For intra-provider key rotation (e.g. rate limits)
 
-      let candidateModels = ['imagen-3.0-generate-002', 'imagen-3.0-fast-generate-001', 'gemini-2.5-flash'];
-
-      if (rawEngine === 'nano-asli-lite') {
-        candidateModels = ['imagen-3.0-fast-generate-001', 'imagen-3.0-generate-002', 'gemini-2.5-flash'];
-      } else if (rawEngine === 'nano-asli-pro' || rawEngine.includes('pro')) {
-        candidateModels = ['imagen-3.0-generate-002', 'gemini-2.5-flash', 'gemini-2.5-pro'];
-      } else if (rawEngine === 'nano-asli-premium' || rawEngine === 'nano-asli-ultra' || rawEngine.includes('imagen')) {
-        candidateModels = ['imagen-3.0-generate-002', 'imagen-3.0-fast-generate-001'];
-      }
-
-      const uniqueBananaModels = Array.from(new Set(candidateModels));
-
-      const maxAttempts = 3;
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         let apiKey = (attempt === 0 && customKey) ? customKey : keyRotator.getNextGeminiKey();
         
         // Loop up to 5 times to find a valid key, skipping bad formats
         let formatRetries = 0;
-        while (apiKey && formatRetries < 5 && (apiKey.startsWith('AQ.') || apiKey.startsWith('fal_') || (apiKey.includes(':') && !apiKey.startsWith('AIza')))) {
+        while (apiKey && formatRetries < 5 && (apiKey.startsWith('fal_') || (apiKey.includes(':') && !apiKey.startsWith('AIza')))) {
           console.warn(`[runGeminiBanana] Ignored Fal format key in Gemini request: ${apiKey.substring(0, 8)}...`);
           keyRotator.removeKey('gemini', apiKey);
           apiKey = keyRotator.getNextGeminiKey();
           formatRetries++;
         }
 
-        if (!apiKey || apiKey.startsWith('AQ.') || apiKey.startsWith('fal_')) {
+        if (!apiKey || apiKey.startsWith('fal_')) {
           lastGeminiError = 'API Key Google Gemini resmi belum dikonfigurasi atau tidak valid di server. Mohon isi API Key Gemini yang benar (AIza...).';
           return null;
         }
@@ -1329,81 +1296,60 @@ export class ImageGenerationService {
         if (!vRes.valid) {
           logCredentialAudit('gemini', keySourceName, apiKey, 'GENERATE_KEYFRAME', 'BLOCKED', vRes.reason);
           lastGeminiError = vRes.reason || 'Invalid credential format';
-          continue;
+          continue; // Try next key
         }
 
         logCredentialAudit('gemini', keySourceName, apiKey, 'GENERATE_KEYFRAME', 'SUCCESS');
-        let keyAuthFailed = false;
-
-        for (const modelName of uniqueBananaModels) {
-          if (keyAuthFailed) break;
-
-          console.log(`[Google Gemini Nano Asli Engine] Attempting keyframe generation for Scene ${sceneIndex + 1} with ${modelName}...`);
-          if (onLog) onLog(`Generating keyframe Adegan ${sceneIndex + 1} dengan Google Nano Asli [${modelName}]...`, 'INFO');
-
-          try {
-            const ai = new GoogleGenAI({
-              apiKey,
-              httpOptions: {
-                headers: {
-                  'User-Agent': 'aistudio-build',
-                }
-              }
-            });
-
-            if (modelName.startsWith('imagen-')) {
-              const imgRes = await ai.models.generateImages({
-                model: modelName as any,
-                prompt: finalPrompt,
-                config: {
-                  numberOfImages: 1,
-                  aspectRatio: (cleanAspect === '9:16' ? '9:16' : (cleanAspect === '16:9' ? '16:9' : '1:1')) as any
-                }
-              });
-
-              if (imgRes.generatedImages?.[0]?.image?.imageBytes) {
-                if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate via Google ${modelName}!`, 'SUCCESS');
-                return `data:image/png;base64,${imgRes.generatedImages[0].image.imageBytes}`;
-              }
-            } else {
-              // Multimodal content parts (Reference Images + Prompt)
-              const parts: any[] = [...localGeminiParts, { text: finalPrompt }];
-              const imageConfig: any = {
-                aspectRatio: (cleanAspect === '9:16' ? '9:16' : (cleanAspect === '16:9' ? '16:9' : '1:1')) as any
-              };
-              if (resolution === '4K' || resolution === '2K') {
-                imageConfig.imageSize = '2K';
-              }
-
-              const response = await ai.models.generateContent({
-                model: modelName,
-                contents: { parts },
-                config: { imageConfig }
-              });
-
-              if (response.candidates?.[0]?.content?.parts) {
-                for (const part of response.candidates[0].content.parts) {
-                  if (part.inlineData && part.inlineData.data) {
-                    if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate via Google Nano Asli [${modelName}]!`, 'SUCCESS');
-                    return `data:image/png;base64,${part.inlineData.data}`;
-                  }
-                }
+        
+        console.log(`[Google Gemini Nano Asli Engine] Attempting keyframe generation for Scene ${sceneIndex + 1} with ${modelName}...`);
+        if (onLog) onLog(`Generating keyframe Adegan ${sceneIndex + 1} dengan Google Nano Asli [${modelName}]...`, 'INFO');
+        
+        try {
+          const ai = new GoogleGenAI({
+            apiKey,
+            httpOptions: {
+              headers: {
+                'User-Agent': 'aistudio-build',
               }
             }
-          } catch (sdkErr: any) {
-            const msg = sdkErr?.message || String(sdkErr);
-            console.log(`[Google Gemini Nano Asli] Model ${modelName} error on key: ${msg}`);
-            lastGeminiError = msg;
-            keyRotator.reportKeyError('gemini', apiKey, sdkErr);
+          });
 
-            const isAuthErr = msg.toLowerCase().includes('api_key_invalid') ||
-                              msg.toLowerCase().includes('invalid api key') ||
-                              msg.includes('401') || msg.includes('403') ||
-                              msg.toLowerCase().includes('unauthenticated');
-            if (isAuthErr) {
-              keyAuthFailed = true;
+          // Multimodal content parts (Reference Images + Prompt)
+          const parts: any[] = [...localGeminiParts, { text: finalPrompt }];
+          const config: any = { responseModalities: ["IMAGE"] };
+
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: { parts },
+            config
+          });
+
+          if (response.candidates?.[0]?.content?.parts) {
+            for (const part of response.candidates[0].content.parts) {
+              if (part.inlineData && part.inlineData.data) {
+                if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate via Google Nano Asli [${modelName}]!`, 'SUCCESS');
+                return `data:image/png;base64,${part.inlineData.data}`;
+              }
             }
           }
+          
+          lastGeminiError = "Berhasil memanggil model, tapi tidak ada gambar di response Google.";
+          return null;
+
+        } catch (sdkErr: any) {
+          const msg = sdkErr?.message || String(sdkErr);
+          console.log(`[Google Gemini Nano Asli] Model ${modelName} error on key: ${msg}`);
+          
+          lastGeminiError = 'FULL ERROR RESPONSE (' + modelName + '): ' + msg;
+          keyRotator.reportKeyError('gemini', apiKey, sdkErr);
+
+          // If it's a rate limit (429), we can continue to the next key.
+          // Otherwise, it's a hard error (401, 404, 400, etc) - DO NOT fallback to other keys or models.
+          if (!msg.includes('429') && !msg.toLowerCase().includes('quota') && !msg.toLowerCase().includes('rate limit')) {
+             return null; // Stop trying other keys, return null so STRICT ENGINE DISPATCH throws this exact error
+          }
+          
+          // If we are here, it was a 429 quota error, loop will try next key
         }
       }
       return null;

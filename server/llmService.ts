@@ -822,12 +822,13 @@ FORMAT OUTPUT MUTLAK: JSON`;
 
 CRITICAL RULES FOR QA COMPLIANCE:
 1. PACING (CRITICAL LIMIT): Voiceover MAX 2 words/second. 3s scene = MAX 6 words. 4s scene = MAX 8 words. WRITE SHORT, PUNCHY, COMPLETE SENTENCES. Do NOT write long sentences that will get cut off! Ex: 'Bass gahar TWS BassKing!' (4 words). NOT: 'Nikmati bass gahar dengan TWS BassKing yang tahan hingga 24 jam' (11 words - too long for 4s).
-2. VISUAL STYLE (must set \`visualStyle\` field explicitly as "ugc" or "studio" based on videoType):
+2. VISUAL STYLE (must set visualStyle field explicitly as "ugc" or "studio" based on videoType):
    - AFFILIATE default → "ugc": "Authentic UGC creator perspective, shot on iPhone 15 front camera, natural indoor lighting"
    - CONTENT/ANIMATION → "studio": "Cinematic 35mm commercial shot, 50mm lens f/2.8, atmospheric lighting"
 3. PRODUCT REFERENCE: Every visual prompt MUST mention the actual product name explicitly (not generic words).
 4. CAMERA MOVEMENT: promptImageToVideo MUST contain one of: "pan", "dolly", "zoom", "tracking", "orbital".
-5. NEVER include: "text on screen", "subtitle", "typography", "writing", "font".` 
+5. NEVER include: "text on screen", "subtitle", "typography", "writing", "font".
+6. LANGUAGE: 'visualDirection', 'textOverlay', and 'voiceOver' MUST be written in INDONESIAN. Only 'promptTextToImage' and 'promptImageToVideo' are in English.` 
                 },
                 { role: "user", content: storyboardPrompt }
               ],
@@ -1092,12 +1093,13 @@ CRITICAL RULES FOR QA COMPLIANCE:
 
 CRITICAL RULES FOR QA COMPLIANCE:
 1. PACING (CRITICAL LIMIT): Voiceover MAX 2 words/second. 3s scene = MAX 6 words. 4s scene = MAX 8 words. WRITE SHORT, PUNCHY, COMPLETE SENTENCES. Do NOT write long sentences that will get cut off! Ex: 'Bass gahar TWS BassKing!' (4 words). NOT: 'Nikmati bass gahar dengan TWS BassKing yang tahan hingga 24 jam' (11 words - too long for 4s).
-2. VISUAL STYLE (must set \`visualStyle\` field explicitly as "ugc" or "studio" based on videoType):
+2. VISUAL STYLE (must set visualStyle field explicitly as "ugc" or "studio" based on videoType):
    - AFFILIATE default → "ugc": "Authentic UGC creator perspective, shot on iPhone 15 front camera, natural indoor lighting"
    - CONTENT/ANIMATION → "studio": "Cinematic 35mm commercial shot, 50mm lens f/2.8, atmospheric lighting"
 3. PRODUCT REFERENCE: Every visual prompt MUST mention the actual product name explicitly (not generic words).
 4. CAMERA MOVEMENT: promptImageToVideo MUST contain one of: "pan", "dolly", "zoom", "tracking", "orbital".
-5. NEVER include: "text on screen", "subtitle", "typography", "writing", "font".` 
+5. NEVER include: "text on screen", "subtitle", "typography", "writing", "font".
+6. LANGUAGE: 'visualDirection', 'textOverlay', and 'voiceOver' MUST be written in INDONESIAN. Only 'promptTextToImage' and 'promptImageToVideo' are in English.` 
                     },
                     { role: "user", content: storyboardPrompt }
                   ],

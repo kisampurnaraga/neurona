@@ -31,6 +31,7 @@ export interface CharacterProfile {
 }
 
 export interface Scene {
+  visualStyle?: "ugc" | "studio";
   featuresProduct?: boolean;
   backgroundLock?: 'locked' | 'free';
   location?: string;

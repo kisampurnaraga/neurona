@@ -51,7 +51,7 @@ export function validateCredentialFormat(
 
   // Cross-provider strict validation
   if (provider === 'gemini' || provider === 'veo') {
-    if (cleanKey.startsWith('fal_') || cleanKey.startsWith('AQ.') || (cleanKey.includes(':') && !cleanKey.startsWith('AIza'))) {
+    if (cleanKey.startsWith('fal_') || (cleanKey.includes(':') && !(cleanKey.startsWith('AIza') || cleanKey.startsWith('AQ.')))) {
        return { valid: false, provider, maskedKey, reason: "Kunci berformat Fal.ai dimasukkan ke provider Gemini/Veo." };
     }
     if (cleanKey.startsWith('sk-')) {
@@ -60,7 +60,7 @@ export function validateCredentialFormat(
   }
 
   if (provider === 'fal') {
-    if (cleanKey.startsWith('AIza')) {
+    if (cleanKey.startsWith('AIza') || cleanKey.startsWith('AQ.')) {
        return { valid: false, provider, maskedKey, reason: "Kunci berformat Gemini dimasukkan ke provider Fal.ai." };
     }
     if (cleanKey.startsWith('sk-')) {
@@ -69,10 +69,10 @@ export function validateCredentialFormat(
   }
   
   if (provider === 'openai') {
-    if (cleanKey.startsWith('AIza')) {
+    if (cleanKey.startsWith('AIza') || cleanKey.startsWith('AQ.')) {
        return { valid: false, provider, maskedKey, reason: "Kunci berformat Gemini dimasukkan ke provider OpenAI." };
     }
-    if (cleanKey.startsWith('fal_') || cleanKey.startsWith('AQ.') || (cleanKey.includes(':') && !cleanKey.startsWith('sk-'))) {
+    if (cleanKey.startsWith('fal_') || (cleanKey.includes(':') && !cleanKey.startsWith('sk-'))) {
        return { valid: false, provider, maskedKey, reason: "Kunci berformat Fal.ai dimasukkan ke provider OpenAI." };
     }
   }

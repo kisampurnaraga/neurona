@@ -60,6 +60,8 @@ export class FounderService {
         if (data.customTryAudioConfig && this.customTryAudioConfig) this.customTryAudioConfig = { ...this.customTryAudioConfig, ...data.customTryAudioConfig };
         if (data.flags && this.flags) this.flags = { ...this.flags, ...data.flags };
         if (data.llmEngine) this.llmEngine = data.llmEngine;
+        if (data.qaMinScoreThreshold !== undefined) this.qaMinScoreThreshold = data.qaMinScoreThreshold;
+        if (data.qaAutoFixThreshold !== undefined) this.qaAutoFixThreshold = data.qaAutoFixThreshold;
         if (data.primaryVideoEngine) this.primaryVideoEngine = data.primaryVideoEngine;
         
         // Update process.env based on loaded config only if env is not already populated by system
@@ -85,6 +87,8 @@ export class FounderService {
         customTryAudioConfig: this.customTryAudioConfig,
         flags: this.flags,
         llmEngine: this.llmEngine,
+        qaMinScoreThreshold: this.qaMinScoreThreshold,
+        qaAutoFixThreshold: this.qaAutoFixThreshold,
         primaryVideoEngine: this.primaryVideoEngine,
       };
       fs.writeFileSync(this.CONFIG_FILE, JSON.stringify(data, null, 2), 'utf8');
@@ -126,6 +130,8 @@ export class FounderService {
 
   private static llmEngine: LlmEngineOption = 'gemini-3.6-flash';
   private static primaryVideoEngine: VideoEngineOption = (process.env.PRIMARY_VIDEO_ENGINE as VideoEngineOption) || 'fal';
+  public static qaMinScoreThreshold: number = 70;
+  public static qaAutoFixThreshold: number = 80;
   private static flags: Record<string, boolean> = {
     ambient_clap_activation: false,
     voice_output: true,
@@ -443,6 +449,13 @@ export class FounderService {
 
   static getLlmEngine(): string {
     return this.llmEngine || process.env.LLM_ENGINE || 'gemini-3.6-flash';
+  }
+
+  static setQaThresholds(minScore: number, autoFix: number) {
+    this.qaMinScoreThreshold = minScore;
+    this.qaAutoFixThreshold = autoFix;
+    this.saveConfig();
+    return { success: true, qaMinScoreThreshold: this.qaMinScoreThreshold, qaAutoFixThreshold: this.qaAutoFixThreshold };
   }
 
   static setLlmEngine(engine: LlmEngineOption) {

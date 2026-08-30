@@ -121,6 +121,11 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
   const [timeTicker, setTimeTicker] = useState('02:24:09');
   const [copiedScript, setCopiedScript] = useState(false);
   const [isTerminalExpanded, setIsTerminalExpanded] = useState(false);
+  const [clientConfig, setClientConfig] = useState({ qaMinScoreThreshold: 70, qaAutoFixThreshold: 80 });
+
+  useEffect(() => {
+    fetch('/api/config/client').then(r => r.json()).then(d => { if (d.qaMinScoreThreshold) setClientConfig(d); }).catch(console.error);
+  }, []);
 
   // Credit System & Storyboard Modals
   const [userCredits, setUserCredits] = useState<number>(() => {
@@ -1730,7 +1735,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
                         <span className="font-bold text-amber-400">Adegan {idx + 1} ({scene.duration})</span>
                         {scene.qaScore !== undefined && (
                           <span className={`px-1.5 py-0.5 ml-1 rounded-full text-[9px] flex items-center gap-0.5 border ${
-                            scene.qaPassed ? 'bg-emerald-950/50 text-emerald-400 border-emerald-500/30' : 'bg-rose-950/50 text-rose-400 border-rose-500/30'
+                            (scene.qaScore !== undefined && scene.qaScore >= clientConfig.qaMinScoreThreshold) ? 'bg-emerald-950/50 text-emerald-400 border-emerald-500/30' : 'bg-rose-950/50 text-rose-400 border-rose-500/30'
                           }`} title={scene.qaIssues?.length ? `QA Issues:\n${scene.qaIssues.join('\n')}` : 'QA Audit Passed'}>
                             <ShieldCheck size={9} />
                             QA: {scene.qaScore}

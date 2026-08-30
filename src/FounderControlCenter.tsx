@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Shield, 
+  Shield,
+  ShieldCheck, 
   Server, 
   Activity, 
   Users, 
@@ -49,6 +50,8 @@ interface FCCConfig {
   flags: Record<string, boolean>;
   imageEngine?: 'draft' | 'standard' | 'precision' | 'chatgpt-image-2' | 'openai' | 'dall-e-3' | 'gemini_banana' | 'google_image' | 'imagen-3' | 'flux-diffusion';
   llmEngine?: 'gemini' | 'gemini-3.1-pro-preview' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gemini-3.6-flash';
+  qaMinScoreThreshold?: number;
+  qaAutoFixThreshold?: number;
   primaryVideoEngine?: string;
   health: {
     system: string;
@@ -80,6 +83,7 @@ interface FCCConfig {
 
 export default function FounderControlCenter({ onExit }: { onExit?: () => void }) {
   const [config, setConfig] = useState<FCCConfig | null>(null);
+  const [qaThresholds, setQaThresholds] = useState({ minScore: 70, autoFix: 80 });
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'providers' | 'livetest' | 'audio' | 'vault' | 'flags' | 'logs' | 'users' | 'gallery'>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -114,6 +118,8 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
       if (!res.ok) throw new Error('Access Denied. Founder role required.');
       const data = await res.json();
       setConfig(data);
+        if (data.qaMinScoreThreshold !== undefined) setQaThresholds(prev => ({ ...prev, minScore: data.qaMinScoreThreshold! }));
+        if (data.qaAutoFixThreshold !== undefined) setQaThresholds(prev => ({ ...prev, autoFix: data.qaAutoFixThreshold! }));
     } catch (e: any) {
       setError(e.message);
     }
@@ -227,6 +233,27 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
     showNotification('Perubahan Agen AI telah disinkronkan ke memori global', 'success');
   };
   
+  const handleSetQaThresholds = async (minScore: number, autoFix: number) => {
+    try {
+      const res = await fetch('/api/fcc/qa-thresholds', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-role': 'founder'
+        },
+        body: JSON.stringify({ minScore, autoFix })
+      });
+      if (res.ok) {
+        showNotification("QA Thresholds berhasil diperbarui");
+        fetchConfig();
+      } else {
+        const data = await res.json();
+        showNotification(data.error || "Gagal mengubah QA thresholds");
+      }
+    } catch (e: any) {
+      showNotification(e.message);
+    }
+  };
   const handleSetLlmEngine = async (engine: 'gemini' | 'gemini-3.1-pro-preview' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gemini-3.6-flash') => {
     try {
       const res = await fetch('/api/fcc/llm-engine', {
@@ -709,6 +736,47 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
               </div>
 
               
+                            {/* Default LLM Engine Selector Card */}
+              <div className="p-5 bg-[#080808] border border-cyan-900/40 rounded-2xl space-y-4 shadow-lg shadow-cyan-950/20">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck size={16} className="text-emerald-400" />
+                    <h3 className="text-xs font-bold text-white uppercase tracking-widest">SINTA QA Thresholds (Ambang Batas)</h3>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Atur nilai ambang batas kualitas skenario adegan (0-100).
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-mono text-gray-400">Hard Block (Min Score) - Default 70</label>
+                    <input 
+                      type="number" 
+                      min="0" max="100" 
+                      value={qaThresholds.minScore} 
+                      onChange={e => setQaThresholds(prev => ({ ...prev, minScore: Number(e.target.value) }))}
+                      className="w-full bg-black/60 border border-white/10 rounded-lg p-2 text-white font-mono text-xs focus:border-cyan-500/50 focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-mono text-gray-400">Auto-Fix Suggestion Threshold - Default 80</label>
+                    <input 
+                      type="number" 
+                      min="0" max="100" 
+                      value={qaThresholds.autoFix} 
+                      onChange={e => setQaThresholds(prev => ({ ...prev, autoFix: Number(e.target.value) }))}
+                      className="w-full bg-black/60 border border-white/10 rounded-lg p-2 text-white font-mono text-xs focus:border-cyan-500/50 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <button 
+                  onClick={() => handleSetQaThresholds(qaThresholds.minScore, qaThresholds.autoFix)}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold font-mono uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                >
+                  Simpan Thresholds
+                </button>
+              </div>
+
               {/* Default LLM Engine Selector Card */}
               <div className="p-5 bg-[#080808] border border-cyan-900/40 rounded-2xl space-y-4 shadow-lg shadow-cyan-950/20">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">

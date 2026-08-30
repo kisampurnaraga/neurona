@@ -40,7 +40,7 @@ export interface QAAuditResult {
 }
 
 export class QAAuditAgent {
-  private static SCORE_THRESHOLD = 70;
+  
 
   /**
    * Post-processing helper to ensure character lock and product lock clauses
@@ -119,22 +119,24 @@ export class QAAuditAgent {
         const maxWordsAllowed = Math.floor(durationSecs * 2.2);
         const finalWords = result.correctedScript.split(/\s+/).filter(Boolean);
         if (finalWords.length > maxWordsAllowed) {
-            // Find the closest punctuation before maxWordsAllowed
-            const truncated = finalWords.slice(0, maxWordsAllowed).join(' ');
-            const lastPunc = truncated.search(/[.!?](?!.*[.!?])/); // Find last occurence of punctuation
-            
-            if (lastPunc !== -1) {
-                result.correctedScript = truncated.substring(0, lastPunc + 1);
+            let truncated = finalWords.slice(0, maxWordsAllowed).join(' ');
+            const lastPuncMatch = truncated.match(/.*[.!?]/);
+            if (lastPuncMatch) {
+                result.correctedScript = lastPuncMatch[0];
                 result.auditNotes = (result.auditNotes || '') + ' [SYSTEM: Smart-clipped VO pacing to nearest punctuation.]';
             } else {
-                // If no punctuation, just take the first logical clause (comma) or fallback to just cutting at word limit with ...
-                const lastComma = truncated.search(/,(?!.*,)/);
-                if (lastComma !== -1) {
-                    result.correctedScript = truncated.substring(0, lastComma) + '.';
+                const lastCommaMatch = truncated.match(/.*,/);
+                if (lastCommaMatch) {
+                    result.correctedScript = lastCommaMatch[0].slice(0, -1) + '.';
                     result.auditNotes = (result.auditNotes || '') + ' [SYSTEM: Smart-clipped VO pacing to nearest comma.]';
                 } else {
-                    result.correctedScript = finalWords.slice(0, maxWordsAllowed).join(' ') + '.';
-                    result.auditNotes = (result.auditNotes || '') + ' [SYSTEM: Hard-clipped VO pacing.]';
+                    let limit = maxWordsAllowed;
+                    const hangingWords = ['dan', 'atau', 'yang', 'di', 'ke', 'dari', 'dengan', 'untuk', 'ini', 'itu', 'sangat', 'juga', 'akan', 'bisa', 'lebih'];
+                    while (limit > 0 && hangingWords.includes(finalWords[limit - 1].toLowerCase().replace(/[^a-z]/g, ''))) {
+                        limit--;
+                    }
+                    result.correctedScript = finalWords.slice(0, limit).join(' ') + '.';
+                    result.auditNotes = (result.auditNotes || '') + ' [SYSTEM: Hard-clipped VO pacing (removed hanging words).]';
                 }
             }
         }
@@ -201,7 +203,7 @@ ATURAN WAJIB KOREKSI PROMPT:
 - "correctedScript": Naskah narasi voiceover. WAJIB MEMPERTAHANKAN BAHASA NASKAH ASLI (Bahasa Indonesia). DILARANG KERAS MENGUBAH NASKAH INDONESIA MENJADI BAHASA INGGRIS!
 - "correctedVisualPrompt": Deskripsi visual keyframe gambar dengan pencahayaan dan Character/Product Lock lengkap.
 
-Format Output WAJIB JSON murni tanpa markdown pembungkus.`;
+Format Output WAJIB JSON murni tanpa markdown pembungkus. Kamu WAJIB merespons seluruh field seperti 'issues' (Daftar Masalah), 'recommendations' (Rekomendasi), dan 'auditNotes' dalam Bahasa Indonesia.`;
 
     const auditPrompt = JSON.stringify({
       productName: QAAuditAgent.stripBase64FromText(input.productName) || "Product / Creative Subject",
@@ -232,7 +234,7 @@ Format Output WAJIB JSON murni tanpa markdown pembungkus.`;
     const vScore = Number(data.visualPromptAdherence ?? data.breakdown?.visualPromptAdherence ?? 85);
     const nScore = Number(data.narrativeFlow ?? data.breakdown?.narrativeFlow ?? 85);
     const avgScore = Math.round((pScore + vScore + nScore) / 3);
-    const autoCorrected = avgScore < this.SCORE_THRESHOLD;
+    const autoCorrected = avgScore < FounderService.qaAutoFixThreshold;
 
     const rawVideoPrompt = input.videoPrompt || input.promptText || '';
     const rawVisualPrompt = input.visualPrompt || rawVideoPrompt;
@@ -244,25 +246,30 @@ Format Output WAJIB JSON murni tanpa markdown pembungkus.`;
     const maxWordsAllowed = Math.floor((input.durationSeconds || 5) * 2.2);
     const finalWords = finalScript.split(/\s+/).filter(Boolean);
     if (finalWords.length > maxWordsAllowed) {
-        const truncated = finalWords.slice(0, maxWordsAllowed).join(' ');
-        const lastPunc = truncated.search(/[.!?](?!.*[.!?])/);
-        if (lastPunc !== -1) {
-            finalScript = truncated.substring(0, lastPunc + 1);
+        let truncated = finalWords.slice(0, maxWordsAllowed).join(' ');
+        const lastPuncMatch = truncated.match(/.*[.!?]/);
+        if (lastPuncMatch) {
+            finalScript = lastPuncMatch[0];
             data.auditNotes = (data.auditNotes || '') + ' [SYSTEM: Smart-clipped VO pacing to nearest punctuation.]';
         } else {
-            const lastComma = truncated.search(/,(?!.*,)/);
-            if (lastComma !== -1) {
-                finalScript = truncated.substring(0, lastComma) + '.';
+            const lastCommaMatch = truncated.match(/.*,/);
+            if (lastCommaMatch) {
+                finalScript = lastCommaMatch[0].slice(0, -1) + '.';
                 data.auditNotes = (data.auditNotes || '') + ' [SYSTEM: Smart-clipped VO pacing to nearest comma.]';
             } else {
-                finalScript = finalWords.slice(0, maxWordsAllowed).join(' ') + '.';
-                data.auditNotes = (data.auditNotes || '') + ' [SYSTEM: Hard-clipped VO pacing.]';
+                let limit = maxWordsAllowed;
+                const hangingWords = ['dan', 'atau', 'yang', 'di', 'ke', 'dari', 'dengan', 'untuk', 'ini', 'itu', 'sangat', 'juga', 'akan', 'bisa', 'lebih'];
+                while (limit > 0 && hangingWords.includes(finalWords[limit - 1].toLowerCase().replace(/[^a-z]/g, ''))) {
+                    limit--;
+                }
+                finalScript = finalWords.slice(0, limit).join(' ') + '.';
+                data.auditNotes = (data.auditNotes || '') + ' [SYSTEM: Hard-clipped VO pacing (removed hanging words).]';
             }
         }
     }
 
     return {
-      passed: avgScore >= this.SCORE_THRESHOLD,
+      passed: avgScore >= FounderService.qaMinScoreThreshold,
       score: avgScore,
       breakdown: {
         productLockConsistency: pScore,
@@ -303,7 +310,7 @@ Format Output WAJIB JSON murni tanpa markdown pembungkus.`;
 3. Narrative Flow & TTS Duration (0-100) - VO MUST be short, complete sentences under 2 words/sec. No hanging sentences.
 4. Affiliate Product & Character Interaction (0-100) - If videoType is AFFILIATE, prompt MUST explicitly describe physical interaction between character and product.
 
-Return JSON with: passed (boolean), score (number), breakdown { productLockConsistency, visualPromptAdherence, narrativeFlow }, issues (array), recommendations (array), correctedVideoPrompt (string in English cinematic prompt for AI Video Engines. MUST include character physically holding/using product if AFFILIATE), correctedScript (string), correctedVisualPrompt (string. MUST include character physically holding/using product if AFFILIATE), auditNotes (string).`
+Return JSON with: passed (boolean), score (number), breakdown { productLockConsistency, visualPromptAdherence, narrativeFlow }, issues (array of strings IN INDONESIAN), recommendations (array of strings IN INDONESIAN), correctedVideoPrompt (string in English cinematic prompt for AI Video Engines. MUST include character physically holding/using product if AFFILIATE), correctedScript (string IN INDONESIAN), correctedVisualPrompt (string in English. MUST include character physically holding/using product if AFFILIATE), auditNotes (string IN INDONESIAN).`
         },
         {
           role: 'user',
@@ -339,7 +346,7 @@ Return JSON with: passed (boolean), score (number), breakdown { productLockConsi
     const finalVisualPrompt = QAAuditAgent.preserveConsistencyLocks(rawVisualPrompt, data.correctedVisualPrompt || rawVisualPrompt, productName);
 
     return {
-      passed: avgScore >= this.SCORE_THRESHOLD,
+      passed: avgScore >= FounderService.qaMinScoreThreshold,
       score: avgScore,
       breakdown: {
         productLockConsistency: pScore,
@@ -351,7 +358,7 @@ Return JSON with: passed (boolean), score (number), breakdown { productLockConsi
       correctedVideoPrompt: finalVideoPrompt,
       correctedScript: data.correctedScript || input.voiceoverScript || input.script || '',
       correctedVisualPrompt: finalVisualPrompt,
-      autoCorrected: avgScore < this.SCORE_THRESHOLD,
+      autoCorrected: avgScore < FounderService.qaAutoFixThreshold,
       auditNotes: data.auditNotes || `QA Audit dieksekusi via OpenAI ${model}.`,
       modelUsed: `OpenAI ${model}`,
       timestamp: new Date().toISOString()
@@ -445,7 +452,7 @@ Return JSON with: passed (boolean), score (number), breakdown { productLockConsi
     }
 
     const totalScore = Math.max(0, Math.round((pScore + vScore + nScore) / 3));
-    const autoCorrected = totalScore < this.SCORE_THRESHOLD;
+    const autoCorrected = totalScore < FounderService.qaAutoFixThreshold;
 
     // Auto-correction generation
     let correctedVideoPrompt = rawPrompt;
@@ -474,7 +481,7 @@ Return JSON with: passed (boolean), score (number), breakdown { productLockConsi
     }
 
     return {
-      passed: totalScore >= this.SCORE_THRESHOLD,
+      passed: totalScore >= FounderService.qaMinScoreThreshold,
       score: totalScore,
       breakdown: {
         productLockConsistency: Math.max(0, pScore),

@@ -221,7 +221,17 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
   const [activeMediaView, setActiveMediaView] = useState<Record<string, 'video' | 'image'>>({});
   const [isProcessingAction, setIsProcessingAction] = useState<string | null>(null);
-  const [isStitching, setIsStitching] = useState(false);
+    const [isStitching, setIsStitching] = useState(false);
+  const [clientConfig, setClientConfig] = useState({ qaMinScoreThreshold: 70, qaAutoFixThreshold: 80 });
+
+  useEffect(() => {
+    fetch('/api/config/client')
+      .then(r => r.json())
+      .then(d => {
+         if (d.qaMinScoreThreshold) setClientConfig(d);
+      })
+      .catch(console.error);
+  }, []);
   const [finalVideoUrl, setFinalVideoUrl] = useState<string | null>(null);
   const [showPlaylistPreview, setShowPlaylistPreview] = useState(false);
   const [playlistIndex, setPlaylistIndex] = useState(0);
@@ -1537,15 +1547,15 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                               type="button"
                               onClick={() => setSelectedQaScene(scene)}
                               className={`px-2.5 py-0.5 rounded-full flex items-center gap-1 border font-mono text-[10px] font-bold cursor-pointer transition hover:scale-105 ${
-                                (scene.qaScore >= 70 && scene.qaPassed !== false) 
+                                (scene.qaScore >= clientConfig.qaMinScoreThreshold) 
                                   ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/50 hover:bg-emerald-900/80' 
                                   : 'bg-rose-950/80 text-rose-300 border-rose-500/80 hover:bg-rose-900 animate-pulse'
                               }`} 
                               title="Klik untuk melihat breakdown QA Score lengkap & rekomendasi perbaikan"
                             >
-                              <ShieldCheck size={11} className={(scene.qaScore >= 70 && scene.qaPassed !== false) ? 'text-emerald-400' : 'text-rose-400'} />
+                              <ShieldCheck size={11} className={(scene.qaScore >= clientConfig.qaMinScoreThreshold) ? 'text-emerald-400' : 'text-rose-400'} />
                               <span>QA: {scene.qaScore}/100</span>
-                              {scene.qaScore < 70 && <span className="text-[9px] bg-rose-600 text-white font-sans font-bold px-1 rounded ml-0.5">REVISI WAJIB</span>}
+                              {scene.qaScore < clientConfig.qaMinScoreThreshold && <span className="text-[9px] bg-rose-600 text-white font-sans font-bold px-1 rounded ml-0.5">REVISI WAJIB</span>}
                             </button>
                           )}
                         </div>
@@ -1896,11 +1906,11 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                 </div>
 
                                 {/* Low QA Score Alert Banner */}
-                                {scene.qaScore !== undefined && scene.qaScore < 70 && (
+                                {scene.qaScore !== undefined && scene.qaScore < clientConfig.qaMinScoreThreshold && (
                                   <div className="bg-rose-950/90 border border-rose-500/60 text-rose-200 text-[10px] p-2 rounded-lg flex items-center justify-between gap-2 shadow-lg mb-1.5">
                                     <div className="flex items-center gap-1.5 font-bold">
                                       <AlertTriangle size={13} className="text-rose-400 shrink-0" />
-                                      <span>QA Score {scene.qaScore}/100 &lt; 70. Karakter/Produk berisiko tidak konsisten!</span>
+                                      <span>QA Score {scene.qaScore}/100 &lt; {clientConfig.qaMinScoreThreshold}. Karakter/Produk berisiko tidak konsisten!</span>
                                     </div>
                                     <button
                                       type="button"
@@ -1949,8 +1959,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                   {/* 2. Generate Video Button */}
                                   <button
                                     onClick={() => {
-                                      if (scene.qaScore !== undefined && scene.qaScore < 70) {
-                                        if (!window.confirm(`⚠️ PERINGATAN REVISI QA:\nAdegan ini memiliki QA Score (${scene.qaScore}/100) di bawah ambang batas 70.\n\nDisarankan untuk mengklik 'Auto-Fix' atau 'Regenerate' terlebih dahulu agar hasil video tidak cacat konsistensi.\n\nYakin ingin melanjutkan render video?`)) {
+                                      if (scene.qaScore !== undefined && scene.qaScore < clientConfig.qaMinScoreThreshold) {
+                                        if (!window.confirm(`⚠️ PERINGATAN REVISI QA:\nAdegan ini memiliki QA Score (${scene.qaScore}/100) di bawah ambang batas ${clientConfig.qaMinScoreThreshold}.\n\nDisarankan untuk mengklik 'Auto-Fix' atau 'Regenerate' terlebih dahulu agar hasil video tidak cacat konsistensi.\n\nYakin ingin melanjutkan render video?`)) {
                                           setSelectedQaScene(scene);
                                           return;
                                         }
@@ -2031,7 +2041,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                               </div>
                               {scene.qaScore !== undefined && (
                                 <div className={`px-2 py-0.5 rounded-full flex items-center gap-1 border ${
-                                  scene.qaPassed 
+                                  (scene.qaScore >= clientConfig.qaMinScoreThreshold) 
                                     ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/50' 
                                     : 'bg-rose-950/40 text-rose-400 border-rose-500/50'
                                 }`} title={scene.qaIssues?.length ? `QA Issues:\n${scene.qaIssues.join('\n')}` : 'QA Audit Passed'}>
@@ -2366,10 +2376,10 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
               <div className="flex flex-col sm:flex-row gap-2">
                 <button
                   onClick={() => {
-                    const lowQa = scenes.filter(s => typeof s.qaScore === 'number' && s.qaScore < 70);
+                    const lowQa = scenes.filter(s => typeof s.qaScore === 'number' && s.qaScore < clientConfig.qaMinScoreThreshold);
                     if (lowQa.length > 0) {
                       const listStr = lowQa.map(s => `Adegan ${scenes.indexOf(s) + 1} (${s.qaScore}/100)`).join(', ');
-                      setQaBlockAlert(`⛔ PENGGABUNGAN DIBLOKIR: SINTA AI menolak penggabungan video karena terdapat ${lowQa.length} adegan dengan QA Score < 70 (${listStr}). Harap lakukan perbaikan prompt atau regenerasi adegan tersebut terlebih dahulu.`);
+                      setQaBlockAlert(`⛔ PENGGABUNGAN DIBLOKIR: SINTA AI menolak penggabungan video karena terdapat ${lowQa.length} adegan dengan QA Score < ${clientConfig.qaMinScoreThreshold} (${listStr}). Harap lakukan perbaikan prompt atau regenerasi adegan tersebut terlebih dahulu.`);
                       return;
                     }
                     setShowStitchStylePopup(true);
@@ -2396,10 +2406,10 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
             {isAwaiting && (
               <button
                 onClick={() => {
-                  const lowQa = scenes.filter(s => typeof s.qaScore === 'number' && s.qaScore < 70);
+                  const lowQa = scenes.filter(s => typeof s.qaScore === 'number' && s.qaScore < clientConfig.qaMinScoreThreshold);
                   if (lowQa.length > 0) {
                     const listStr = lowQa.map(s => `Adegan ${scenes.indexOf(s) + 1} (${s.qaScore}/100)`).join(', ');
-                    setQaBlockAlert(`⛔ FULL RENDER DIBLOKIR: SINTA AI menolak render video karena terdapat ${lowQa.length} adegan dengan QA Score < 70 (${listStr}). Harap perbaiki adegan tersebut.`);
+                    setQaBlockAlert(`⛔ FULL RENDER DIBLOKIR: SINTA AI menolak render video karena terdapat ${lowQa.length} adegan dengan QA Score < ${clientConfig.qaMinScoreThreshold} (${listStr}). Harap perbaiki adegan tersebut.`);
                     return;
                   }
                   onApproveAndPay(videoCreditsTotal, undefined);
@@ -3509,7 +3519,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
             <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
               <div className="flex items-center gap-2">
                 <div className={`p-2 rounded-xl ${
-                  (selectedQaScene.qaScore ?? 80) >= 70 ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-500/40' : 'bg-rose-950/80 text-rose-400 border border-rose-500/40'
+                  (selectedQaScene.qaScore ?? clientConfig.qaAutoFixThreshold) >= clientConfig.qaMinScoreThreshold ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-500/40' : 'bg-rose-950/80 text-rose-400 border border-rose-500/40'
                 }`}>
                   <ShieldCheck size={20} />
                 </div>
@@ -3534,7 +3544,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
             <div className="overflow-y-auto space-y-4 pr-1 flex-1">
               {/* Score Overview Card */}
               <div className={`p-4 rounded-xl border flex items-center justify-between ${
-                (selectedQaScene.qaScore ?? 80) >= 70 
+                (selectedQaScene.qaScore ?? clientConfig.qaAutoFixThreshold) >= clientConfig.qaMinScoreThreshold 
                   ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200' 
                   : 'bg-rose-950/40 border-rose-500/50 text-rose-200'
               }`}>
@@ -3547,10 +3557,10 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                 </div>
 
                 <div className="text-right">
-                  {(selectedQaScene.qaScore ?? 80) >= 70 ? (
+                  {(selectedQaScene.qaScore ?? clientConfig.qaAutoFixThreshold) >= clientConfig.qaMinScoreThreshold ? (
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
                       <CheckCircle size={14} />
-                      <span>LAYAK LANJUT (≥ 70)</span>
+                      <span>LAYAK LANJUT (≥ {clientConfig.qaMinScoreThreshold})</span>
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-xs font-bold animate-pulse">
@@ -3574,12 +3584,12 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   <div>
                     <div className="flex justify-between font-semibold mb-1">
                       <span className="text-slate-300">📦 Consistency Lock (Karakter &amp; Produk)</span>
-                      <span className="font-mono text-cyan-400">{selectedQaScene.qaBreakdown?.productLockConsistency ?? selectedQaScene.qaScore ?? 80}/100</span>
+                      <span className="font-mono text-cyan-400">{selectedQaScene.qaBreakdown?.productLockConsistency ?? selectedQaScene.qaScore ?? clientConfig.qaAutoFixThreshold}/100</span>
                     </div>
                     <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
                       <div 
                         className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-500" 
-                        style={{ width: `${selectedQaScene.qaBreakdown?.productLockConsistency ?? selectedQaScene.qaScore ?? 80}%` }}
+                        style={{ width: `${selectedQaScene.qaBreakdown?.productLockConsistency ?? selectedQaScene.qaScore ?? clientConfig.qaAutoFixThreshold}%` }}
                       />
                     </div>
                   </div>
@@ -3588,12 +3598,12 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   <div>
                     <div className="flex justify-between font-semibold mb-1">
                       <span className="text-slate-300">🎥 Visual Prompt Adherence &amp; Lighting</span>
-                      <span className="font-mono text-purple-400">{selectedQaScene.qaBreakdown?.visualPromptAdherence ?? selectedQaScene.qaScore ?? 80}/100</span>
+                      <span className="font-mono text-purple-400">{selectedQaScene.qaBreakdown?.visualPromptAdherence ?? selectedQaScene.qaScore ?? clientConfig.qaAutoFixThreshold}/100</span>
                     </div>
                     <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
                       <div 
                         className="h-full bg-gradient-to-r from-purple-500 to-indigo-400 transition-all duration-500" 
-                        style={{ width: `${selectedQaScene.qaBreakdown?.visualPromptAdherence ?? selectedQaScene.qaScore ?? 80}%` }}
+                        style={{ width: `${selectedQaScene.qaBreakdown?.visualPromptAdherence ?? selectedQaScene.qaScore ?? clientConfig.qaAutoFixThreshold}%` }}
                       />
                     </div>
                   </div>
@@ -3602,12 +3612,12 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   <div>
                     <div className="flex justify-between font-semibold mb-1">
                       <span className="text-slate-300">🎙️ Narrative Flow &amp; TTS Pace</span>
-                      <span className="font-mono text-amber-400">{selectedQaScene.qaBreakdown?.narrativeFlow ?? selectedQaScene.qaScore ?? 80}/100</span>
+                      <span className="font-mono text-amber-400">{selectedQaScene.qaBreakdown?.narrativeFlow ?? selectedQaScene.qaScore ?? clientConfig.qaAutoFixThreshold}/100</span>
                     </div>
                     <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
                       <div 
                         className="h-full bg-gradient-to-r from-amber-500 to-teal-400 transition-all duration-500" 
-                        style={{ width: `${selectedQaScene.qaBreakdown?.narrativeFlow ?? selectedQaScene.qaScore ?? 80}%` }}
+                        style={{ width: `${selectedQaScene.qaBreakdown?.narrativeFlow ?? selectedQaScene.qaScore ?? clientConfig.qaAutoFixThreshold}%` }}
                       />
                     </div>
                   </div>
@@ -3674,7 +3684,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                       cur.promptImageToVideo = cur.correctedVideoPrompt || cur.promptImageToVideo;
                       cur.voiceOver = cur.correctedScript || cur.voiceOver;
                       cur.visualDirection = cur.correctedVisualPrompt || cur.visualDirection;
-                      cur.qaScore = 88;
+                      cur.qaScore = clientConfig.qaAutoFixThreshold + 8;
                       cur.qaPassed = true;
                       cur.qaIssues = [];
                       neuronaVoice.speak(`Perbaikan prompt otomatis untuk adegan ${sceneIdx + 1} berhasil diterapkan.`);
@@ -3684,7 +3694,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 cursor-pointer"
                 >
                   <Wand2 size={13} />
-                  <span>Terapkan Auto-Fix (Skor &gt; 80)</span>
+                  <span>Terapkan Auto-Fix (Skor &gt; {clientConfig.qaAutoFixThreshold})</span>
                 </button>
 
                 {/* Regenerate Scene */}
