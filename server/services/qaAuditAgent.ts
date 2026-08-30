@@ -112,7 +112,36 @@ export class QAAuditAgent {
         const openAiKey = process.env.OPENAI_API_KEY;
         if (openAiKey) {
           const result = await this.runOpenAIAudit(input, openAiKey);
-          if (result) return result;
+          if (result) 
+    // SMART PACING CLIP AT TOP LEVEL
+    if (result && result.correctedScript) {
+        const durationSecs = input.durationSeconds || 5;
+        const maxWordsAllowed = Math.floor(durationSecs * 2.2);
+        const finalWords = result.correctedScript.split(/\s+/).filter(Boolean);
+        if (finalWords.length > maxWordsAllowed) {
+            // Find the closest punctuation before maxWordsAllowed
+            const truncated = finalWords.slice(0, maxWordsAllowed).join(' ');
+            const lastPunc = truncated.search(/[.!?](?!.*[.!?])/); // Find last occurence of punctuation
+            
+            if (lastPunc !== -1) {
+                result.correctedScript = truncated.substring(0, lastPunc + 1);
+                result.auditNotes = (result.auditNotes || '') + ' [SYSTEM: Smart-clipped VO pacing to nearest punctuation.]';
+            } else {
+                // If no punctuation, just take the first logical clause (comma) or fallback to just cutting at word limit with ...
+                const lastComma = truncated.search(/,(?!.*,)/);
+                if (lastComma !== -1) {
+                    result.correctedScript = truncated.substring(0, lastComma) + '.';
+                    result.auditNotes = (result.auditNotes || '') + ' [SYSTEM: Smart-clipped VO pacing to nearest comma.]';
+                } else {
+                    result.correctedScript = finalWords.slice(0, maxWordsAllowed).join(' ') + '.';
+                    result.auditNotes = (result.auditNotes || '') + ' [SYSTEM: Hard-clipped VO pacing.]';
+                }
+            }
+        }
+    }
+
+    return result;
+
         }
       }
 
@@ -120,13 +149,26 @@ export class QAAuditAgent {
       const result = await keyRotator.executeGeminiWithRotation(async (ai, apiKey) => {
         return await this.runGeminiAudit(input, ai, activeLlm);
       });
-      if (result) return result;
+      if (result) 
+    
+
+    return result;
+
     } catch (err: any) {
       console.warn(`[QAAuditAgent] LLM-based audit encountered error: ${err?.message}. Executing heuristic procedural fallback.`);
     }
 
     // 2. Fallback: Rule-based Heuristic Director QA Engine
-    return this.runHeuristicAudit(input, rawPrompt, rawScript, rawVisual, duration, aspect);
+    const result = this.runHeuristicAudit(input, rawPrompt, rawScript, rawVisual, duration, aspect);
+
+    
+
+    
+    
+
+    return result;
+
+
   }
 
   /**
@@ -151,7 +193,7 @@ KAIDAH AUDIT:
    - Jika AFFILIATE: Wajib memuat estetika smartphone kasual ("Shot on iPhone 15 front camera, natural warm indoor lighting, authentic UGC creator perspective") dan interaksi fisik aktif di Scene 1-2.
    - DILARANG mencantumkan teks "subtitle", "text on screen", atau instruksi tipografi di dalam video prompt (karena menyebabkan glitch rendering video).
 3. Narrative Flow & TTS Duration (Skor 0-100):
-   - Rasio kata naskah harus realistis sesuai durasi ${input.durationSeconds || 5} detik (sekitar 2.5 kata per detik untuk bahasa Indonesia).
+   - PACING LIMIT (CRITICAL): Naskah MAKSIMAL 2 kata per detik untuk TTS Indonesia. Jika durasi ${input.durationSeconds || 5}s, naskah MAKSIMAL ${Math.floor((input.durationSeconds || 5) * 2)} KATA. WAJIB tulis kalimat yang PENDEK TAPI UTUH (selesai pada tanda titik). Jangan buat kalimat panjang lalu dipotong menggantung.
    - Memiliki hook menarik atau punchline/CTA yang jelas.
 
 ATURAN WAJIB KOREKSI PROMPT:
@@ -198,7 +240,26 @@ Format Output WAJIB JSON murni tanpa markdown pembungkus.`;
 
     const finalVideoPrompt = QAAuditAgent.preserveConsistencyLocks(rawVideoPrompt, data.correctedVideoPrompt || rawVideoPrompt, productName);
     const finalVisualPrompt = QAAuditAgent.preserveConsistencyLocks(rawVisualPrompt, data.correctedVisualPrompt || rawVisualPrompt, productName);
-    const finalScript = data.correctedScript || input.voiceoverScript || input.script || '';
+    let finalScript = data.correctedScript || input.voiceoverScript || input.script || '';
+    const maxWordsAllowed = Math.floor((input.durationSeconds || 5) * 2.2);
+    const finalWords = finalScript.split(/\s+/).filter(Boolean);
+    if (finalWords.length > maxWordsAllowed) {
+        const truncated = finalWords.slice(0, maxWordsAllowed).join(' ');
+        const lastPunc = truncated.search(/[.!?](?!.*[.!?])/);
+        if (lastPunc !== -1) {
+            finalScript = truncated.substring(0, lastPunc + 1);
+            data.auditNotes = (data.auditNotes || '') + ' [SYSTEM: Smart-clipped VO pacing to nearest punctuation.]';
+        } else {
+            const lastComma = truncated.search(/,(?!.*,)/);
+            if (lastComma !== -1) {
+                finalScript = truncated.substring(0, lastComma) + '.';
+                data.auditNotes = (data.auditNotes || '') + ' [SYSTEM: Smart-clipped VO pacing to nearest comma.]';
+            } else {
+                finalScript = finalWords.slice(0, maxWordsAllowed).join(' ') + '.';
+                data.auditNotes = (data.auditNotes || '') + ' [SYSTEM: Hard-clipped VO pacing.]';
+            }
+        }
+    }
 
     return {
       passed: avgScore >= this.SCORE_THRESHOLD,
@@ -239,7 +300,7 @@ Format Output WAJIB JSON murni tanpa markdown pembungkus.`;
           content: `You are NEURONNA QA AUDIT AGENT. Audit script, visual prompt, and AI video prompt for:
 1. Product Lock Consistency (0-100)
 2. Visual Prompt Adherence (0-100)
-3. Narrative Flow & TTS Duration (0-100)
+3. Narrative Flow & TTS Duration (0-100) - VO MUST be short, complete sentences under 2 words/sec. No hanging sentences.
 4. Affiliate Product & Character Interaction (0-100) - If videoType is AFFILIATE, prompt MUST explicitly describe physical interaction between character and product.
 
 Return JSON with: passed (boolean), score (number), breakdown { productLockConsistency, visualPromptAdherence, narrativeFlow }, issues (array), recommendations (array), correctedVideoPrompt (string in English cinematic prompt for AI Video Engines. MUST include character physically holding/using product if AFFILIATE), correctedScript (string), correctedVisualPrompt (string. MUST include character physically holding/using product if AFFILIATE), auditNotes (string).`
@@ -398,7 +459,18 @@ Return JSON with: passed (boolean), score (number), breakdown { productLockConsi
     let correctedScript = rawScript;
     if (wordCount > maxWords && rawScript.length > 0) {
       const words = rawScript.split(/\s+/);
-      correctedScript = words.slice(0, maxWords).join(' ') + '...';
+      const truncated = words.slice(0, maxWords).join(' ');
+      const lastPunc = truncated.search(/[.!?](?!.*[.!?])/);
+      if (lastPunc !== -1) {
+          correctedScript = truncated.substring(0, lastPunc + 1);
+      } else {
+          const lastComma = truncated.search(/,(?!.*,)/);
+          if (lastComma !== -1) {
+              correctedScript = truncated.substring(0, lastComma) + '.';
+          } else {
+              correctedScript = words.slice(0, maxWords).join(' ') + '.';
+          }
+      }
     }
 
     return {

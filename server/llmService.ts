@@ -736,7 +736,7 @@ ATURAN WAJIB & LOGIKA KONSISTENSI VISUAL (MANDATORY RULES):
 
 4. VOICE OVER & TEKS SUBTITLE:
 - Sesuaikan bahasa narasi dengan bahasa pilihan (${videoType === 'ANIMATION' ? config?.language || 'id' : 'id'}).
-- Buat teks narasi voiceover yang hidup, berbobot emosional, dan berirama pas dengan durasi tiap adegan.
+- BATAS KATA SANGAT KETAT: TTS membaca lambat (max 2 kata per detik). Untuk adegan 3 detik, MAKSIMAL 6 KATA. Untuk adegan 4 detik, MAKSIMAL 8 KATA. Jika melanggar, audio akan error terpotong! Gunakan kalimat SANGAT PENDEK dan to-the-point.
 
 5. AFFILIATE PRODUCT & CHARACTER LOCK (WAJIB JIKA VIDEO TYPE = AFFILIATE):
 - Jika Video Type adalah AFFILIATE, sutradara WAJIB merancang adegan (khususnya Adegan 1 dan 2) di mana karakter SECARA AKTIF dan FISIK menggunakan/memegang/mengaplikasikan produk (misal: "Karakter mengoleskan skincare ke pipi", "Karakter memegang botol serum dan menunjukkannya ke kamera").
@@ -794,7 +794,8 @@ ATURAN LOGIKA SCENE-BY-SCENE (CRITICAL):
 - "location" (STRING): Deskripsi singkat setting fisik (misal: "Kamar tidur minimalis", "Kamar mandi modern", "Studio foto komersial").
 
 CRITICAL RULES FOR QA COMPLIANCE (MUST FOLLOW STRICTLY):
-1. PACING: Voiceover max 2.2 words/second for Indonesian TTS. 3s scene = max 6 words, 4s scene = max 8 words. Keep it punchy!
+0. LANGUAGE (CRITICAL): ALL Voiceovers and copy MUST BE IN INDONESIAN (BAHASA INDONESIA).
+1. PACING (CRITICAL LIMIT): Voiceover MAX 2 words/second. 3s scene = MAX 6 words. 4s scene = MAX 8 words. WRITE SHORT, PUNCHY, COMPLETE SENTENCES. Do NOT write long sentences that will get cut off! Ex: 'Bass gahar TWS BassKing!' (4 words). NOT: 'Nikmati bass gahar dengan TWS BassKing yang tahan hingga 24 jam' (11 words - too long for 4s).
 2. VISUAL STYLE: You must explicitly set \`visualStyle\` field to "ugc" or "studio" based on videoType!
    - AFFILIATE default -> "ugc" (Authentic UGC creator perspective, shot on iPhone 15 front camera)
    - CONTENT/ANIMATION -> "studio" (Cinematic 35mm commercial shot, 50mm lens f/2.8)
@@ -820,7 +821,7 @@ FORMAT OUTPUT MUTLAK: JSON`;
                   content: `You are SINTA, NEURONA Master Storyboard & Product/Character Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' (caption, hashtags, voiceProfile) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[], featuresProduct: boolean, backgroundLock: "locked" | "free", location: string, visualStyle: "ugc" | "studio" }.
 
 CRITICAL RULES FOR QA COMPLIANCE:
-1. PACING: Voiceover max 2.2 words/second for Indonesian TTS. 3s scene = max 6 words. Keep it punchy.
+1. PACING (CRITICAL LIMIT): Voiceover MAX 2 words/second. 3s scene = MAX 6 words. 4s scene = MAX 8 words. WRITE SHORT, PUNCHY, COMPLETE SENTENCES. Do NOT write long sentences that will get cut off! Ex: 'Bass gahar TWS BassKing!' (4 words). NOT: 'Nikmati bass gahar dengan TWS BassKing yang tahan hingga 24 jam' (11 words - too long for 4s).
 2. VISUAL STYLE (must set \`visualStyle\` field explicitly as "ugc" or "studio" based on videoType):
    - AFFILIATE default → "ugc": "Authentic UGC creator perspective, shot on iPhone 15 front camera, natural indoor lighting"
    - CONTENT/ANIMATION → "studio": "Cinematic 35mm commercial shot, 50mm lens f/2.8, atmospheric lighting"
@@ -1090,7 +1091,7 @@ CRITICAL RULES FOR QA COMPLIANCE:
                       content: `You are SINTA, NEURONA Master Storyboard & Product Consistency Director. You output JSON with 'characterProfile', 'marketingCopy' ({ caption, hashtags, tiktok_caption, instagram_caption, youtube_caption, hashtags_tiktok, hashtags_instagram, hashtags_youtube, voiceProfile }) and a 'scenes' array containing: { duration, visualDirection, textOverlay, voiceOver, promptTextToImage, promptImageToVideo, styleKeywords: string[], featuresProduct: boolean, backgroundLock: "locked" | "free", location: string, visualStyle: "ugc" | "studio" }.
 
 CRITICAL RULES FOR QA COMPLIANCE:
-1. PACING: Voiceover max 2.2 words/second for Indonesian TTS. 3s scene = max 6 words. Keep it punchy.
+1. PACING (CRITICAL LIMIT): Voiceover MAX 2 words/second. 3s scene = MAX 6 words. 4s scene = MAX 8 words. WRITE SHORT, PUNCHY, COMPLETE SENTENCES. Do NOT write long sentences that will get cut off! Ex: 'Bass gahar TWS BassKing!' (4 words). NOT: 'Nikmati bass gahar dengan TWS BassKing yang tahan hingga 24 jam' (11 words - too long for 4s).
 2. VISUAL STYLE (must set \`visualStyle\` field explicitly as "ugc" or "studio" based on videoType):
    - AFFILIATE default → "ugc": "Authentic UGC creator perspective, shot on iPhone 15 front camera, natural indoor lighting"
    - CONTENT/ANIMATION → "studio": "Cinematic 35mm commercial shot, 50mm lens f/2.8, atmospheric lighting"

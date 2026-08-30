@@ -24,105 +24,27 @@ interface AffiliateConfigModalProps {
   initialAssets?: ProductAsset[];
 }
 
-const SAMPLE_PRESETS = [
-  {
-    id: 'shoes',
-    label: '👟 Sepatu Sneakers Viral',
-    productName: 'Aeroflex HyperRun V2 Sneakers',
-    category: 'Sepatu & Fashion',
-    platform: 'TikTok Shop' as const,
-    keyBenefits: 'Super ringan 180gr, bantalan cloud cushion empuk gak bikin pegal, sol karet anti-slip aman saat hujan',
-    pricePromo: 'Flash Sale Diskon 50% Rp 149.000 + Free Ongkir',
-    callToAction: 'Klik keranjang kuning di kiri bawah sebelum kehabisan size!',
-    hookStyle: 'PAIN_POINT' as const,
-    creatorImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&auto=format&fit=crop&q=80',
-    images: [
-      {
-        name: "Sneakers Side View",
-        url: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&auto=format&fit=crop&q=80"
-      },
-      {
-        name: "Sneakers Sole & Cushion Detail",
-        url: "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?w=800&auto=format&fit=crop&q=80"
-      },
-      {
-        name: "Sneakers Lifestyle OOTD",
-        url: "https://images.unsplash.com/photo-1552346154-21d32810aba3?w=800&auto=format&fit=crop&q=80"
-      }
-    ]
-  },
-  {
-    id: 'skincare',
-    label: '✨ Serum Glowing 24K',
-    productName: 'Lumiere Brightening Niacinamide 10% Serum',
-    category: 'Beauty & Skincare',
-    platform: 'TikTok Shop' as const,
-    keyBenefits: 'Mencerahkan flek hitam dalam 7 hari, tekstur ringan cepat meresap, BPOM & Halal',
-    pricePromo: 'Beli 1 Dapat 2 Promo Gajian Rp 89.000',
-    callToAction: 'Langsung co di keranjang kuning selagi stok bundling masih ada!',
-    hookStyle: 'BEFORE_AFTER' as const,
-    creatorImage: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=800&auto=format&fit=crop&q=80',
-    images: [
-      {
-        name: "Serum Bottle Dropper",
-        url: "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=800&auto=format&fit=crop&q=80"
-      },
-      {
-        name: "Glowing Skin Texture",
-        url: "https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?w=800&auto=format&fit=crop&q=80"
-      }
-    ]
-  },
-  {
-    id: 'gadget',
-    label: '🎧 TWS Earphone Gaming',
-    productName: 'AeroPods Ultra Low Latency ANC',
-    category: 'Elektronik & Gadget',
-    platform: 'Shopee Video' as const,
-    keyBenefits: 'Active Noise Cancelling 35dB, delay super rendah 38ms, baterai tahan 36 jam nonstop',
-    pricePromo: 'Spesial Live Rp 129.000 (Normal Rp 350.000)',
-    callToAction: 'Klaim voucher gratis ongkir & diskon di bio / keranjang sekarang!',
-    hookStyle: 'CURIOSITY' as const,
-    creatorImage: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&auto=format&fit=crop&q=80',
-    images: [
-      {
-        name: "TWS Case & Earbuds",
-        url: "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80"
-      },
-      {
-        name: "Earbuds In-Ear View",
-        url: "https://images.unsplash.com/photo-1572536147248-ac59a8abfa4b?w=800&auto=format&fit=crop&q=80"
-      }
-    ]
-  }
-];
-
 export default function AffiliateConfigModal({
   isOpen,
   onClose,
   onSubmit,
   initialAssets = []
 }: AffiliateConfigModalProps) {
-  const [productName, setProductName] = useState('Aeroflex HyperRun V2 Sneakers');
-  const [category, setCategory] = useState('Sepatu & Fashion');
+  const [productName, setProductName] = useState('');
+  const [category, setCategory] = useState('Lainnya');
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('9:16');
   const [platform, setPlatform] = useState<'TikTok Shop' | 'Shopee Video' | 'Instagram Reels' | 'YouTube Shorts'>('TikTok Shop');
-  const [keyBenefits, setKeyBenefits] = useState('Super ringan 180gr, bantalan cloud cushion empuk gak bikin lecet, sol karet anti-slip');
-  const [pricePromo, setPricePromo] = useState('Lagi Diskon Kilat 50% + Promo Gratis Ongkir');
-  const [callToAction, setCallToAction] = useState('Klik logo keranjang kuning di kiri bawah sebelum kehabisan!');
+  const [keyBenefits, setKeyBenefits] = useState('');
+  const [pricePromo, setPricePromo] = useState('');
+  const [callToAction, setCallToAction] = useState('');
   const [hookStyle, setHookStyle] = useState<'PAIN_POINT' | 'CURIOSITY' | 'UNBOXING' | 'BEFORE_AFTER' | 'AESTHETIC_REVEAL'>('PAIN_POINT');
   const [sceneCount, setSceneCount] = useState<number>(4);
   const [imageEngine, setImageEngine] = useState<string>('nano-asli');
   const [videoEngine, setVideoEngine] = useState<string>('veo-asli');
-  const [characterImage, setCharacterImage] = useState(SAMPLE_PRESETS[0].creatorImage || '');
+  const [characterImage, setCharacterImage] = useState('');
   const [productInfo, setProductInfo] = useState('');
   
-  const [assets, setAssets] = useState<ProductAsset[]>(initialAssets.length > 0 ? initialAssets : SAMPLE_PRESETS[0].images.map((img, idx) => ({
-    id: `sample-shoe-${idx}`,
-    type: 'IMAGE',
-    url: img.url,
-    name: img.name
-  })));
+  const [assets, setAssets] = useState<ProductAsset[]>(initialAssets);
   const [referenceVideoUrl, setReferenceVideoUrl] = useState('');
 
   if (!isOpen) return null;
@@ -232,49 +154,7 @@ export default function AffiliateConfigModal({
     setAssets(prev => prev.filter(a => a.id !== id));
   };
 
-  const applyPreset = (preset: typeof SAMPLE_PRESETS[0], autoExecute: boolean = false) => {
-    const presetAssets: ProductAsset[] = preset.images.map((img, idx) => ({
-      id: `preset-${preset.id}-${idx}`,
-      type: 'IMAGE',
-      url: img.url,
-      name: img.name
-    }));
-    setAssets(presetAssets);
-    setProductName(preset.productName);
-    setCategory(preset.category);
-    setPlatform(preset.platform);
-    setKeyBenefits(preset.keyBenefits);
-    setPricePromo(preset.pricePromo);
-    setCallToAction(preset.callToAction);
-    setHookStyle(preset.hookStyle);
-    if (!characterImage || characterImage.startsWith('http')) {
-      setCharacterImage(preset.creatorImage || '');
-    }
-
-    if (autoExecute) {
-      const activeChar = characterImage || preset.creatorImage || undefined;
-      const config: AffiliateConfig = {
-        productName: preset.productName,
-        category: preset.category,
-        platform: preset.platform,
-        aspectRatio: '9:16',
-        keyBenefits: preset.keyBenefits,
-        pricePromo: preset.pricePromo,
-        callToAction: preset.callToAction,
-        hookStyle: preset.hookStyle,
-        characterImage: activeChar,
-        productInfo: productInfo || preset.keyBenefits,
-        productImages: presetAssets.map(a => a.url),
-        referenceVideoUrl: referenceVideoUrl || undefined,
-        sceneCount: sceneCount,
-        imageEngine: imageEngine,
-        videoEngine: videoEngine
-      };
-      const promptText = `Buatkan video affiliate ${preset.platform} untuk produk ${preset.productName}. Keunggulan: ${preset.keyBenefits}. Promo: ${preset.pricePromo}. Call To Action: ${preset.callToAction}. Hook style: ${preset.hookStyle}.`;
-      onSubmit(config, presetAssets, promptText);
-      onClose();
-    }
-  };
+        
 
   const handleStartGeneration = () => {
     const productImages = assets.filter(a => a.type === 'IMAGE').map(a => a.url);
@@ -341,46 +221,6 @@ export default function AffiliateConfigModal({
         {/* Form Body */}
         <div className="p-6 space-y-5 overflow-y-auto max-h-[70vh] text-xs">
           
-          {/* Quick 1-Click Test Presets Banner */}
-          <div className="p-3.5 bg-gradient-to-r from-indigo-950/60 via-purple-950/40 to-slate-950 border border-indigo-500/40 rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 font-bold text-indigo-300 text-xs">
-                <Sparkles size={14} className="text-indigo-400" />
-                <span>UJI CEPAT WORKSPACE AFFILIATE (PILIH PRESET):</span>
-              </div>
-              <span className="text-[10px] text-gray-400 font-mono">1-KLIK SIAP UJI</span>
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {SAMPLE_PRESETS.map((preset) => (
-                <div key={preset.id} className="p-2 rounded-lg bg-black/40 border border-white/10 hover:border-indigo-500/50 flex flex-col justify-between gap-1.5 transition">
-                  <div>
-                    <div className="font-bold text-white text-[11px] truncate">{preset.label}</div>
-                    <div className="text-[9px] text-gray-400 truncate">{preset.platform} • {preset.hookStyle}</div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => applyPreset(preset, false)}
-                      className="flex-1 py-1 px-1.5 rounded bg-white/5 hover:bg-white/15 text-[9px] text-gray-300 font-medium transition text-center"
-                    >
-                      Pilih Data
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => applyPreset(preset, true)}
-                      className="py-1 px-2 rounded bg-indigo-600 hover:bg-indigo-500 text-[9px] text-white font-bold transition flex items-center gap-1"
-                      title="Langsung generate storyboard & naskah sekarang"
-                    >
-                      <Zap size={10} />
-                      <span>Uji</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* 1. Upload Product Photos, Character & Reference Video */}
           <div className="space-y-3">
             <div className="grid grid-cols-1 gap-3 mb-2">

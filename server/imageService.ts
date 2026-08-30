@@ -649,24 +649,17 @@ export class ImageGenerationService {
           styleSuffix = 'Clean educational explainer graphic, high-contrast infographic illustration';
       }
     } else if (videoType === 'AFFILIATE') {
-      const lowerT2I = (rawT2I || '').toLowerCase();
-      const lowerVisual = (rawVisual || '').toLowerCase();
-      const combined = `${lowerT2I} ${lowerVisual}`;
-      if (combined.includes('full-body') || combined.includes('full body') || combined.includes('on feet') || combined.includes('walking') || combined.includes('streetwear') || combined.includes('lifestyle')) {
-        styleSuffix = 'authentic creator lifestyle photograph, 35mm lens, authentic human skin texture with pores, clean composition, natural warm ambient lighting, TikTok UGC video style';
-      } else if (combined.includes('macro') || combined.includes('close-up') || combined.includes('texture') || combined.includes('stitch')) {
-        styleSuffix = 'sharp macro photography, extreme close-up showing fine product textures, crystal clear focus, clean diffused studio lighting';
-      } else if (combined.includes('studio') || combined.includes('commercial')) {
-        styleSuffix = 'commercial advertising photograph, professional product presentation, sharp focus, clean studio backdrop, balanced key lighting';
+      const visualStyle = scene.visualStyle || 'ugc';
+      if (visualStyle === 'studio') {
+        styleSuffix = 'commercial advertising photograph, professional product presentation, sharp focus, clean studio backdrop, balanced key lighting, 8k resolution';
       } else {
-        styleSuffix = 'authentic TikTok UGC creator style, 35mm photo, natural warm indoor lighting, authentic human skin texture with pores, crisp focus on creator and product';
+        styleSuffix = 'authentic smartphone UGC video camera perspective, natural warm indoor lighting, authentic human skin texture with pores, raw and candid';
       }
     } else {
       styleSuffix = 'Cinematic 8k movie still, anamorphic lens flare, master shot, photorealistic';
     }
 
-    const seed = (characterProfile?.styleSeed || 8849201) + (sceneIndex * 317);
-    const endModifiers = `${styleSuffix}, sharp focus, 8k resolution, professional advertising photography --seed ${seed}`;
+    const endModifiers = `${styleSuffix}`;
 
     // Clean any negative phrases from raw LLM output to prevent diffusion negation collisions
     const cleanedRawT2I = ImageGenerationService.sanitizeNegativePhrasesFromPositivePrompt(rawT2I);
