@@ -2,8 +2,9 @@ import { ProviderStatus, Scene } from "../../shared/types";
 import { VideoGenerationProvider } from "./VideoProvider";
 import { FounderService } from "../fcc/FounderService";
 import { keyRotator } from "../../../server/keyRotator";
-import { getFalModel, buildFalPayload, FAL_TIER_DEFAULTS } from "../../../server/falModelConfig";
+import { getFalModel, buildFalPayload, FAL_TIER_DEFAULTS, resolveToDataUriOrPublic } from "../../../server/falModelConfig";
 import { renderWithFalQueue } from "../../../server/falQueueRunner";
+import { ImageGenerationService } from "../../../server/imageService";
 import fetch from "node-fetch";
 
 export class FalVideoAdapter implements VideoGenerationProvider {
@@ -48,7 +49,11 @@ export class FalVideoAdapter implements VideoGenerationProvider {
     const modelPath = modelDef.id;
 
     const prompt = scene.promptImageToVideo || scene.promptTextToImage || scene.visualDirection || 'High quality cinematic scene';
-    const imageUrl = scene.imageUrl || scene.assetUrl || '';
+    const rawImageUrl = scene.imageUrl || scene.assetUrl || '';
+    let imageUrl = rawImageUrl;
+    if (rawImageUrl) {
+      imageUrl = (await ImageGenerationService.ensurePublicFalImageUrl(rawImageUrl, falApiKey)) || resolveToDataUriOrPublic(rawImageUrl);
+    }
 
     console.log(`[FAL.AI VIDEO ADAPTER] Rendering scene using single source model: ${modelPath}`);
     if (onProgress) onProgress(`Rendering scene with ${modelDef.name}...`);

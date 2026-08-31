@@ -366,6 +366,14 @@ export function FounderFalLiveTester() {
                             <img
                               src={res.resultUrl}
                               alt={res.name}
+                              referrerPolicy="no-referrer"
+                              crossOrigin="anonymous"
+                              onError={(e) => {
+                                const target = e.currentTarget;
+                                if (res.resultUrl && res.resultUrl.startsWith('http') && !target.src.includes('/api/proxy-image')) {
+                                  target.src = `/api/proxy-image?url=${encodeURIComponent(res.resultUrl)}`;
+                                }
+                              }}
                               className="w-full h-full object-cover cursor-pointer hover:opacity-95 transition-opacity"
                               onClick={() => setSelectedZoomImg(res.resultUrl || null)}
                             />
@@ -481,6 +489,14 @@ export function FounderFalLiveTester() {
             <img
               src={selectedZoomImg}
               alt="4K Render Zoom"
+              referrerPolicy="no-referrer"
+              crossOrigin="anonymous"
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (selectedZoomImg && selectedZoomImg.startsWith('http') && !target.src.includes('/api/proxy-image')) {
+                  target.src = `/api/proxy-image?url=${encodeURIComponent(selectedZoomImg)}`;
+                }
+              }}
               className="max-w-full max-h-[85vh] object-contain rounded-2xl border border-[#333] shadow-2xl"
             />
             <div className="absolute top-4 right-4 flex items-center gap-2">

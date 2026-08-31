@@ -6,7 +6,7 @@ import { StitcherAgent } from './src/server/core/StitcherAgent';
 
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { ProductionOrchestrator, projectEvents, projects, loadProjects, saveProjects, startOutputsCleanupTask } from "./server/orchestrator";
+import { ProductionOrchestrator, projectEvents, projects, loadProjects, saveProjects, startOutputsCleanupTask, getRemoteUrlForFilename, setRemoteUrlForFilename } from "./server/orchestrator";
 import { CreditService } from "./server/creditService";
 import { getVideoProvider } from "./src/server/providers";
 import { ConversationalIntentRouter } from "./src/server/core/IntentRouter";
@@ -1130,6 +1130,162 @@ createdAt: new Date().toISOString()
     }
   });
 
+  // GET all generated images & keyframe assets (Fal.ai, Gemini, uploaded, project frames)
+  app.get('/api/gallery/images', (req, res) => {
+    try {
+      const imageMap = new Map<string, any>();
+      const outputsDir = path.join(process.cwd(), 'outputs');
+
+      // 1. Gather all scene keyframes and reference images from active & saved projects
+      for (const p of projects.values()) {
+        if (p.storyboard && Array.isArray(p.storyboard.scenes)) {
+          p.storyboard.scenes.forEach((scene: any, idx: number) => {
+            const imgUrl = scene.imageUrl || scene.assetUrl;
+            if (imgUrl && typeof imgUrl === 'string' && !imgUrl.startsWith('data:video/')) {
+              const engineStr = scene.imageEngine || (p as any).imageEngine || (p as any).imageModel || 'fal-ai';
+              const isFal = engineStr.includes('fal') || engineStr.includes('flux') || engineStr.includes('wan') || engineStr.includes('hunyuan') || engineStr.includes('seedance') || engineStr.includes('kling') || engineStr.includes('standard') || engineStr.includes('precision') || engineStr.includes('draft');
+              const isGemini = engineStr.includes('gemini') || engineStr.includes('banana') || engineStr.includes('nano-asli') || engineStr.includes('google');
+
+              imageMap.set(imgUrl, {
+                id: `proj_${p.id}_scene_${scene.id || idx + 1}`,
+                url: imgUrl,
+                thumbnailUrl: imgUrl,
+                prompt: scene.visualDirection || scene.textOverlay || `Keyframe Adegan #${idx + 1}`,
+                engine: engineStr,
+                source: isFal ? 'fal-ai' : isGemini ? 'gemini' : 'other',
+                projectId: p.id,
+                projectTitle: p.title || 'Tanpa Judul',
+                sceneIndex: idx + 1,
+                sceneId: scene.id,
+                aspectRatio: (p as any).aspectRatio || (p as any).customRatio || '9:16',
+                createdAt: p.createdAt || new Date().toISOString()
+              });
+            }
+          });
+        }
+
+        // Master character reference
+        if (p.masterCharacterImageUrl && typeof p.masterCharacterImageUrl === 'string') {
+          imageMap.set(p.masterCharacterImageUrl, {
+            id: `proj_${p.id}_char_ref`,
+            url: p.masterCharacterImageUrl,
+            thumbnailUrl: p.masterCharacterImageUrl,
+            prompt: `Master Character Reference: ${p.characterProfile?.name || p.title || 'Proyek'}`,
+            engine: 'reference',
+            source: 'reference',
+            projectId: p.id,
+            projectTitle: p.title || 'Tanpa Judul',
+            createdAt: p.createdAt || new Date().toISOString()
+          });
+        }
+
+        // Master product reference
+        if (p.masterProductImageUrl && typeof p.masterProductImageUrl === 'string') {
+          imageMap.set(p.masterProductImageUrl, {
+            id: `proj_${p.id}_prod_ref`,
+            url: p.masterProductImageUrl,
+            thumbnailUrl: p.masterProductImageUrl,
+            prompt: `Master Product Reference: ${p.title || 'Produk'}`,
+            engine: 'reference',
+            source: 'reference',
+            projectId: p.id,
+            projectTitle: p.title || 'Tanpa Judul',
+            createdAt: p.createdAt || new Date().toISOString()
+          });
+        }
+      }
+
+      // 2. Scan outputs directory for all generated images saved on disk
+      if (fs.existsSync(outputsDir)) {
+        const files = fs.readdirSync(outputsDir);
+        files.forEach(file => {
+          if (/\.(png|jpg|jpeg|webp)$/i.test(file)) {
+            const url = `/outputs/${file}`;
+            try {
+              const stat = fs.statSync(path.join(outputsDir, file));
+              if (!imageMap.has(url)) {
+                let inferredSource = 'fal-ai';
+                let inferredEngine = 'fal-ai/flux/schnell';
+                if (file.includes('gemini') || file.includes('banana') || file.includes('nano')) {
+                  inferredSource = 'gemini';
+                  inferredEngine = 'gemini-2.5-flash-image';
+                } else if (file.includes('ref') || file.includes('upload') || file.includes('avatar') || file.includes('product')) {
+                  inferredSource = 'uploaded';
+                  inferredEngine = 'custom-upload';
+                }
+
+                let promptDesc = 'Generated Image Asset';
+                if (file.startsWith('scene_img_')) {
+                  const m = file.match(/scene_img_(\d+)/);
+                  promptDesc = m ? `Generated Keyframe Adegan #${m[1]}` : 'Generated Scene Keyframe';
+                } else if (file.startsWith('studio_scene_')) {
+                  promptDesc = 'Studio Live Generated Keyframe';
+                } else if (file.startsWith('ref_') || file.startsWith('product_')) {
+                  promptDesc = 'Aset Referensi Visual';
+                }
+
+                imageMap.set(url, {
+                  id: `output_${file}`,
+                  url,
+                  thumbnailUrl: url,
+                  filename: file,
+                  prompt: promptDesc,
+                  engine: inferredEngine,
+                  source: inferredSource,
+                  size: stat.size,
+                  createdAt: stat.mtime.toISOString()
+                });
+              } else {
+                const existing = imageMap.get(url);
+                existing.size = stat.size;
+                existing.filename = file;
+              }
+            } catch (statErr) {
+              // Ignore stat errors for deleted temp files
+            }
+          }
+        });
+      }
+
+      const images = Array.from(imageMap.values()).sort((a, b) => {
+        const tA = new Date(a.createdAt || 0).getTime();
+        const tB = new Date(b.createdAt || 0).getTime();
+        return tB - tA;
+      });
+
+      res.json({ success: true, count: images.length, images });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // POST upload an asset to the gallery library
+  app.post('/api/gallery/images/upload', async (req, res) => {
+    try {
+      const { image, filename, prompt } = req.body;
+      if (!image) return res.status(400).json({ success: false, error: 'Missing image data' });
+      const { saveFileLocally } = require('./server/orchestrator');
+      const localUrl = await saveFileLocally(image, filename || 'custom_gallery_asset', 'png');
+      res.json({ success: true, url: localUrl });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // DELETE a gallery asset from disk
+  app.delete('/api/gallery/images/:filename', (req, res) => {
+    try {
+      const filename = path.basename(req.params.filename);
+      const filePath = path.join(process.cwd(), 'outputs', filename);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   app.delete('/api/gallery/:id', (req, res) => {
     try {
       projects.delete(req.params.id);
@@ -1417,15 +1573,115 @@ createdAt: new Date().toISOString()
     });
   });
 
-  app.get('/outputs/:filename', (req, res, next) => {
-    const filePath = path.join(process.cwd(), 'outputs', req.params.filename);
-    if (!fs.existsSync(filePath) || fs.statSync(filePath).size === 0) {
-      return res.status(404).send('File video master tidak ditemukan di server. Silakan klik "Jahit Master Video" untuk membuat ulang.');
+  // Image Proxy Route for safe cross-origin fetching
+  app.get('/api/proxy-image', async (req, res) => {
+    try {
+      const url = req.query.url as string;
+      if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+        return res.status(400).json({ error: 'Valid URL is required' });
+      }
+      const response = await fetch(url);
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'Failed to fetch upstream image' });
+      }
+      const contentType = response.headers.get('content-type') || 'image/jpeg';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      const arrayBuffer = await response.arrayBuffer();
+      res.send(Buffer.from(arrayBuffer));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Image proxy error' });
     }
-    next();
   });
 
-  app.use('/outputs', express.static(path.join(process.cwd(), 'outputs')));
+  // Resilient /outputs handler: serves disk file or dynamically restores from remote CDN (Fal.ai, GCS)
+  app.get('/outputs/:filename', async (req, res) => {
+    const filename = req.params.filename;
+    const outputsDir = path.join(process.cwd(), 'outputs');
+    const filePath = path.join(outputsDir, filename);
+
+    // 1. If file exists on disk and is not empty, serve directly with CORS & cache headers
+    if (fs.existsSync(filePath)) {
+      try {
+        const stats = fs.statSync(filePath);
+        if (stats.size > 0) {
+          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          if (filename.endsWith('.png')) res.setHeader('Content-Type', 'image/png');
+          else if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) res.setHeader('Content-Type', 'image/jpeg');
+          else if (filename.endsWith('.webp')) res.setHeader('Content-Type', 'image/webp');
+          else if (filename.endsWith('.mp4')) res.setHeader('Content-Type', 'video/mp4');
+          return res.sendFile(filePath);
+        }
+      } catch (statErr) {
+        console.warn(`[Outputs Handler] Error checking stat for ${filename}:`, statErr);
+      }
+    }
+
+    // 2. If file does NOT exist on disk (e.g. deployed container restart / Cloud Run instance),
+    // search for known remote URL in persistent map or active project storyboard
+    let remoteUrl = getRemoteUrlForFilename(filename);
+    if (!remoteUrl) {
+      for (const p of projects.values()) {
+        if (p.storyboard && Array.isArray(p.storyboard.scenes)) {
+          for (const s of p.storyboard.scenes) {
+            if ((s.imageUrl && s.imageUrl.includes(filename)) || (s.assetUrl && s.assetUrl.includes(filename))) {
+              remoteUrl = s.remoteUrl || s.falUrl || (s.imageUrl?.startsWith('http') ? s.imageUrl : undefined);
+              if (remoteUrl) break;
+            }
+            if (s.videoUrl && s.videoUrl.includes(filename)) {
+              remoteUrl = (s as any).remoteVideoUrl || (s.videoUrl.startsWith('http') ? s.videoUrl : undefined);
+              if (remoteUrl) break;
+            }
+          }
+        }
+        if (remoteUrl) break;
+      }
+    }
+
+    // 3. If remote URL found, fetch and auto-restore to disk cache
+    if (remoteUrl && (remoteUrl.startsWith('http://') || remoteUrl.startsWith('https://'))) {
+      try {
+        console.log(`[Outputs Handler] Restoring missing asset '${filename}' from remote URL: ${remoteUrl}`);
+        const response = await fetch(remoteUrl);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          
+          if (!fs.existsSync(outputsDir)) {
+            fs.mkdirSync(outputsDir, { recursive: true });
+          }
+          fs.writeFileSync(filePath, buffer);
+          setRemoteUrlForFilename(filename, remoteUrl);
+
+          const contentType = response.headers.get('content-type') || 
+            (filename.endsWith('.png') ? 'image/png' : 
+             filename.endsWith('.mp4') ? 'video/mp4' : 
+             filename.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
+
+          res.setHeader('Content-Type', contentType);
+          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          return res.send(buffer);
+        } else {
+          return res.redirect(remoteUrl);
+        }
+      } catch (fetchErr: any) {
+        console.warn(`[Outputs Handler] Failed to fetch remote asset for ${filename}:`, fetchErr.message);
+        return res.redirect(remoteUrl);
+      }
+    }
+
+    // 4. Fallback if not found anywhere
+    if (filename.endsWith('.mp4')) {
+      return res.status(404).send('File video tidak ditemukan di server. Silakan buat ulang video.');
+    }
+    return res.status(404).send('File gambar tidak ditemukan di server.');
+  });
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {

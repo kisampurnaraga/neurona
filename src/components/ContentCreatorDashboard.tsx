@@ -167,6 +167,7 @@ export const ContentCreatorDashboard: React.FC<ContentCreatorDashboardProps> = (
                     <img 
                       src={channelData?.snippet?.thumbnails?.default?.url || user?.photoURL || `https://ui-avatars.com/api/?name=${user?.displayName || 'User'}&background=random`} 
                       alt="Channel" 
+                      referrerPolicy="no-referrer"
                       className="w-10 h-10 rounded-full border border-white/10" 
                     />
                     <div className="overflow-hidden">

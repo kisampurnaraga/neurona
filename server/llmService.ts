@@ -1,8 +1,11 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from "openai";
+import fs from "fs";
+import path from "path";
 import { FounderService } from "../src/server/fcc/FounderService";
 import { CinematicStyleLibrary } from "./StyleLibrary";
 import { keyRotator } from "./keyRotator";
+import { resolveLocalFilePath } from "./falModelConfig";
 
 export function stripBase64FromText(text: string | undefined | null): string {
   if (!text) return '';
@@ -334,6 +337,15 @@ Craft a high-converting affiliate video brief focusing on scroll-stopping hook, 
         const buffer = await res.arrayBuffer();
         base64Data = Buffer.from(buffer).toString('base64');
         mimeType = res.headers.get('content-type') || 'image/jpeg';
+      } else {
+        const localPath = resolveLocalFilePath(imageUrl) || (path.isAbsolute(imageUrl) ? imageUrl : path.join(process.cwd(), imageUrl));
+        if (localPath && fs.existsSync(localPath)) {
+          const buffer = fs.readFileSync(localPath);
+          base64Data = buffer.toString('base64');
+          if (localPath.endsWith('.png')) mimeType = 'image/png';
+          else if (localPath.endsWith('.webp')) mimeType = 'image/webp';
+          else mimeType = 'image/jpeg';
+        }
       }
     } catch (fetchErr: any) {
       onLog?.('BATARA', `Peringatan fetch image buffer untuk produk: ${fetchErr?.message || fetchErr}`, 'WARN');
@@ -436,6 +448,15 @@ Craft a high-converting affiliate video brief focusing on scroll-stopping hook, 
         const buffer = await res.arrayBuffer();
         base64Data = Buffer.from(buffer).toString('base64');
         mimeType = res.headers.get('content-type') || 'image/jpeg';
+      } else {
+        const localPath = resolveLocalFilePath(imageUrl) || (path.isAbsolute(imageUrl) ? imageUrl : path.join(process.cwd(), imageUrl));
+        if (localPath && fs.existsSync(localPath)) {
+          const buffer = fs.readFileSync(localPath);
+          base64Data = buffer.toString('base64');
+          if (localPath.endsWith('.png')) mimeType = 'image/png';
+          else if (localPath.endsWith('.webp')) mimeType = 'image/webp';
+          else mimeType = 'image/jpeg';
+        }
       }
     } catch (fetchErr: any) {
       onLog?.('BATARA', `Peringatan fetch image buffer untuk karakter: ${fetchErr?.message || fetchErr}`, 'WARN');

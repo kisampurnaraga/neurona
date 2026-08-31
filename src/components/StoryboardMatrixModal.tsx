@@ -49,7 +49,8 @@ import {
   Wand2,
   AlertTriangle,
   CheckCircle,
-  RefreshCw, Trash2
+  RefreshCw, Trash2,
+  Search, Filter, FolderHeart, Library, Images, ArrowDownToLine
 } from 'lucide-react';
 import type { ProductionProject, Scene } from '../shared/types';
 import { neuronaVoice, AVAILABLE_VOICES, VoiceOption } from '../utils/speechSynthesis';
@@ -189,6 +190,23 @@ const getSceneAmplitudes = (sc: any, barCount = 10): number[] => {
   return amplitudes;
 };
 
+export interface GalleryImageAsset {
+  id: string;
+  url: string;
+  thumbnailUrl: string;
+  prompt?: string;
+  engine?: string;
+  source?: 'fal-ai' | 'gemini' | 'uploaded' | 'reference' | 'other';
+  projectId?: string;
+  projectTitle?: string;
+  sceneIndex?: number;
+  sceneId?: string;
+  aspectRatio?: string;
+  createdAt?: string;
+  filename?: string;
+  size?: number;
+}
+
 export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   isOpen,
   onClose,
@@ -203,7 +221,128 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   onResyncScene,
   onResetProject
 }) => {
-  const [activeTab, setActiveTab] = useState<'SCENES' | 'TIERS'>('SCENES');
+  const [activeTab, setActiveTab] = useState<'SCENES' | 'GALLERY' | 'TIERS'>('SCENES');
+  
+  // Gallery Assets States (Fal.ai, Gemini, Uploads)
+  const [galleryImages, setGalleryImages] = useState<GalleryImageAsset[]>([]);
+  const [isLoadingGallery, setIsLoadingGallery] = useState<boolean>(false);
+  const [galleryFilter, setGalleryFilter] = useState<'all' | 'fal-ai' | 'gemini' | 'current' | 'uploaded'>('all');
+  const [gallerySearch, setGallerySearch] = useState<string>('');
+  const [dragOverSceneId, setDragOverSceneId] = useState<string | null>(null);
+  const [pickerSceneTarget, setPickerSceneTarget] = useState<Scene | null>(null);
+  const [isQuickTrayOpen, setIsQuickTrayOpen] = useState<boolean>(true);
+  const [galleryToast, setGalleryToast] = useState<string | null>(null);
+
+  const fetchGalleryImages = async () => {
+    setIsLoadingGallery(true);
+    try {
+      const res = await fetch('/api/gallery/images');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.images)) {
+        setGalleryImages(data.images);
+      }
+    } catch (err) {
+      console.error('Failed to load gallery images:', err);
+    } finally {
+      setIsLoadingGallery(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchGalleryImages();
+    }
+  }, [isOpen, project?.id]);
+
+  const handleApplyImageToScene = async (sceneId: string, imageUrl: string) => {
+    if (!project) return;
+    setIsProcessingAction(`apply-img-${sceneId}`);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/override-scene`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sceneId,
+          imageUrl: imageUrl,
+          assetUrl: imageUrl,
+          imageStatus: 'COMPLETED'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setGalleryToast(`Gambar berhasil dipasang ke adegan tanpa biaya kredit!`);
+        setTimeout(() => setGalleryToast(null), 3500);
+        setPickerSceneTarget(null);
+        fetchGalleryImages();
+      }
+    } catch (err) {
+      console.error('Failed to apply image to scene:', err);
+    } finally {
+      setIsProcessingAction(null);
+    }
+  };
+
+  const handleUploadGalleryAsset = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsLoadingGallery(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64 = event.target?.result as string;
+        const res = await fetch('/api/gallery/images/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: base64,
+            filename: `upload_${Date.now()}`
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          setGalleryToast('Aset gambar berhasil diunggah ke Galeri!');
+          setTimeout(() => setGalleryToast(null), 3000);
+          fetchGalleryImages();
+        }
+        setIsLoadingGallery(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Upload asset error:', err);
+      setIsLoadingGallery(false);
+    }
+  };
+
+  const handleDeleteGalleryAsset = async (asset: GalleryImageAsset) => {
+    if (!asset.filename) return;
+    if (!window.confirm(`Hapus gambar '${asset.prompt || asset.filename}' dari galeri lokal?`)) return;
+    try {
+      await fetch(`/api/gallery/images/${encodeURIComponent(asset.filename)}`, {
+        method: 'DELETE'
+      });
+      setGalleryImages(prev => prev.filter(img => img.id !== asset.id && img.url !== asset.url));
+      setGalleryToast('Gambar dihapus dari galeri.');
+      setTimeout(() => setGalleryToast(null), 2500);
+    } catch (err) {
+      console.error('Delete asset error:', err);
+    }
+  };
+
+  const filteredGalleryImages = galleryImages.filter(img => {
+    if (galleryFilter === 'fal-ai' && img.source !== 'fal-ai') return false;
+    if (galleryFilter === 'gemini' && img.source !== 'gemini') return false;
+    if (galleryFilter === 'uploaded' && img.source !== 'uploaded') return false;
+    if (galleryFilter === 'current' && img.projectId !== project?.id) return false;
+    if (gallerySearch.trim()) {
+      const q = gallerySearch.toLowerCase();
+      const matchPrompt = img.prompt?.toLowerCase().includes(q);
+      const matchFile = img.filename?.toLowerCase().includes(q);
+      const matchEngine = img.engine?.toLowerCase().includes(q);
+      const matchProject = img.projectTitle?.toLowerCase().includes(q);
+      return matchPrompt || matchFile || matchEngine || matchProject;
+    }
+    return true;
+  });
   const [selectedImageEngine, setSelectedImageEngine] = useState<ImageModelId>(() => {
     const saved = localStorage.getItem('neurona_image_model') as ImageModelId;
     const valid = IMAGE_MODEL_OPTIONS.some(m => m.id === saved);
@@ -992,6 +1131,26 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                 <span>Galeri Adegan</span>
               </button>
               <button
+                onClick={() => {
+                  setActiveTab('GALLERY');
+                  fetchGalleryImages();
+                }}
+                className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'GALLERY'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Lihat semua aset gambar hasil generate Fal.ai & AI untuk dipakai ulang tanpa kredit"
+              >
+                <Images size={12} className={activeTab === 'GALLERY' ? 'text-white' : 'text-emerald-400'} />
+                <span>Galeri Aset AI</span>
+                {galleryImages.length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-emerald-400/20 text-emerald-300 text-[9px] font-mono">
+                    {galleryImages.length}
+                  </span>
+                )}
+              </button>
+              <button
                 onClick={() => setActiveTab('TIERS')}
                 className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition flex items-center gap-1 cursor-pointer ${
                   activeTab === 'TIERS'
@@ -1365,6 +1524,107 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* QUICK ASSET TRAY (FAL.AI & AI ASSETS CAROUSEL) */}
+              <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-purple-950/40 border border-emerald-500/30 rounded-2xl p-3.5 space-y-2 shadow-lg">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      <Sparkles size={14} className="text-emerald-400" />
+                    </div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                          Laci Aset Gambar Fal.ai &amp; AI
+                        </h4>
+                        <span className="px-2 py-0.2 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/40 text-[9px] font-mono font-bold">
+                          {galleryImages.length} ASET SIAP PAKAI
+                        </span>
+                        <span className="px-2 py-0.2 rounded-full bg-purple-950 text-purple-300 border border-purple-500/40 text-[9px] font-bold">
+                          💡 Hemat Kredit (0 Token)
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Tarik (drag) foto ke kotak adegan mana saja, atau klik <em>"Pasang ke Adegan"</em> untuk memakai ulang tanpa bayar token.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('GALLERY');
+                        fetchGalleryImages();
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-slate-950 font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow"
+                    >
+                      <Images size={12} />
+                      <span>Buka Galeri Penuh</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsQuickTrayOpen(!isQuickTrayOpen)}
+                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] transition cursor-pointer"
+                    >
+                      {isQuickTrayOpen ? 'Tutup Laci' : 'Buka Laci'}
+                    </button>
+                  </div>
+                </div>
+
+                {isQuickTrayOpen && (
+                  <div className="pt-2 border-t border-slate-800/80">
+                    {galleryImages.length === 0 ? (
+                      <div className="py-4 px-3 text-center text-[11px] text-slate-400 bg-slate-950/60 rounded-xl border border-dashed border-slate-800 flex flex-col items-center gap-1">
+                        <span>Belum ada aset gambar tersimpan di galeri lokal.</span>
+                        <span className="text-[9px] text-slate-500">Saat Anda generate dengan Fal.ai atau Gemini, hasilnya otomatis terkumpul di sini.</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-slate-700">
+                        {galleryImages.map((img) => (
+                          <div
+                            key={img.id}
+                            draggable={true}
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('text/plain', img.url);
+                              e.dataTransfer.setData('application/json', JSON.stringify(img));
+                              e.dataTransfer.effectAllowed = 'copy';
+                            }}
+                            className="group relative shrink-0 w-28 h-20 rounded-xl overflow-hidden border border-slate-700 hover:border-emerald-400 bg-black cursor-grab active:cursor-grabbing shadow transition hover:scale-105"
+                            title={`Tarik gambar ini ke adegan mana saja (Prompt: ${img.prompt || 'Keyframe'})`}
+                          >
+                            <img
+                              src={img.thumbnailUrl || img.url}
+                              alt={img.prompt || 'Asset'}
+                              referrerPolicy="no-referrer"
+                              crossOrigin="anonymous"
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute top-1 left-1 px-1 py-0.2 rounded bg-black/80 text-[7px] font-mono text-emerald-300 border border-emerald-500/30">
+                              {img.source === 'fal-ai' ? 'Fal' : img.source === 'gemini' ? 'Gemini' : 'Upload'}
+                            </div>
+                            <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center p-1 text-center gap-1">
+                              <span className="text-[8px] text-emerald-300 font-bold leading-tight">👆 Tarik ke Scene</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currentScene = scenes[currentScenePage];
+                                  if (currentScene) {
+                                    handleApplyImageToScene(currentScene.id, img.url);
+                                  }
+                                }}
+                                className="px-1.5 py-0.5 rounded bg-emerald-500 text-slate-950 font-bold text-[8px] hover:bg-emerald-400 cursor-pointer shadow whitespace-nowrap"
+                              >
+                                Pasang Scene #{currentScenePage + 1}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               
               {/* Product Lock Reference Area */}
               {project.videoType === 'AFFILIATE' && project.affiliateConfig?.productImages?.[0] && (
@@ -1697,7 +1957,37 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                 </div>
 
                                 {/* Media Preview Box (Video or Image) */}
-                                <div className={`relative ${getProjectAspectRatioClass(project)} w-full rounded-xl overflow-hidden bg-slate-900 border border-slate-800 flex items-center justify-center group shadow-inner`}>
+                                <div 
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = 'copy';
+                                    if (dragOverSceneId !== scene.id) setDragOverSceneId(scene.id);
+                                  }}
+                                  onDragLeave={() => {
+                                    if (dragOverSceneId === scene.id) setDragOverSceneId(null);
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    setDragOverSceneId(null);
+                                    const droppedUrl = e.dataTransfer.getData('text/plain');
+                                    if (droppedUrl) {
+                                      handleApplyImageToScene(scene.id, droppedUrl);
+                                    }
+                                  }}
+                                  className={`relative ${getProjectAspectRatioClass(project)} w-full rounded-xl overflow-hidden bg-slate-900 border ${
+                                    dragOverSceneId === scene.id 
+                                      ? 'border-2 border-emerald-400 ring-4 ring-emerald-500/30' 
+                                      : 'border-slate-800'
+                                  } flex items-center justify-center group shadow-inner transition-all`}
+                                >
+                                  {/* Drag Over Overlay Prompt */}
+                                  {dragOverSceneId === scene.id && (
+                                    <div className="absolute inset-0 z-40 bg-emerald-950/95 border-2 border-dashed border-emerald-400 flex flex-col items-center justify-center gap-1.5 text-white p-3 animate-in fade-in">
+                                      <ArrowDownToLine size={28} className="text-emerald-300 animate-bounce" />
+                                      <span className="text-xs font-bold text-emerald-200 text-center">Lepaskan Foto di Sini</span>
+                                      <span className="text-[9px] text-emerald-400 font-mono">Pasang ke Adegan #{idx + 1} (0 Token)</span>
+                                    </div>
+                                  )}
                                   {/* INTERACTIVE REFERENCE BUBBLES HUD (FACE & PRODUCT LOCK) */}
                                   <div className="absolute top-2.5 right-2.5 flex flex-col gap-2 z-30">
                                     {/* Face Lock Bubble - Show for all studios */}
@@ -1823,8 +2113,15 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                         crossOrigin="anonymous"
                                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                                         onError={(e) => {
-                                          if (scene.assetUrl && e.currentTarget.src !== scene.assetUrl) {
-                                            e.currentTarget.src = scene.assetUrl;
+                                          const target = e.currentTarget;
+                                          if (scene.remoteUrl && target.src !== scene.remoteUrl) {
+                                            target.src = scene.remoteUrl;
+                                          } else if (scene.falUrl && target.src !== scene.falUrl) {
+                                            target.src = scene.falUrl;
+                                          } else if (scene.assetUrl && target.src !== scene.assetUrl) {
+                                            target.src = scene.assetUrl;
+                                          } else if (displayImageSrc && displayImageSrc.startsWith('http') && !target.src.includes('/api/proxy-image')) {
+                                            target.src = `/api/proxy-image?url=${encodeURIComponent(displayImageSrc)}`;
                                           }
                                         }}
                                       />
@@ -2025,8 +2322,18 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                             );
                           })()}
                           
-                          {/* Manual Asset Upload Buttons */}
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                          {/* Manual Asset Upload & Gallery Picker Buttons */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1">
+                            <button
+                              type="button"
+                              onClick={() => setPickerSceneTarget(scene)}
+                              className="py-1.5 px-2 rounded-lg text-[10px] font-bold shadow transition flex items-center justify-center gap-1 cursor-pointer bg-gradient-to-r from-emerald-900/80 to-teal-900/80 hover:from-emerald-800 hover:to-teal-800 text-emerald-200 border border-emerald-500/40"
+                              title="Pilih dari semua gambar yang sudah di-generate (0 kredit)"
+                            >
+                              <Images size={11} className="text-emerald-400" />
+                              <span>Dari Galeri</span>
+                            </button>
+
                             <label className={`py-1.5 px-2 rounded-lg text-[10px] font-bold shadow transition flex items-center justify-center gap-1 cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 ${isImageGenerating ? 'opacity-50 pointer-events-none' : ''}`}>
                               <Upload size={11} />
                               <span>Upload Gambar</span>
@@ -2248,6 +2555,257 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     <span className="text-xs font-bold">Next</span>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
                   </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: AI IMAGE ASSET GALLERY (FAL.AI, GEMINI & UPLOADS) */}
+          {activeTab === 'GALLERY' && (
+            <div className="space-y-4">
+              {/* Top Header Card */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900 to-teal-950/70 border border-emerald-500/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shrink-0">
+                      <Images size={22} />
+                    </div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                          Galeri Aset AI &amp; Fal.ai
+                        </h3>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-500/40">
+                          {galleryImages.length} Foto Tersimpan
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-bold border border-purple-500/40">
+                          Hemat Hingga {galleryImages.length * 15} Kredit
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 mt-0.5">
+                        Semua gambar hasil generate Fal.ai, Gemini, dan upload tersimpan di sini. Tarik atau pilih gambar ke adegan storyboard mana saja tanpa memotong kredit!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0 w-full md:w-auto justify-end">
+                  <label className="py-2 px-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition cursor-pointer">
+                    <Upload size={14} />
+                    <span>Unggah Foto Baru</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleUploadGalleryAsset}
+                    />
+                  </label>
+                  <button
+                    onClick={fetchGalleryImages}
+                    className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs transition cursor-pointer flex items-center gap-1"
+                    title="Segarkan Galeri"
+                  >
+                    <RefreshCw size={14} className={isLoadingGallery ? 'animate-spin' : ''} />
+                    <span className="text-[11px]">Refresh</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Search & Filter Bar */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-950/80 p-3 rounded-xl border border-white/10 text-xs">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-mono text-slate-400 mr-1 flex items-center gap-1">
+                    <Filter size={11} /> Filter:
+                  </span>
+                  <button
+                    onClick={() => setGalleryFilter('all')}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${
+                      galleryFilter === 'all'
+                        ? 'bg-emerald-500 text-slate-950 shadow'
+                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    Semua ({galleryImages.length})
+                  </button>
+                  <button
+                    onClick={() => setGalleryFilter('fal-ai')}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${
+                      galleryFilter === 'fal-ai'
+                        ? 'bg-purple-600 text-white shadow'
+                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    Fal.ai ({galleryImages.filter(i => i.source === 'fal-ai').length})
+                  </button>
+                  <button
+                    onClick={() => setGalleryFilter('gemini')}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${
+                      galleryFilter === 'gemini'
+                        ? 'bg-cyan-600 text-white shadow'
+                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    Gemini ({galleryImages.filter(i => i.source === 'gemini').length})
+                  </button>
+                  <button
+                    onClick={() => setGalleryFilter('current')}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${
+                      galleryFilter === 'current'
+                        ? 'bg-amber-500 text-slate-950 shadow'
+                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    Proyek Ini ({galleryImages.filter(i => i.projectId === project.id).length})
+                  </button>
+                  <button
+                    onClick={() => setGalleryFilter('uploaded')}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${
+                      galleryFilter === 'uploaded'
+                        ? 'bg-blue-600 text-white shadow'
+                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    Upload ({galleryImages.filter(i => i.source === 'uploaded').length})
+                  </button>
+                </div>
+
+                <div className="relative min-w-[220px]">
+                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="text"
+                    value={gallerySearch}
+                    onChange={(e) => setGallerySearch(e.target.value)}
+                    placeholder="Cari prompt / model..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Gallery Grid */}
+              {isLoadingGallery && galleryImages.length === 0 ? (
+                <div className="py-20 text-center space-y-3">
+                  <Loader2 size={36} className="animate-spin text-emerald-400 mx-auto" />
+                  <p className="text-xs text-slate-400">Memuat galeri aset visual...</p>
+                </div>
+              ) : filteredGalleryImages.length === 0 ? (
+                <div className="py-16 text-center space-y-3 bg-slate-950/40 border border-dashed border-slate-800 rounded-2xl p-8">
+                  <Images size={44} className="text-slate-600 mx-auto" />
+                  <h4 className="text-sm font-bold text-slate-300">Belum ada gambar yang sesuai</h4>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    Gambar yang berhasil di-generate melalui Fal.ai atau Gemini akan otomatis tersimpan di sini agar bisa digunakan kembali tanpa memotong kredit.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
+                  {filteredGalleryImages.map((img) => (
+                    <div
+                      key={img.id}
+                      draggable={true}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/plain', img.url);
+                        e.dataTransfer.setData('application/json', JSON.stringify(img));
+                        e.dataTransfer.effectAllowed = 'copy';
+                      }}
+                      className="group relative bg-slate-900/90 border border-slate-800 hover:border-emerald-500/60 rounded-xl overflow-hidden shadow-lg transition-all duration-200 hover:-translate-y-0.5 flex flex-col cursor-grab active:cursor-grabbing"
+                    >
+                      {/* Image Thumbnail Aspect Container */}
+                      <div className="relative aspect-video w-full bg-black/60 overflow-hidden">
+                        <img
+                          src={img.thumbnailUrl || img.url}
+                          alt={img.prompt || 'Gallery Asset'}
+                          referrerPolicy="no-referrer"
+                          crossOrigin="anonymous"
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        />
+
+                        {/* Source Badge */}
+                        <div className="absolute top-1.5 left-1.5 z-10 flex gap-1">
+                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold font-mono uppercase tracking-wider ${
+                            img.source === 'fal-ai'
+                              ? 'bg-purple-950/90 text-purple-300 border border-purple-500/40'
+                              : img.source === 'gemini'
+                              ? 'bg-cyan-950/90 text-cyan-300 border border-cyan-500/40'
+                              : 'bg-slate-900/90 text-slate-300 border border-slate-700'
+                          }`}>
+                            {img.source === 'fal-ai' ? 'Fal.ai' : img.source === 'gemini' ? 'Gemini' : 'Upload'}
+                          </span>
+                        </div>
+
+                        {/* Hover Overlay with Preview / Download / Delete */}
+                        <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImageUrl(img.url)}
+                            className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs backdrop-blur-xs transition cursor-pointer"
+                            title="Perbesar"
+                          >
+                            <Eye size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const a = document.createElement('a');
+                              a.href = img.url;
+                              a.download = `gallery-${img.filename || 'asset'}.png`;
+                              a.target = '_blank';
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                            }}
+                            className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs backdrop-blur-xs transition cursor-pointer"
+                            title="Unduh"
+                          >
+                            <Download size={13} />
+                          </button>
+                          {img.filename && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteGalleryAsset(img)}
+                              className="p-1.5 rounded-lg bg-rose-500/30 hover:bg-rose-500/50 text-rose-300 text-xs backdrop-blur-xs transition cursor-pointer"
+                              title="Hapus dari Galeri"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Info and Assign Action */}
+                      <div className="p-2 flex-1 flex flex-col justify-between space-y-1.5 bg-slate-950/60">
+                        <p className="text-[10px] text-slate-300 line-clamp-2 leading-snug" title={img.prompt}>
+                          {img.prompt || 'Generated Keyframe Image'}
+                        </p>
+
+                        {/* Quick Assign Dropdown */}
+                        <div className="pt-1 border-t border-slate-800/80">
+                          <div className="flex items-center justify-between gap-1">
+                            <select
+                              defaultValue=""
+                              onChange={(e) => {
+                                const sId = e.target.value;
+                                if (sId) {
+                                  handleApplyImageToScene(sId, img.url);
+                                  e.target.value = '';
+                                }
+                              }}
+                              className="w-full bg-slate-900 border border-emerald-500/30 hover:border-emerald-500 text-emerald-300 font-bold rounded px-1.5 py-1 text-[9px] outline-none cursor-pointer"
+                            >
+                              <option value="" disabled>👉 Pasang ke Adegan...</option>
+                              {scenes.map((s, idx) => (
+                                <option key={s.id} value={s.id} className="bg-slate-900 text-white">
+                                  Adegan #{idx + 1} {s.imageUrl ? '(Ganti)' : '(Isi)'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="text-[8px] font-mono text-slate-500 mt-1 flex items-center justify-between">
+                            <span>👆 Tarik ke scene</span>
+                            <span className="text-emerald-400 font-bold">0 Kredit</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -3773,6 +4331,150 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                 Mengerti &amp; Perbaiki Adegan
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SCENE ASSET PICKER MODAL */}
+      {pickerSceneTarget && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="max-w-4xl w-full max-h-[85vh] bg-slate-900 border border-emerald-500/50 rounded-2xl flex flex-col shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  <Images size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    Pilih Gambar untuk Adegan #{scenes.findIndex(s => s.id === pickerSceneTarget.id) + 1}
+                  </h3>
+                  <p className="text-xs text-emerald-400">
+                    Pilih salah satu gambar di bawah ini untuk langsung dipasang tanpa biaya kredit (0 Token).
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPickerSceneTarget(null)}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Filter & Search */}
+            <div className="p-3 bg-slate-950/60 border-b border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setGalleryFilter('all')}
+                  className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${galleryFilter === 'all' ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}
+                >
+                  Semua ({galleryImages.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGalleryFilter('fal-ai')}
+                  className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${galleryFilter === 'fal-ai' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                >
+                  Fal.ai ({galleryImages.filter(i => i.source === 'fal-ai').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGalleryFilter('gemini')}
+                  className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${galleryFilter === 'gemini' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                >
+                  Gemini ({galleryImages.filter(i => i.source === 'gemini').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGalleryFilter('current')}
+                  className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${galleryFilter === 'current' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}
+                >
+                  Proyek Ini ({galleryImages.filter(i => i.projectId === project?.id).length})
+                </button>
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  value={gallerySearch}
+                  onChange={(e) => setGallerySearch(e.target.value)}
+                  placeholder="Cari prompt..."
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Grid of Selectable Images */}
+            <div className="p-4 overflow-y-auto max-h-[60vh]">
+              {filteredGalleryImages.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <Images size={36} className="text-slate-600 mx-auto" />
+                  <p className="text-xs">Tidak ada gambar yang cocok di galeri.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {filteredGalleryImages.map((img) => (
+                    <div
+                      key={img.id}
+                      onClick={() => handleApplyImageToScene(pickerSceneTarget.id, img.url)}
+                      className="group relative bg-slate-950 border border-slate-800 hover:border-emerald-400 hover:ring-2 hover:ring-emerald-500/40 rounded-xl overflow-hidden cursor-pointer transition-all hover:scale-[1.02] flex flex-col shadow-md"
+                    >
+                      <div className="aspect-video w-full relative bg-black overflow-hidden">
+                        <img
+                          src={img.thumbnailUrl || img.url}
+                          alt={img.prompt || 'Asset'}
+                          referrerPolicy="no-referrer"
+                          crossOrigin="anonymous"
+                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                        />
+                        <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/80 text-[8px] font-mono text-emerald-300 border border-emerald-500/30">
+                          {img.source === 'fal-ai' ? 'Fal.ai' : img.source === 'gemini' ? 'Gemini' : 'Upload'}
+                        </div>
+                        <div className="absolute inset-0 bg-emerald-950/70 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                          <span className="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold text-xs shadow-lg">
+                            Gunakan Foto Ini
+                          </span>
+                        </div>
+                      </div>
+                      <div className="p-2 text-[10px] text-slate-300 line-clamp-2 leading-tight">
+                        {img.prompt || 'Keyframe Visual'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-xs">
+              <span className="text-slate-400">
+                💡 Klik gambar untuk langsung mengganti visual Adegan #{scenes.findIndex(s => s.id === pickerSceneTarget.id) + 1}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPickerSceneTarget(null)}
+                className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Gallery Toast Notification */}
+      {galleryToast && (
+        <div className="fixed bottom-6 right-6 z-[110] bg-emerald-950 border-2 border-emerald-400 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-5 duration-200">
+          <div className="w-8 h-8 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center font-bold shrink-0">
+            <CheckCircle2 size={18} />
+          </div>
+          <div>
+            <h5 className="text-xs font-bold text-emerald-200">Aset Berhasil Diterapkan!</h5>
+            <p className="text-[11px] text-slate-300">{galleryToast}</p>
           </div>
         </div>
       )}

@@ -241,7 +241,13 @@ export default function AffiliateConfigModal({
                 <div className="flex gap-2">
                   {characterImage && (
                     <div className="relative w-20 h-20 rounded-lg border border-[#27272a] bg-[#121216] overflow-hidden group shrink-0">
-                      <img src={characterImage} alt="Karakter" className="w-full h-full object-cover" />
+                      <img 
+                        src={characterImage} 
+                        alt="Karakter" 
+                        referrerPolicy="no-referrer"
+                        crossOrigin="anonymous"
+                        className="w-full h-full object-cover" 
+                      />
                       <button
                         onClick={() => setCharacterImage('')}
                         className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/80 hover:bg-red-600 text-white flex items-center justify-center transition-colors"
@@ -279,7 +285,13 @@ export default function AffiliateConfigModal({
               {assets.map((asset) => (
                 <div key={asset.id} className="relative aspect-square rounded-lg border border-[#27272a] bg-[#121216] overflow-hidden group">
                   {asset.type === 'IMAGE' ? (
-                    <img src={asset.url} alt={asset.name} className="w-full h-full object-cover" />
+                    <img 
+                      src={asset.url} 
+                      alt={asset.name} 
+                      referrerPolicy="no-referrer"
+                      crossOrigin="anonymous"
+                      className="w-full h-full object-cover" 
+                    />
                   ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center bg-black/40 text-gray-400 p-2 text-center">
                       <VideoIcon size={20} className="mb-1 text-indigo-400" />

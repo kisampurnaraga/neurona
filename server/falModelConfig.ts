@@ -1,3 +1,6 @@
+import fs from "fs";
+import path from "path";
+
 export type FalTier = 'budget' | 'balanced' | 'premium';
 
 export interface FalModelDefinition {
@@ -244,6 +247,65 @@ export function getTierForModel(modelId: string): FalTier {
   return model ? model.tier : 'balanced';
 }
 
+/**
+ * Resolves local file paths or relative URLs (/outputs/..., outputs/..., public/..., etc.) to real filesystem paths.
+ */
+export function resolveLocalFilePath(filePathOrUrl?: string): string | null {
+  if (!filePathOrUrl || typeof filePathOrUrl !== 'string') return null;
+  const trimmed = filePathOrUrl.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+    return null; // Not a local path
+  }
+
+  const cwd = process.cwd();
+  const cleanRel = trimmed.replace(/^\//, '');
+
+  const candidates = [
+    path.join(cwd, cleanRel),
+    path.join(cwd, 'outputs', path.basename(trimmed)),
+    path.join(cwd, 'public', path.basename(trimmed)),
+    path.isAbsolute(trimmed) ? trimmed : path.join(cwd, trimmed)
+  ];
+
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c) && fs.statSync(c).isFile()) {
+        return c;
+      }
+    } catch (e) {}
+  }
+
+  return null;
+}
+
+/**
+ * Synchronously converts a local image path to a base64 data URI if it's not already a public URL or data URI.
+ * This guarantees Fal.ai and BytePlus APIs never receive local relative /outputs/... paths.
+ */
+export function resolveToDataUriOrPublic(imageUrl?: string): string {
+  if (!imageUrl || typeof imageUrl !== 'string') return '';
+  const trimmed = imageUrl.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+    return trimmed;
+  }
+
+  const localFile = resolveLocalFilePath(trimmed);
+  if (localFile) {
+    try {
+      const ext = path.extname(localFile).toLowerCase().replace('.', '') || 'png';
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+      const buf = fs.readFileSync(localFile);
+      return `data:${mime};base64,${buf.toString('base64')}`;
+    } catch (e) {
+      console.warn(`[resolveToDataUriOrPublic] Could not read local file ${localFile}:`, e);
+    }
+  }
+
+  return trimmed;
+}
+
 export interface FalPayloadParams {
   prompt: string;
   imageUrl: string;
@@ -259,7 +321,8 @@ export interface FalPayloadParams {
  */
 export function buildFalPayload(modelId: string, params: FalPayloadParams): any {
   const cleanPrompt = (params.prompt || 'Cinematic video scene with smooth camera movement').slice(0, 1000);
-  const imageUrl = params.imageUrl;
+  const imageUrl = resolveToDataUriOrPublic(params.imageUrl);
+  const endImageUrl = params.endImageUrl ? resolveToDataUriOrPublic(params.endImageUrl) : undefined;
 
   // 1. ByteDance Seedance 2.0 / 2.5
   if (modelId.includes('seedance')) {
@@ -279,8 +342,8 @@ export function buildFalPayload(modelId: string, params: FalPayloadParams): any 
     } else {
       payload.resolution = '720p';
     }
-    if (params.endImageUrl) {
-      payload.end_image_url = params.endImageUrl;
+    if (endImageUrl) {
+      payload.end_image_url = endImageUrl;
     }
     return payload;
   }
@@ -490,7 +553,8 @@ export function sanitizeReferenceImageUrls(urls?: string | string[]): string[] {
   const rawArray = Array.isArray(urls) ? urls : [urls];
   return rawArray
     .filter(u => typeof u === 'string' && u.trim().length > 0)
-    .map(u => u.trim())
+    .map(u => resolveToDataUriOrPublic(u.trim()))
+    .filter(u => u.length > 0)
     .slice(0, 14); // fal limit is 14
 }
 

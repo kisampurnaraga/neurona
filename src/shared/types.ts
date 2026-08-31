@@ -53,6 +53,9 @@ export interface Scene {
   imageUrl?: string;
   videoUrl?: string;
   assetUrl?: string;
+  remoteUrl?: string;
+  falUrl?: string;
+  remoteVideoUrl?: string;
   styleKeywords?: string[];
   imageCreditCost?: number; // e.g. 5 credits
   videoCreditCost?: number; // e.g. 15 credits

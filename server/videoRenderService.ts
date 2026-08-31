@@ -3,9 +3,10 @@ import { FounderService } from "../src/server/fcc/FounderService";
 import { VideoEditor } from "./VideoEditor";
 import { projects, saveFileLocally } from "./orchestrator";
 import { keyRotator } from "./keyRotator";
-import { getFalModel, buildFalPayload, FAL_TIER_DEFAULTS, FalTier } from "./falModelConfig";
+import { getFalModel, buildFalPayload, FAL_TIER_DEFAULTS, FalTier, resolveToDataUriOrPublic } from "./falModelConfig";
 import { renderWithFalQueue } from "./falQueueRunner";
 import { CreditService } from "./creditService";
+import { ImageGenerationService } from "./imageService";
 
 export interface SceneItem {
   id?: string;
@@ -120,6 +121,8 @@ async function renderWithBytePlusEngine(
     try {
       const baseUrl = endpoint.replace(/\/$/, '');
       const taskEndpoint = `${baseUrl}/contents/generations/tasks`;
+      const rawImageUrl = imageUrl || scene.videoUrl || undefined;
+      const resolvedImageUrl = rawImageUrl ? resolveToDataUriOrPublic(rawImageUrl) : undefined;
       const res = await fetch(taskEndpoint, {
         method: 'POST',
         headers: {
@@ -129,7 +132,7 @@ async function renderWithBytePlusEngine(
         body: JSON.stringify({
           model: modelName,
           prompt,
-          image_url: imageUrl || scene.videoUrl || undefined,
+          image_url: resolvedImageUrl,
           duration: 5
         })
       });
@@ -172,7 +175,11 @@ async function renderWithFalVideoEngine(
     }
   }
 
-  const imageUrl = scene.imageUrl || scene.assetUrl || (featuresProduct ? (scene as any)?.masterProductImageUrl : undefined);
+  const rawImageUrl = scene.imageUrl || scene.assetUrl || (featuresProduct ? (scene as any)?.masterProductImageUrl : undefined);
+  let imageUrl = rawImageUrl || '';
+  if (rawImageUrl) {
+    imageUrl = (await ImageGenerationService.ensurePublicFalImageUrl(rawImageUrl, falApiKey)) || resolveToDataUriOrPublic(rawImageUrl);
+  }
 
   console.log(`[FAL.AI VIDEO ENGINE] Rendering Scene ${sceneIdx + 1} with Fal.ai...`);
   engineLogs.push(`[FAL.AI VIDEO ENGINE] Calling Fal.ai Queue API for Scene ${sceneIdx + 1}...`);

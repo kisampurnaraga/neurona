@@ -139,7 +139,23 @@ export const FounderVideoInspector: React.FC = () => {
                               {scene.videoUrl ? (
                                 <video src={scene.videoUrl} controls className="w-full rounded-md border border-slate-700 bg-black" />
                               ) : scene.imageUrl ? (
-                                <img src={scene.imageUrl} alt="Keyframe" className="w-full rounded-md border border-slate-700" />
+                                <img 
+                                  src={scene.imageUrl} 
+                                  alt="Keyframe" 
+                                  referrerPolicy="no-referrer"
+                                  crossOrigin="anonymous"
+                                  onError={(e) => {
+                                    const target = e.currentTarget;
+                                    if (scene.remoteUrl && target.src !== scene.remoteUrl) {
+                                      target.src = scene.remoteUrl;
+                                    } else if (scene.falUrl && target.src !== scene.falUrl) {
+                                      target.src = scene.falUrl;
+                                    } else if (scene.imageUrl && scene.imageUrl.startsWith('http') && !target.src.includes('/api/proxy-image')) {
+                                      target.src = `/api/proxy-image?url=${encodeURIComponent(scene.imageUrl)}`;
+                                    }
+                                  }}
+                                  className="w-full rounded-md border border-slate-700" 
+                                />
                               ) : (
                                 <div className="w-full aspect-video rounded-md border border-dashed border-slate-700 flex items-center justify-center text-xs text-slate-600">No Visual Asset</div>
                               )}

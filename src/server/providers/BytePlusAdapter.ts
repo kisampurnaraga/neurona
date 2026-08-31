@@ -1,6 +1,7 @@
 import { ProviderStatus, Scene } from "../../shared/types";
 import { VideoGenerationProvider } from "./VideoProvider";
 import { FounderService } from "../fcc/FounderService";
+import { resolveToDataUriOrPublic } from "../../../server/falModelConfig";
 import fetch from "node-fetch";
 
 export class BytePlusAdapter implements VideoGenerationProvider {
@@ -30,10 +31,12 @@ export class BytePlusAdapter implements VideoGenerationProvider {
     try {
       const baseUrl = endpoint.replace(/\/$/, '');
       const taskEndpoint = `${baseUrl}/contents/generations/tasks`;
+      const rawImageUrl = scene.imageUrl || scene.assetUrl || undefined;
+      const resolvedImageUrl = rawImageUrl ? resolveToDataUriOrPublic(rawImageUrl) : undefined;
       const requestBody = {
         model: model,
         prompt: prompt,
-        image_url: scene.imageUrl || scene.assetUrl || undefined,
+        image_url: resolvedImageUrl,
         ratio: scene.visualDirection?.includes('9:16') ? '9:16' : '16:9',
         duration: 5
       };

@@ -81,6 +81,57 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const dbPath = path.join(process.cwd(), 'outputs', 'db.json');
+const remoteMapPath = path.join(process.cwd(), 'outputs', '.remote_outputs_map.json');
+
+// Persistent Map tracking local filenames to original remote URLs (Fal.ai, CDN, GCS)
+export const remoteOutputsMap = new Map<string, string>();
+
+export function loadRemoteOutputsMap(): void {
+  try {
+    if (fs.existsSync(remoteMapPath)) {
+      const data = JSON.parse(fs.readFileSync(remoteMapPath, 'utf8'));
+      if (typeof data === 'object' && data !== null) {
+        for (const [k, v] of Object.entries(data)) {
+          if (typeof v === 'string') {
+            remoteOutputsMap.set(k, v);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[RemoteOutputsMap] Failed to load remote map:', e);
+  }
+}
+
+export function saveRemoteOutputsMap(): void {
+  try {
+    const outputsDir = path.join(process.cwd(), 'outputs');
+    if (!fs.existsSync(outputsDir)) {
+      fs.mkdirSync(outputsDir, { recursive: true });
+    }
+    const obj: Record<string, string> = {};
+    for (const [k, v] of remoteOutputsMap.entries()) {
+      obj[k] = v;
+    }
+    fs.writeFileSync(remoteMapPath, JSON.stringify(obj, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[RemoteOutputsMap] Failed to save remote map:', e);
+  }
+}
+
+// Load remote map on startup
+loadRemoteOutputsMap();
+
+export function setRemoteUrlForFilename(filename: string, remoteUrl: string): void {
+  if (filename && remoteUrl && (remoteUrl.startsWith('http://') || remoteUrl.startsWith('https://'))) {
+    remoteOutputsMap.set(filename, remoteUrl);
+    saveRemoteOutputsMap();
+  }
+}
+
+export function getRemoteUrlForFilename(filename: string): string | undefined {
+  return remoteOutputsMap.get(filename);
+}
 
 // Helper to fetch with exponential backoff retry mechanism
 async function fetchWithRetry(url: string, retries = 3, delay = 1000): Promise<any> {
@@ -219,6 +270,11 @@ export async function saveFileLocally(urlOrData: string, prefix: string, extensi
   const filename = `${prefix}_${uniqueId}.${extension}`;
 
   const isReferenceImage = /reference|ref_|face|profile|upload|avatar|product_image/i.test(filename);
+
+  // Register external HTTP/HTTPS source into persistent remoteOutputsMap
+  if (urlOrData.startsWith('http://') || urlOrData.startsWith('https://')) {
+    setRemoteUrlForFilename(filename, urlOrData);
+  }
 
   // === CLOUD RUN PRODUCTION HARDENING (DIRECT STREAMING TO GCS) ===
   // If GCS_BUCKET_NAME is configured and available, stream directly to GCS
@@ -1427,6 +1483,12 @@ export class ProductionOrchestrator {
       const localImageUrl = await saveFileLocally(imageUrl, `scene_img_${sceneIdx + 1}`, 'png', project);
 
       scene.imageUrl = localImageUrl;
+      if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
+        scene.remoteUrl = imageUrl;
+        if (imageUrl.includes('fal.media') || imageUrl.includes('fal.run')) {
+          scene.falUrl = imageUrl;
+        }
+      }
       if (!scene.assetUrl || scene.assetUrl === imageUrl) {
         scene.assetUrl = localImageUrl;
       }
@@ -1561,6 +1623,12 @@ export class ProductionOrchestrator {
         const localImageUrl = await saveFileLocally(imageUrl, `scene_img_${i + 1}`, 'png', project);
 
         sc.imageUrl = localImageUrl;
+        if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
+          sc.remoteUrl = imageUrl;
+          if (imageUrl.includes('fal.media') || imageUrl.includes('fal.run')) {
+            sc.falUrl = imageUrl;
+          }
+        }
         if (!sc.assetUrl || sc.assetUrl === imageUrl) {
           sc.assetUrl = localImageUrl;
         }

@@ -12,7 +12,9 @@ import {
   buildFalImagePayload, 
   sanitizeReferenceImageUrls, 
   getFalImageModel,
-  FAL_IMAGE_MODELS 
+  FAL_IMAGE_MODELS,
+  resolveLocalFilePath,
+  resolveToDataUriOrPublic
 } from "./falModelConfig";
 
 export class ImageGenerationService {
@@ -45,8 +47,8 @@ export class ImageGenerationService {
         fileName = `ref_${Date.now()}.${ext}`;
       }
     } else if (trimmed.startsWith('/') || !trimmed.startsWith('http')) {
-      const resolvedPath = path.isAbsolute(trimmed) ? trimmed : path.join(process.cwd(), trimmed);
-      if (fs.existsSync(resolvedPath)) {
+      const resolvedPath = resolveLocalFilePath(trimmed) || (path.isAbsolute(trimmed) ? trimmed : path.join(process.cwd(), trimmed));
+      if (resolvedPath && fs.existsSync(resolvedPath)) {
         buffer = fs.readFileSync(resolvedPath);
         if (resolvedPath.endsWith('.jpg') || resolvedPath.endsWith('.jpeg')) contentType = 'image/jpeg';
         else if (resolvedPath.endsWith('.webp')) contentType = 'image/webp';
@@ -965,8 +967,8 @@ export class ImageGenerationService {
           return { inlineData: { mimeType: match[1], data: match[2] } };
         }
       } else if (trimmed.startsWith('/') || (!trimmed.startsWith('http://') && !trimmed.startsWith('https://'))) {
-        const resolvedPath = path.isAbsolute(trimmed) ? trimmed : path.join(process.cwd(), trimmed);
-        if (fs.existsSync(resolvedPath)) {
+        const resolvedPath = resolveLocalFilePath(trimmed) || (path.isAbsolute(trimmed) ? trimmed : path.join(process.cwd(), trimmed));
+        if (resolvedPath && fs.existsSync(resolvedPath)) {
           const buffer = fs.readFileSync(resolvedPath);
           let mimeType = 'image/png';
           if (resolvedPath.endsWith('.jpg') || resolvedPath.endsWith('.jpeg')) mimeType = 'image/jpeg';

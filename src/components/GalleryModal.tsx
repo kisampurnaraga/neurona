@@ -113,7 +113,19 @@ export const GalleryModal: React.FC<GalleryModalProps> = ({ onClose, onSelectPro
                          cover.includes('.mp4') ? (
                             <video src={cover} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition duration-500" />
                          ) : (
-                            <img src={cover} alt="Cover" className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition duration-500" />
+                            <img 
+                              src={cover} 
+                              alt="Cover" 
+                              referrerPolicy="no-referrer"
+                              crossOrigin="anonymous"
+                              onError={(e) => {
+                                const target = e.currentTarget;
+                                if (cover.startsWith('http') && !target.src.includes('/api/proxy-image')) {
+                                  target.src = `/api/proxy-image?url=${encodeURIComponent(cover)}`;
+                                }
+                              }}
+                              className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition duration-500" 
+                            />
                          )
                       ) : (
                         <Film className="text-slate-800" size={32} />

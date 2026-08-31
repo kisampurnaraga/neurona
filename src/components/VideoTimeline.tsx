@@ -123,7 +123,23 @@ const SortableSceneItem: React.FC<SortableSceneProps> = ({ scene, index, isSelec
           isVideo ? (
             <video src={assetSource} className="w-full h-full object-cover pointer-events-none" />
           ) : (
-            <img src={assetSource} alt={`Scene ${index+1}`} className="w-full h-full object-cover pointer-events-none" />
+            <img 
+              src={assetSource} 
+              alt={`Scene ${index+1}`} 
+              referrerPolicy="no-referrer"
+              crossOrigin="anonymous"
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (scene.remoteUrl && target.src !== scene.remoteUrl) {
+                  target.src = scene.remoteUrl;
+                } else if (scene.falUrl && target.src !== scene.falUrl) {
+                  target.src = scene.falUrl;
+                } else if (assetSource && assetSource.startsWith('http') && !target.src.includes('/api/proxy-image')) {
+                  target.src = `/api/proxy-image?url=${encodeURIComponent(assetSource)}`;
+                }
+              }}
+              className="w-full h-full object-cover pointer-events-none" 
+            />
           )
         ) : (
           <div className="flex flex-col items-center justify-center text-gray-600 gap-1 p-2 text-center">
@@ -561,6 +577,19 @@ export default function VideoTimeline({ project, onBack, onUpdateProject }: Vide
                 <img
                   src={currentAsset}
                   alt={`Scene ${selectedSceneIndex + 1}`}
+                  referrerPolicy="no-referrer"
+                  crossOrigin="anonymous"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    const sc = project?.storyboard?.scenes?.[selectedSceneIndex];
+                    if (sc?.remoteUrl && target.src !== sc.remoteUrl) {
+                      target.src = sc.remoteUrl;
+                    } else if (sc?.falUrl && target.src !== sc.falUrl) {
+                      target.src = sc.falUrl;
+                    } else if (currentAsset && currentAsset.startsWith('http') && !target.src.includes('/api/proxy-image')) {
+                      target.src = `/api/proxy-image?url=${encodeURIComponent(currentAsset)}`;
+                    }
+                  }}
                   className="w-full h-full object-contain"
                 />
               )
@@ -798,7 +827,13 @@ export default function VideoTimeline({ project, onBack, onUpdateProject }: Vide
                       }}
                       className="shrink-0 w-12 h-12 rounded-lg border border-white/10 hover:border-indigo-400 overflow-hidden relative group bg-black"
                     >
-                      <img src={asset.url} alt={asset.name} className="w-full h-full object-cover" />
+                      <img 
+                        src={asset.url} 
+                        alt={asset.name} 
+                        referrerPolicy="no-referrer"
+                        crossOrigin="anonymous"
+                        className="w-full h-full object-cover" 
+                      />
                       <div className="absolute inset-0 bg-indigo-600/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-[8px] font-bold">
                         Pilih
                       </div>

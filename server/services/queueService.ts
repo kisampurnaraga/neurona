@@ -4,9 +4,10 @@ import { TTSService } from './ttsService';
 import { VideoMuxerService } from './videoMuxerService';
 import { userDatabase } from '../middleware/auth';
 import { keyRotator } from '../keyRotator';
-import { getFalModel, buildFalPayload, FAL_TIER_DEFAULTS } from '../falModelConfig';
+import { getFalModel, buildFalPayload, FAL_TIER_DEFAULTS, resolveToDataUriOrPublic } from '../falModelConfig';
 import { renderWithFalQueue } from '../falQueueRunner';
 import { FounderService } from '../../src/server/fcc/FounderService';
+import { ImageGenerationService } from '../imageService';
 
 export interface RenderTaskPayload {
   taskId: string;
@@ -238,9 +239,14 @@ export class QueueService {
           throw new Error('FAL_KEY missing or not configured for Fal.ai Video Engine.');
         }
 
+        let resolvedImageUrl = referenceImageUrl || '';
+        if (referenceImageUrl) {
+          resolvedImageUrl = (await ImageGenerationService.ensurePublicFalImageUrl(referenceImageUrl, falApiKey)) || resolveToDataUriOrPublic(referenceImageUrl);
+        }
+
         const falPayload = buildFalPayload(modelDef.id, {
           prompt: promptText,
-          imageUrl: referenceImageUrl || '',
+          imageUrl: resolvedImageUrl,
           duration: durationSeconds ? String(durationSeconds) : modelDef.defaultDuration,
           generateAudio: modelDef.supportsAudio
         });

@@ -1003,6 +1003,17 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                   <img 
                     src={project?.storyboard?.scenes?.[0]?.imageUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80'} 
                     alt="Video Preview"
+                    referrerPolicy="no-referrer"
+                    crossOrigin="anonymous"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      const sc = project?.storyboard?.scenes?.[0];
+                      if (sc?.remoteUrl && target.src !== sc.remoteUrl) {
+                        target.src = sc.remoteUrl;
+                      } else if (sc?.falUrl && target.src !== sc.falUrl) {
+                        target.src = sc.falUrl;
+                      }
+                    }}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-2.5">
