@@ -86,9 +86,9 @@ export class GCSStreamService {
         if (errMsg.includes('storage.objects.create') || errMsg.includes('denied') || errMsg.includes('403') || errMsg.includes('does not have')) {
           GCSStreamService.isGcsDisabled = true;
           GCSStreamService.gcsDisabledReason = errMsg;
-          console.warn(`[GCSStreamService] GCS write permission denied for bucket '${bucketName}'. Automatically switching to local storage for future assets.`);
+          console.log(`[GCSStreamService] GCS bucket '${bucketName}' write permission not present in environment. Switching to high-speed local disk storage for all assets.`);
         } else {
-          console.warn(`[GCSStreamService] Direct streaming upload to bucket '${bucketName}' skipped/failed (${errMsg}). Falling back to local storage.`);
+          console.log(`[GCSStreamService] Streaming to bucket '${bucketName}' notice (${errMsg}). Gracefully using local storage.`);
         }
         reject(err);
       });

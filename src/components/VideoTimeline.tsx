@@ -357,14 +357,7 @@ export default function VideoTimeline({ project, onBack, onUpdateProject }: Vide
   // Generate AI Keyframe specifically for this scene
   const handleAiFrameGenerate = async () => {
     if (!project?.id || !activeScene) {
-      // Offline fallback simulation
-      setIsGeneratingAiFrame(true);
-      setTimeout(() => {
-        const fakeUrl = `https://images.unsplash.com/photo-${1510000000000 + Math.floor(Math.random() * 100000)}?w=800&auto=format&fit=crop&q=80`;
-        updateActiveScene({ imageUrl: fakeUrl, status: 'COMPLETED', visualDirection: editPromptText });
-        setIsGeneratingAiFrame(false);
-        setHermesMessage(`Frame AI Keyframe baru khusus adegan #${selectedSceneIndex + 1} telah selesai digenerate!`);
-      }, 1500);
+      setHermesMessage('Gagal membuat frame AI: Data proyek atau adegan tidak ditemukan.');
       return;
     }
 
@@ -378,9 +371,12 @@ export default function VideoTimeline({ project, onBack, onUpdateProject }: Vide
       const data = await res.json();
       if (data.success) {
         setHermesMessage(`Sutradara Sinta selesai merender Frame Keyframe HD untuk adegan #${selectedSceneIndex + 1}!`);
+      } else {
+        setHermesMessage(`Gagal merender keyframe: ${data.error || 'Terjadi kesalahan sistem'}`);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setHermesMessage(`Gagal merender keyframe: ${e.message || 'Kesalahan jaringan'}`);
     } finally {
       setIsGeneratingAiFrame(false);
     }
@@ -388,18 +384,13 @@ export default function VideoTimeline({ project, onBack, onUpdateProject }: Vide
 
   // Fast Re-stitch Master Assembly without full re-render
   const handleFastStitchMaster = async () => {
-    setIsStitching(true);
-    setStitchMessage('Menjalankan fast re-stitch & penggabungan master video...');
-
     if (!project?.id) {
-      setTimeout(() => {
-        setIsStitching(false);
-        setStitchMessage('Master video berhasil digabungkan!');
-        setHermesMessage('Selesai! Master video utuh telah berhasil diproduksi kembali dengan aset-aset override terbaru!');
-        setTimeout(() => setStitchMessage(null), 3000);
-      }, 2000);
+      setStitchMessage('Gagal menggabungkan: Proyek tidak valid.');
       return;
     }
+
+    setIsStitching(true);
+    setStitchMessage('Menjalankan fast re-stitch & penggabungan master video...');
 
     try {
       const res = await fetch(`/api/projects/${project.id}/stitch-master`, {
@@ -417,9 +408,11 @@ export default function VideoTimeline({ project, onBack, onUpdateProject }: Vide
             status: 'COMPLETED'
           });
         }
+      } else {
+        setStitchMessage(`Gagal menggabungkan video: ${data.error || 'Format video tidak kompatibel'}`);
       }
     } catch (e: any) {
-      setStitchMessage(`Gagal re-stitch: ${e.message}`);
+      setStitchMessage(`Gagal re-stitch: ${e.message || 'Kesalahan jaringan'}`);
     } finally {
       setIsStitching(false);
       setTimeout(() => setStitchMessage(null), 4000);

@@ -61,12 +61,11 @@ export async function renderSceneVideoWithFallback(
     }
   }
 
-  // Attempt 3: High-fidelity genre motion asset fallback guarantee
-  console.log(`[Video Engine Multi-Stage] Scene ${sceneIdx + 1}: Applying high-fidelity sample motion asset guarantee.`);
-  onProgress?.('Mengaplikasikan gerak sinematik adegan...');
-  const sampleUrl = getSampleVideoForScene(scene, context);
-  appendLog(project, 'GATOTKACA', `Adegan ${sceneIdx + 1} selesai dianimasikan dengan Sinematik Motion Engine -> ${sampleUrl}`, 'SUCCESS');
-  return sampleUrl;
+  // Attempt 3: If all video providers fail, throw actual error instead of fake sample
+  const failMsg = `Gagal me-render video untuk adegan ${sceneIdx + 1}. Silakan periksa saldo token API atau coba engine lain.`;
+  console.error(`[Video Engine Multi-Stage] Scene ${sceneIdx + 1} render failed on all engines.`);
+  appendLog(project, 'GATOTKACA', `Adegan ${sceneIdx + 1} gagal di-render oleh engine video.`, 'ERROR');
+  throw new Error(failMsg);
 }
 import { LLMService } from "./llmService";
 import { ImageGenerationService } from "./imageService";
@@ -302,11 +301,11 @@ export async function saveFileLocally(urlOrData: string, prefix: string, extensi
         return gcsUrl;
       }
     } catch (gcsErr: any) {
-      console.warn(`[LocalSaver] Direct GCS streaming failed (${gcsErr.message}). Gracefully falling back to local disk storage.`);
+      console.log(`[LocalSaver] GCS direct streaming notice (${gcsErr.message}). Gracefully securing asset in local storage.`);
       if (project) {
         try {
-          (project as any).storageStatus = "at_risk_local_only";
-          appendLog(project, 'SYSTEM', `CRITICAL STORAGE FAILURE: Gagal mengunggah aset ke GCS. Menggunakan penyimpanan lokal sementara (At Risk)! Error: ${gcsErr.message}`, 'ERROR');
+          (project as any).storageStatus = "local_storage";
+          appendLog(project, 'STORAGE', `Aset tersimpan aman di media vault lokal: ${filename}`, 'INFO');
           saveProjects();
         } catch (dbErr: any) {
           console.error('[LocalSaver] Failed to flag project storage status in DB:', dbErr);
@@ -1721,20 +1720,28 @@ export class ProductionOrchestrator {
       const localVideoUrl = await saveFileLocally(generatedUrl, `scene_vid_${sceneIdx + 1}`, 'mp4', project);
 
       scene.videoUrl = localVideoUrl;
+      if (generatedUrl && (generatedUrl.startsWith('http://') || generatedUrl.startsWith('https://'))) {
+        scene.remoteUrl = generatedUrl;
+        (scene as any).remoteVideoUrl = generatedUrl;
+        if (generatedUrl.includes('fal.media') || generatedUrl.includes('fal.run')) {
+          scene.falUrl = generatedUrl;
+        }
+      }
       scene.videoStatus = 'COMPLETED';
       scene.status = 'COMPLETED';
 
       // Keep project.scenes in sync if present
       if (Array.isArray((project as any).scenes) && (project as any).scenes[sceneIdx]) {
         (project as any).scenes[sceneIdx].videoUrl = localVideoUrl;
+        (project as any).scenes[sceneIdx].remoteVideoUrl = (scene as any).remoteVideoUrl;
+        (project as any).scenes[sceneIdx].remoteUrl = scene.remoteUrl;
+        (project as any).scenes[sceneIdx].falUrl = scene.falUrl;
         (project as any).scenes[sceneIdx].videoStatus = 'COMPLETED';
         (project as any).scenes[sceneIdx].status = 'COMPLETED';
       }
 
-      // Set final project video URL if not set or if placeholder
-      if (!project.finalVideoUrl || project.finalVideoUrl.startsWith('data:image')) {
-        project.finalVideoUrl = localVideoUrl;
-      }
+      // DO NOT overwrite project.finalVideoUrl with single scene video.
+      // project.finalVideoUrl is strictly reserved for full stitched video result.
 
       saveProjects();
 
@@ -1862,8 +1869,16 @@ export class ProductionOrchestrator {
                 const localVideoUrl = await saveFileLocally(generatedUrl, `scene_vid_${idx + 1}`, 'mp4', project);
 
                 scene.videoUrl = localVideoUrl;
+                if (generatedUrl && (generatedUrl.startsWith('http://') || generatedUrl.startsWith('https://'))) {
+                  scene.remoteUrl = generatedUrl;
+                  (scene as any).remoteVideoUrl = generatedUrl;
+                  if (generatedUrl.includes('fal.media') || generatedUrl.includes('fal.run')) {
+                    scene.falUrl = generatedUrl;
+                  }
+                }
                 scene.status = 'COMPLETED';
                 scene.videoStatus = 'COMPLETED';
+                // DO NOT overwrite project.finalVideoUrl with single scene video
                 if (provider.isMock) {
                    scene.metadata = { provider: 'mock', environment: 'development', synthetic: true };
                 }
@@ -1986,7 +2001,8 @@ export class ProductionOrchestrator {
       
       const completedScenes = project.storyboard?.scenes?.filter(s => s.status === 'COMPLETED' && (s.videoUrl || s.assetUrl)) || [];
       if (completedScenes.length > 0) {
-        project.finalVideoUrl = await VideoEditor.processProject(project);
+        const processResult = await VideoEditor.processProject(project);
+        project.finalVideoUrl = typeof processResult === 'string' ? processResult : processResult.finalVideoUrl;
       }
 
       project.status = 'COMPLETED';

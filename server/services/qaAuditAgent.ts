@@ -106,71 +106,61 @@ export class QAAuditAgent {
 
     console.log(`[QAAuditAgent] Auditing director assets with Master LLM Engine: "${activeLlm}"`);
 
-    // 1. Attempt LLM-driven deep audit using active Master Engine
+    // 1. Attempt LLM-driven deep audit using active Master Engine if keys are available
     try {
       if (activeLlm.includes('openai') || activeLlm.includes('gpt-4o')) {
-        const openAiKey = process.env.OPENAI_API_KEY;
+        const openAiKey = process.env.OPENAI_API_KEY || keyRotator.getNextOpenAIKey();
         if (openAiKey) {
           const result = await this.runOpenAIAudit(input, openAiKey);
-          if (result) 
-    // SMART PACING CLIP AT TOP LEVEL
-    if (result && result.correctedScript) {
-        const durationSecs = input.durationSeconds || 5;
-        const maxWordsAllowed = Math.floor(durationSecs * 2.2);
-        const finalWords = result.correctedScript.split(/\s+/).filter(Boolean);
-        if (finalWords.length > maxWordsAllowed) {
-            let truncated = finalWords.slice(0, maxWordsAllowed).join(' ');
-            const lastPuncMatch = truncated.match(/.*[.!?]/);
-            if (lastPuncMatch) {
-                result.correctedScript = lastPuncMatch[0];
-                result.auditNotes = (result.auditNotes || '') + ' [SYSTEM: Smart-clipped VO pacing to nearest punctuation.]';
-            } else {
-                const lastCommaMatch = truncated.match(/.*,/);
-                if (lastCommaMatch) {
-                    result.correctedScript = lastCommaMatch[0].slice(0, -1) + '.';
-                    result.auditNotes = (result.auditNotes || '') + ' [SYSTEM: Smart-clipped VO pacing to nearest comma.]';
-                } else {
-                    let limit = maxWordsAllowed;
-                    const hangingWords = ['dan', 'atau', 'yang', 'di', 'ke', 'dari', 'dengan', 'untuk', 'ini', 'itu', 'sangat', 'juga', 'akan', 'bisa', 'lebih'];
-                    while (limit > 0 && hangingWords.includes(finalWords[limit - 1].toLowerCase().replace(/[^a-z]/g, ''))) {
-                        limit--;
-                    }
-                    result.correctedScript = finalWords.slice(0, limit).join(' ') + '.';
-                    result.auditNotes = (result.auditNotes || '') + ' [SYSTEM: Hard-clipped VO pacing (removed hanging words).]';
-                }
-            }
+          if (result) {
+            return this.applySmartPacing(result, duration);
+          }
         }
-    }
-
-    return result;
-
+      } else if (keyRotator.hasActiveKey('gemini')) {
+        // Default: Google Gemini (Gemini Flash / Pro)
+        const result = await keyRotator.executeGeminiWithRotation(async (ai, apiKey) => {
+          return await this.runGeminiAudit(input, ai, activeLlm);
+        });
+        if (result) {
+          return this.applySmartPacing(result, duration);
         }
       }
-
-      // Default: Google Gemini (Gemini 2.5 Flash / Pro)
-      const result = await keyRotator.executeGeminiWithRotation(async (ai, apiKey) => {
-        return await this.runGeminiAudit(input, ai, activeLlm);
-      });
-      if (result) 
-    
-
-    return result;
-
     } catch (err: any) {
-      console.warn(`[QAAuditAgent] LLM-based audit encountered error: ${err?.message}. Executing heuristic procedural fallback.`);
+      console.log(`[QAAuditAgent] LLM-based audit notice: ${err?.message || 'offline'}. Executing optimized heuristic procedural fallback.`);
     }
 
-    // 2. Fallback: Rule-based Heuristic Director QA Engine
+    // 2. Fallback: High-Performance Rule-based Heuristic Director QA Engine
     const result = this.runHeuristicAudit(input, rawPrompt, rawScript, rawVisual, duration, aspect);
+    return this.applySmartPacing(result, duration);
+  }
 
-    
-
-    
-    
-
+  private static applySmartPacing(result: QAAuditResult, durationSecs: number = 5): QAAuditResult {
+    if (!result || !result.correctedScript) return result;
+    const maxWordsAllowed = Math.floor(durationSecs * 2.2);
+    const finalWords = result.correctedScript.split(/\s+/).filter(Boolean);
+    if (finalWords.length > maxWordsAllowed) {
+      let truncated = finalWords.slice(0, maxWordsAllowed).join(' ');
+      const lastPuncMatch = truncated.match(/.*[.!?]/);
+      if (lastPuncMatch) {
+        result.correctedScript = lastPuncMatch[0];
+        result.auditNotes = (result.auditNotes || '') + ' [SYSTEM: Smart-clipped VO pacing to nearest punctuation.]';
+      } else {
+        const lastCommaMatch = truncated.match(/.*,/);
+        if (lastCommaMatch) {
+          result.correctedScript = lastCommaMatch[0].slice(0, -1) + '.';
+          result.auditNotes = (result.auditNotes || '') + ' [SYSTEM: Smart-clipped VO pacing to nearest comma.]';
+        } else {
+          let limit = maxWordsAllowed;
+          const hangingWords = ['dan', 'atau', 'yang', 'di', 'ke', 'dari', 'dengan', 'untuk', 'ini', 'itu', 'sangat', 'juga', 'akan', 'bisa', 'lebih'];
+          while (limit > 0 && hangingWords.includes(finalWords[limit - 1].toLowerCase().replace(/[^a-z]/g, ''))) {
+            limit--;
+          }
+          result.correctedScript = finalWords.slice(0, limit).join(' ') + '.';
+          result.auditNotes = (result.auditNotes || '') + ' [SYSTEM: Hard-clipped VO pacing (removed hanging words).]';
+        }
+      }
+    }
     return result;
-
-
   }
 
   /**

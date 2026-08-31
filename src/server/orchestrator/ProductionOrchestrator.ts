@@ -226,8 +226,11 @@ export class ProductionOrchestrator {
           }));
           project.finalVideoUrl = await StitcherAgent.stitchVideos(stitchInput, project.brandLogoUrl, project.extraVideoUrl);
         } catch (e) {
-          console.error("Stitch failed, falling back to single video:", e);
-          project.finalVideoUrl = completedScenes[0].videoUrl || completedScenes[0].assetUrl;
+          console.error("Stitch failed:", e);
+          project.finalVideoUrl = undefined;
+          this.updateProjectStatus(projectId, ProductionState.FAILED);
+          eventBus.emitEvent({ type: ProductionEvents.FAILED, projectId, timestamp: new Date(), payload: { error: e } });
+          return;
         }
       }
     }

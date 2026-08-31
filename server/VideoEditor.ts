@@ -154,10 +154,14 @@ export class VideoEditor {
         let hasTts = false;
 
         try {
-          // 1a. Download Video
-          if (url.startsWith('http')) {
+          if (!url) {
+            throw new Error(`Adegan ${i + 1} belum memiliki file video.`);
+          }
+
+          // 1a. Download or Copy Video with safe path resolution
+          if (url.startsWith('http://') || url.startsWith('https://')) {
              const response = await fetch(url);
-             if (!response.ok) throw new Error(`Gagal mengunduh adegan dari URL: ${url}`);
+             if (!response.ok) throw new Error(`Gagal mengunduh adegan ${i + 1} dari URL: ${url} (Status ${response.status})`);
              
              // Check content type to make sure it's not an image
              const contentType = response.headers.get('content-type') || '';
@@ -171,7 +175,46 @@ export class VideoEditor {
              const base64Data = url.split(',')[1];
              fs.writeFileSync(localPath, base64Data, 'base64');
           } else {
-             fs.copyFileSync(url, localPath);
+             // Resolve local file paths: handle /outputs/xxx, outputs/xxx, /api/videos/xxx, etc.
+             let resolvedSourcePath = '';
+             const cleanUrl = url.replace(/^\//, ''); // strip leading slash
+
+             if (cleanUrl.startsWith('outputs/')) {
+               resolvedSourcePath = path.join(process.cwd(), cleanUrl);
+             } else if (cleanUrl.startsWith('api/videos/')) {
+               const filename = cleanUrl.replace('api/videos/', '');
+               const outCandidate = path.join(process.cwd(), 'outputs', filename);
+               const pubCandidate = path.join(process.cwd(), 'public', 'videos', filename);
+               resolvedSourcePath = fs.existsSync(outCandidate) ? outCandidate : pubCandidate;
+             } else if (cleanUrl.startsWith('videos/')) {
+               const filename = cleanUrl.replace('videos/', '');
+               const pubCandidate = path.join(process.cwd(), 'public', 'videos', filename);
+               const outCandidate = path.join(process.cwd(), 'outputs', filename);
+               resolvedSourcePath = fs.existsSync(pubCandidate) ? pubCandidate : outCandidate;
+             } else if (fs.existsSync(url)) {
+               resolvedSourcePath = url;
+             } else {
+               resolvedSourcePath = path.join(process.cwd(), 'outputs', cleanUrl);
+             }
+
+             if (!fs.existsSync(resolvedSourcePath)) {
+               // If local file is missing, try remoteUrl / falUrl if available
+               const remoteFallback = scene.remoteUrl || scene.falUrl || (scene as any).remoteVideoUrl;
+               if (remoteFallback && (remoteFallback.startsWith('http://') || remoteFallback.startsWith('https://'))) {
+                 console.log(`[VideoEditor] File lokal ${resolvedSourcePath} tidak ditemukan, mencoba unduh dari remote: ${remoteFallback}`);
+                 const resp = await fetch(remoteFallback);
+                 if (resp.ok) {
+                   const arrBuf = await resp.arrayBuffer();
+                   fs.writeFileSync(localPath, Buffer.from(arrBuf));
+                 } else {
+                   throw new Error(`File adegan ${i + 1} tidak ditemukan di lokal (${resolvedSourcePath}) maupun remote (${remoteFallback})`);
+                 }
+               } else {
+                 throw new Error(`File video adegan ${i + 1} tidak ditemukan di server: ${resolvedSourcePath}`);
+               }
+             } else {
+               fs.copyFileSync(resolvedSourcePath, localPath);
+             }
           }
 
           // 1b. Download TTS
@@ -284,40 +327,31 @@ export class VideoEditor {
       const finalVideoName = `final_${projectId}.mp4`;
       const finalVideoPath = path.join(outputsDir, finalVideoName);
       
-      console.log(`[VideoEditor] Menjahit video...`);
+      console.log(`[VideoEditor] Menjahit ${sceneResults.length} adegan video via FFmpeg concat...`);
       await execAsync(`ffmpeg -y -f concat -safe 0 -i list.txt -c copy concat.mp4`, { cwd: tempDir });
 
-      console.log(`[VideoEditor] Menerapkan gaya teks ala CapCut dan Audio BGM...`);
+      const concatPath = path.join(tempDir, 'concat.mp4');
+      if (!fs.existsSync(concatPath) || fs.statSync(concatPath).size === 0) {
+        throw new Error("Gagal melakukan penggabungan (concat) seluruh adegan video via FFmpeg. Periksa apakah semua format adegan valid.");
+      }
+
+      console.log(`[VideoEditor] Menerapkan gaya teks subtitle dan Audio BGM...`);
       const ffmpegCmd = `ffmpeg -y -i concat.mp4 -i bgm.mp3 -filter_complex "[0:v]subtitles=subs.ass[v];[1:a]volume=0.3[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]" -map "[v]" -map "[a]" -c:v libx264 -pix_fmt yuv420p -preset fast -crf 23 -c:a aac -b:a 128k -shortest "${finalVideoPath}"`;
       
       try {
         await execAsync(ffmpegCmd, { cwd: tempDir });
       } catch (ffErr: any) {
-        console.warn(`[VideoEditor] Subtitle/BGM merge encounter error (${ffErr?.message}), executing direct concat fallback...`);
-        const concatPath = path.join(tempDir, 'concat.mp4');
+        console.warn(`[VideoEditor] Subtitle/BGM merge notice (${ffErr?.message}), menyalin video hasil concat murni...`);
         if (fs.existsSync(concatPath) && fs.statSync(concatPath).size > 0) {
           fs.copyFileSync(concatPath, finalVideoPath);
+        } else {
+          throw new Error(`Gagal memproses subtitle/audio dan concat video: ${ffErr?.message || ffErr}`);
         }
       }
 
       // Verification check: Ensure final file exists and is non-zero
       if (!fs.existsSync(finalVideoPath) || fs.statSync(finalVideoPath).size === 0) {
-        const concatPath = path.join(tempDir, 'concat.mp4');
-        if (fs.existsSync(concatPath) && fs.statSync(concatPath).size > 0) {
-          fs.copyFileSync(concatPath, finalVideoPath);
-        } else {
-          const firstValidScene = sceneResults.find(r => r.success);
-          if (firstValidScene) {
-            const firstMixedPath = path.join(tempDir, `scene_mixed_${firstValidScene.index}.mp4`);
-            if (fs.existsSync(firstMixedPath)) {
-              fs.copyFileSync(firstMixedPath, finalVideoPath);
-            }
-          }
-        }
-      }
-
-      if (!fs.existsSync(finalVideoPath) || fs.statSync(finalVideoPath).size === 0) {
-        throw new Error("Gagal menghasilkan file MP4 master final. Silakan periksa kembali aset video adegan.");
+        throw new Error("Gagal menghasilkan file MP4 master final utuh hasil penggabungan. Silakan periksa kembali aset video adegan.");
       }
 
       console.log(`[VideoEditor] Render Master Final selesai! (${fs.statSync(finalVideoPath).size} bytes)`);

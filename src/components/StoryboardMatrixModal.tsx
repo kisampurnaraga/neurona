@@ -192,11 +192,14 @@ const getSceneAmplitudes = (sc: any, barCount = 10): number[] => {
 
 export interface GalleryImageAsset {
   id: string;
+  type?: 'image' | 'video';
   url: string;
   thumbnailUrl: string;
+  remoteUrl?: string;
   prompt?: string;
   engine?: string;
   source?: 'fal-ai' | 'gemini' | 'uploaded' | 'reference' | 'other';
+  duration?: string;
   projectId?: string;
   projectTitle?: string;
   sceneIndex?: number;
@@ -223,10 +226,10 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'SCENES' | 'GALLERY' | 'TIERS'>('SCENES');
   
-  // Gallery Assets States (Fal.ai, Gemini, Uploads)
+  // Gallery Assets States (Fal.ai, Gemini, Uploads, Video Renders)
   const [galleryImages, setGalleryImages] = useState<GalleryImageAsset[]>([]);
   const [isLoadingGallery, setIsLoadingGallery] = useState<boolean>(false);
-  const [galleryFilter, setGalleryFilter] = useState<'all' | 'fal-ai' | 'gemini' | 'current' | 'uploaded'>('all');
+  const [galleryFilter, setGalleryFilter] = useState<'all' | 'video' | 'fal-ai' | 'gemini' | 'current' | 'uploaded'>('all');
   const [gallerySearch, setGallerySearch] = useState<string>('');
   const [dragOverSceneId, setDragOverSceneId] = useState<string | null>(null);
   const [pickerSceneTarget, setPickerSceneTarget] = useState<Scene | null>(null);
@@ -282,6 +285,34 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     }
   };
 
+  const handleApplyVideoToScene = async (sceneId: string, videoUrl: string) => {
+    if (!project) return;
+    setIsProcessingAction(`apply-vid-${sceneId}`);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/override-scene`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sceneId,
+          videoUrl: videoUrl,
+          videoStatus: 'COMPLETED',
+          status: 'COMPLETED'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setGalleryToast(`Video berhasil dipasang ke adegan!`);
+        setTimeout(() => setGalleryToast(null), 3500);
+        setActiveMediaView(prev => ({ ...prev, [sceneId]: 'video' }));
+        fetchGalleryImages();
+      }
+    } catch (err) {
+      console.error('Failed to apply video to scene:', err);
+    } finally {
+      setIsProcessingAction(null);
+    }
+  };
+
   const handleUploadGalleryAsset = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -329,6 +360,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   };
 
   const filteredGalleryImages = galleryImages.filter(img => {
+    const isVideo = img.type === 'video' || (typeof img.url === 'string' && img.url.includes('.mp4'));
+    if (galleryFilter === 'video' && !isVideo) return false;
     if (galleryFilter === 'fal-ai' && img.source !== 'fal-ai') return false;
     if (galleryFilter === 'gemini' && img.source !== 'gemini') return false;
     if (galleryFilter === 'uploaded' && img.source !== 'uploaded') return false;
@@ -836,11 +869,11 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
       neuronaVoice.speak("Melakukan render final serta sinkronisasi penataan teks subtitle");
       await new Promise(r => setTimeout(r, 1600));
 
-      // Make the actual api request to save database state
-      const scenesPayload = scenes.map((s, idx) => ({
-        url: s.videoUrl || `https://assets.mixkit.co/videos/preview/mixkit-futuristic-subway-station-with-neon-lights-44102-large.mp4`,
-        text: s.subtitle || s.voiceOver || s.textOverlay || s.dialogue || ''
-      }));
+      // Validasi adegan sebelum request
+      const missingVideos = scenes.filter((s, idx) => !s.videoUrl && !s.assetUrl);
+      if (missingVideos.length > 0) {
+        throw new Error(`Ada ${missingVideos.length} adegan yang belum memiliki video. Pastikan seluruh adegan telah di-render sebelum menggabungkan video.`);
+      }
 
       const res = await fetch(`/api/projects/${project.id}/stitch-master`, {
         method: 'POST',
@@ -855,24 +888,31 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
           }
         })
       });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || errJson.message || `Server merespons error status ${res.status}`);
+      }
+
       const data = await res.json();
 
-      log('🎉 SUKSES: Seluruh adegan video berhasil dijahit dan disatukan menjadi film utuh!');
-      setStitchProgress(100);
-      setActiveStitchStep('Selesai');
-      neuronaVoice.speak("Selamat! Proses penggabungan video telah berhasil diselesaikan secara utuh");
-
-      if (data.success) {
-        setFinalVideoUrl(data.finalVideoUrl || data.url);
+      if (data.success && data.finalVideoUrl) {
+        log('🎉 SUKSES: Seluruh adegan video berhasil dijahit dan disatukan menjadi film utuh!');
+        setStitchProgress(100);
+        setActiveStitchStep('Selesai');
+        neuronaVoice.speak("Selamat! Proses penggabungan video telah berhasil diselesaikan secara utuh");
+        setFinalVideoUrl(data.finalVideoUrl);
       } else {
-        // Fallback to demo output if api has minor error
-        setFinalVideoUrl('https://assets.mixkit.co/videos/preview/mixkit-futuristic-subway-station-with-neon-lights-44102-large.mp4');
+        throw new Error(data.error || data.message || 'Gagal menghasilkan master video final.');
       }
     } catch (e: any) {
-      log(`⚠️ PERINGATAN: Kendala jaringan pada server, menggunakan generator lokal fallback...`);
-      setFinalVideoUrl('https://assets.mixkit.co/videos/preview/mixkit-futuristic-subway-station-with-neon-lights-44102-large.mp4');
-      setStitchProgress(100);
-      setActiveStitchStep('Selesai');
+      console.error('[Stitch Error]', e);
+      const errMsg = e.message || 'Terjadi kendala saat menggabungkan video.';
+      log(`❌ GAGAL PENGGABUNGAN: ${errMsg}`);
+      setStitchProgress(0);
+      setActiveStitchStep('Gagal');
+      setFinalVideoUrl(null);
+      neuronaVoice.speak(`Gagal menggabungkan video: ${errMsg}`);
     } finally {
       setIsStitching(false);
     }
@@ -2628,6 +2668,17 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     Semua ({galleryImages.length})
                   </button>
                   <button
+                    onClick={() => setGalleryFilter('video')}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] flex items-center gap-1 transition cursor-pointer ${
+                      galleryFilter === 'video'
+                        ? 'bg-emerald-400 text-slate-950 shadow'
+                        : 'bg-slate-900 text-emerald-400 hover:text-white border border-emerald-500/30'
+                    }`}
+                  >
+                    <Film size={11} />
+                    <span>Video ({galleryImages.filter(i => i.type === 'video' || (typeof i.url === 'string' && i.url.includes('.mp4'))).length})</span>
+                  </button>
+                  <button
                     onClick={() => setGalleryFilter('fal-ai')}
                     className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${
                       galleryFilter === 'fal-ai'
@@ -2675,7 +2726,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     type="text"
                     value={gallerySearch}
                     onChange={(e) => setGallerySearch(e.target.value)}
-                    placeholder="Cari prompt / model..."
+                    placeholder="Cari prompt / video / model..."
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -2685,19 +2736,21 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
               {isLoadingGallery && galleryImages.length === 0 ? (
                 <div className="py-20 text-center space-y-3">
                   <Loader2 size={36} className="animate-spin text-emerald-400 mx-auto" />
-                  <p className="text-xs text-slate-400">Memuat galeri aset visual...</p>
+                  <p className="text-xs text-slate-400">Memuat galeri aset visual &amp; video...</p>
                 </div>
               ) : filteredGalleryImages.length === 0 ? (
                 <div className="py-16 text-center space-y-3 bg-slate-950/40 border border-dashed border-slate-800 rounded-2xl p-8">
                   <Images size={44} className="text-slate-600 mx-auto" />
-                  <h4 className="text-sm font-bold text-slate-300">Belum ada gambar yang sesuai</h4>
+                  <h4 className="text-sm font-bold text-slate-300">Belum ada aset visual atau video</h4>
                   <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    Gambar yang berhasil di-generate melalui Fal.ai atau Gemini akan otomatis tersimpan di sini agar bisa digunakan kembali tanpa memotong kredit.
+                    Gambar dan video yang berhasil di-generate melalui Fal.ai, Kling, Minimax, Luma, Veo, atau Gemini akan otomatis tersimpan di sini agar tidak hilang.
                   </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-                  {filteredGalleryImages.map((img) => (
+                  {filteredGalleryImages.map((img) => {
+                    const isVideoAsset = img.type === 'video' || (typeof img.url === 'string' && img.url.includes('.mp4'));
+                    return (
                     <div
                       key={img.id}
                       draggable={true}
@@ -2708,52 +2761,88 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                       }}
                       className="group relative bg-slate-900/90 border border-slate-800 hover:border-emerald-500/60 rounded-xl overflow-hidden shadow-lg transition-all duration-200 hover:-translate-y-0.5 flex flex-col cursor-grab active:cursor-grabbing"
                     >
-                      {/* Image Thumbnail Aspect Container */}
+                      {/* Thumbnail / Video Container */}
                       <div className="relative aspect-video w-full bg-black/60 overflow-hidden">
-                        <img
-                          src={img.thumbnailUrl || img.url}
-                          alt={img.prompt || 'Gallery Asset'}
-                          referrerPolicy="no-referrer"
-                          crossOrigin="anonymous"
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
+                        {isVideoAsset ? (
+                          <div className="relative w-full h-full bg-slate-950 flex items-center justify-center">
+                            {img.thumbnailUrl && img.thumbnailUrl !== img.url ? (
+                              <img
+                                src={img.thumbnailUrl}
+                                alt={img.prompt || 'Video thumbnail'}
+                                referrerPolicy="no-referrer"
+                                crossOrigin="anonymous"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex flex-col items-center justify-center gap-1 text-emerald-400">
+                                <Film size={28} />
+                                <span className="text-[9px] font-mono">Video MP4</span>
+                              </div>
+                            )}
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/10 transition">
+                              <div className="w-8 h-8 rounded-full bg-emerald-500/90 text-slate-950 flex items-center justify-center shadow-lg">
+                                <Play size={14} className="ml-0.5 fill-current" />
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <img
+                            src={img.thumbnailUrl || img.url}
+                            alt={img.prompt || 'Gallery Asset'}
+                            referrerPolicy="no-referrer"
+                            crossOrigin="anonymous"
+                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                        )}
 
                         {/* Source Badge */}
                         <div className="absolute top-1.5 left-1.5 z-10 flex gap-1">
-                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold font-mono uppercase tracking-wider ${
-                            img.source === 'fal-ai'
-                              ? 'bg-purple-950/90 text-purple-300 border border-purple-500/40'
-                              : img.source === 'gemini'
-                              ? 'bg-cyan-950/90 text-cyan-300 border border-cyan-500/40'
-                              : 'bg-slate-900/90 text-slate-300 border border-slate-700'
-                          }`}>
-                            {img.source === 'fal-ai' ? 'Fal.ai' : img.source === 'gemini' ? 'Gemini' : 'Upload'}
-                          </span>
+                          {isVideoAsset ? (
+                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold font-mono uppercase tracking-wider bg-emerald-950/90 text-emerald-300 border border-emerald-500/40 flex items-center gap-0.5">
+                              <Film size={8} /> VIDEO
+                            </span>
+                          ) : (
+                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold font-mono uppercase tracking-wider ${
+                              img.source === 'fal-ai'
+                                ? 'bg-purple-950/90 text-purple-300 border border-purple-500/40'
+                                : img.source === 'gemini'
+                                ? 'bg-cyan-950/90 text-cyan-300 border border-cyan-500/40'
+                                : 'bg-slate-900/90 text-slate-300 border border-slate-700'
+                            }`}>
+                              {img.source === 'fal-ai' ? 'Fal.ai' : img.source === 'gemini' ? 'Gemini' : 'Upload'}
+                            </span>
+                          )}
                         </div>
 
                         {/* Hover Overlay with Preview / Download / Delete */}
                         <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => setPreviewImageUrl(img.url)}
+                            onClick={() => {
+                              if (isVideoAsset) {
+                                setPreviewVideoUrl(img.url);
+                              } else {
+                                setPreviewImageUrl(img.url);
+                              }
+                            }}
                             className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs backdrop-blur-xs transition cursor-pointer"
-                            title="Perbesar"
+                            title={isVideoAsset ? "Putar Video" : "Perbesar Foto"}
                           >
-                            <Eye size={13} />
+                            {isVideoAsset ? <Play size={13} className="fill-current" /> : <Eye size={13} />}
                           </button>
                           <button
                             type="button"
                             onClick={() => {
                               const a = document.createElement('a');
                               a.href = img.url;
-                              a.download = `gallery-${img.filename || 'asset'}.png`;
+                              a.download = `gallery-${img.filename || 'asset'}.${isVideoAsset ? 'mp4' : 'png'}`;
                               a.target = '_blank';
                               document.body.appendChild(a);
                               a.click();
                               document.body.removeChild(a);
                             }}
                             className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs backdrop-blur-xs transition cursor-pointer"
-                            title="Unduh"
+                            title={`Unduh ${isVideoAsset ? 'MP4' : 'Gambar'}`}
                           >
                             <Download size={13} />
                           </button>
@@ -2773,7 +2862,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                       {/* Info and Assign Action */}
                       <div className="p-2 flex-1 flex flex-col justify-between space-y-1.5 bg-slate-950/60">
                         <p className="text-[10px] text-slate-300 line-clamp-2 leading-snug" title={img.prompt}>
-                          {img.prompt || 'Generated Keyframe Image'}
+                          {img.prompt || (isVideoAsset ? 'Rendered Scene Video' : 'Generated Keyframe Image')}
                         </p>
 
                         {/* Quick Assign Dropdown */}
@@ -2784,28 +2873,33 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                               onChange={(e) => {
                                 const sId = e.target.value;
                                 if (sId) {
-                                  handleApplyImageToScene(sId, img.url);
+                                  if (isVideoAsset) {
+                                    handleApplyVideoToScene(sId, img.url);
+                                  } else {
+                                    handleApplyImageToScene(sId, img.url);
+                                  }
                                   e.target.value = '';
                                 }
                               }}
-                              className="w-full bg-slate-900 border border-emerald-500/30 hover:border-emerald-500 text-emerald-300 font-bold rounded px-1.5 py-1 text-[9px] outline-none cursor-pointer"
+                              className={`w-full bg-slate-900 border ${isVideoAsset ? 'border-emerald-400/50 text-emerald-300' : 'border-emerald-500/30 text-emerald-300'} font-bold rounded px-1.5 py-1 text-[9px] outline-none cursor-pointer`}
                             >
-                              <option value="" disabled>👉 Pasang ke Adegan...</option>
+                              <option value="" disabled>👉 Pasang ke {isVideoAsset ? 'Video' : 'Adegan'}...</option>
                               {scenes.map((s, idx) => (
                                 <option key={s.id} value={s.id} className="bg-slate-900 text-white">
-                                  Adegan #{idx + 1} {s.imageUrl ? '(Ganti)' : '(Isi)'}
+                                  {isVideoAsset ? `Video Adegan #${idx + 1}` : `Adegan #${idx + 1}`} {isVideoAsset ? (s.videoUrl ? '(Ganti Video)' : '(Pasang)') : (s.imageUrl ? '(Ganti)' : '(Isi)')}
                                 </option>
                               ))}
                             </select>
                           </div>
                           <div className="text-[8px] font-mono text-slate-500 mt-1 flex items-center justify-between">
-                            <span>👆 Tarik ke scene</span>
+                            <span>{isVideoAsset ? '🎥 Video Aset' : '👆 Tarik ke scene'}</span>
                             <span className="text-emerald-400 font-bold">0 Kredit</span>
                           </div>
                         </div>
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
                 </div>
               )}
             </div>

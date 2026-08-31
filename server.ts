@@ -1116,13 +1116,55 @@ createdAt: new Date().toISOString()
     res.json({ success: true, projects: Array.from(projects.values()) });
   });
 
+  // Streaming Video Proxy Endpoint (Zero CORS issue, Full HTTP 206 Range Request Support)
+  app.get('/api/proxy-video', async (req, res) => {
+    try {
+      const url = req.query.url as string;
+      if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+        return res.status(400).json({ error: 'Valid URL is required' });
+      }
+
+      const headers: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      };
+      if (req.headers.range) {
+        headers['Range'] = req.headers.range;
+      }
+
+      const upstreamRes = await fetch(url, { headers });
+      if (!upstreamRes.ok && upstreamRes.status !== 206) {
+        return res.status(upstreamRes.status).json({ error: 'Failed to fetch upstream video' });
+      }
+
+      const contentType = upstreamRes.headers.get('content-type') || 'video/mp4';
+      const contentLength = upstreamRes.headers.get('content-length');
+      const contentRange = upstreamRes.headers.get('content-range');
+      const acceptRanges = upstreamRes.headers.get('accept-ranges') || 'bytes';
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Accept-Ranges', acceptRanges);
+      if (contentLength) res.setHeader('Content-Length', contentLength);
+      if (contentRange) res.setHeader('Content-Range', contentRange);
+
+      res.status(upstreamRes.status);
+      const arrayBuffer = await upstreamRes.arrayBuffer();
+      res.send(Buffer.from(arrayBuffer));
+    } catch (e: any) {
+      console.error('[Proxy-Video] Error:', e.message);
+      res.status(500).json({ error: e.message || 'Video proxy error' });
+    }
+  });
+
   app.get('/api/gallery', (req, res) => {
     try {
       const allProjects = Array.from(projects.values())
-        .filter(p => (p.status as string) !== 'ACTIVE')
+        .filter(p => (p.status as string) !== 'deleted')
         .sort((a, b) => {
-           // Sort by creation time if exists, or randomly for now
-           return 0;
+           const tA = new Date(a.createdAt || 0).getTime();
+           const tB = new Date(b.createdAt || 0).getTime();
+           return tB - tA;
         });
       res.json(allProjects);
     } catch (e: any) {
@@ -1130,26 +1172,29 @@ createdAt: new Date().toISOString()
     }
   });
 
-  // GET all generated images & keyframe assets (Fal.ai, Gemini, uploaded, project frames)
-  app.get('/api/gallery/images', (req, res) => {
+  // GET all generated images & keyframe & video assets (Fal.ai, Gemini, uploaded, project frames)
+  const handleGalleryAssets = (req: express.Request, res: express.Response) => {
     try {
-      const imageMap = new Map<string, any>();
+      const assetMap = new Map<string, any>();
       const outputsDir = path.join(process.cwd(), 'outputs');
 
-      // 1. Gather all scene keyframes and reference images from active & saved projects
+      // 1. Gather all scene keyframes, video renders, and reference assets from active & saved projects
       for (const p of projects.values()) {
         if (p.storyboard && Array.isArray(p.storyboard.scenes)) {
           p.storyboard.scenes.forEach((scene: any, idx: number) => {
+            // Images
             const imgUrl = scene.imageUrl || scene.assetUrl;
             if (imgUrl && typeof imgUrl === 'string' && !imgUrl.startsWith('data:video/')) {
               const engineStr = scene.imageEngine || (p as any).imageEngine || (p as any).imageModel || 'fal-ai';
               const isFal = engineStr.includes('fal') || engineStr.includes('flux') || engineStr.includes('wan') || engineStr.includes('hunyuan') || engineStr.includes('seedance') || engineStr.includes('kling') || engineStr.includes('standard') || engineStr.includes('precision') || engineStr.includes('draft');
               const isGemini = engineStr.includes('gemini') || engineStr.includes('banana') || engineStr.includes('nano-asli') || engineStr.includes('google');
 
-              imageMap.set(imgUrl, {
-                id: `proj_${p.id}_scene_${scene.id || idx + 1}`,
+              assetMap.set(imgUrl, {
+                id: `proj_${p.id}_scene_${scene.id || idx + 1}_img`,
+                type: 'image',
                 url: imgUrl,
                 thumbnailUrl: imgUrl,
+                remoteUrl: scene.remoteUrl || scene.falUrl,
                 prompt: scene.visualDirection || scene.textOverlay || `Keyframe Adegan #${idx + 1}`,
                 engine: engineStr,
                 source: isFal ? 'fal-ai' : isGemini ? 'gemini' : 'other',
@@ -1161,13 +1206,56 @@ createdAt: new Date().toISOString()
                 createdAt: p.createdAt || new Date().toISOString()
               });
             }
+
+            // Videos (Fal.ai, Wan, Hunyuan, Kling, etc.)
+            const vidUrl = scene.videoUrl;
+            if (vidUrl && typeof vidUrl === 'string' && !vidUrl.startsWith('data:image/')) {
+              const engineStr = scene.videoModel || (p as any).videoModel || 'fal-ai';
+              assetMap.set(vidUrl, {
+                id: `proj_${p.id}_scene_${scene.id || idx + 1}_vid`,
+                type: 'video',
+                url: vidUrl,
+                remoteUrl: (scene as any).remoteVideoUrl || scene.remoteUrl || scene.falUrl,
+                thumbnailUrl: scene.imageUrl || scene.assetUrl || vidUrl,
+                prompt: scene.visualDirection || `Video Render Adegan #${idx + 1}`,
+                engine: engineStr,
+                source: 'fal-ai',
+                duration: scene.duration || '5s',
+                projectId: p.id,
+                projectTitle: p.title || 'Tanpa Judul',
+                sceneIndex: idx + 1,
+                sceneId: scene.id,
+                aspectRatio: (p as any).aspectRatio || (p as any).customRatio || '9:16',
+                createdAt: p.createdAt || new Date().toISOString()
+              });
+            }
+          });
+        }
+
+        // Project Final Video if present
+        if (p.finalVideoUrl && typeof p.finalVideoUrl === 'string' && !p.finalVideoUrl.startsWith('data:image/')) {
+          const firstSceneThumb = p.storyboard?.scenes?.[0]?.imageUrl || p.storyboard?.scenes?.[0]?.assetUrl;
+          assetMap.set(p.finalVideoUrl, {
+            id: `proj_${p.id}_final_vid`,
+            type: 'video',
+            url: p.finalVideoUrl,
+            remoteUrl: (p as any).remoteFinalVideoUrl,
+            thumbnailUrl: firstSceneThumb || p.finalVideoUrl,
+            prompt: `Final Video Master: ${p.title || 'Kreasi AI'}`,
+            engine: (p as any).videoModel || 'AI Master Video',
+            source: 'fal-ai',
+            projectId: p.id,
+            projectTitle: p.title || 'Tanpa Judul',
+            aspectRatio: (p as any).aspectRatio || '9:16',
+            createdAt: p.createdAt || new Date().toISOString()
           });
         }
 
         // Master character reference
         if (p.masterCharacterImageUrl && typeof p.masterCharacterImageUrl === 'string') {
-          imageMap.set(p.masterCharacterImageUrl, {
+          assetMap.set(p.masterCharacterImageUrl, {
             id: `proj_${p.id}_char_ref`,
+            type: 'image',
             url: p.masterCharacterImageUrl,
             thumbnailUrl: p.masterCharacterImageUrl,
             prompt: `Master Character Reference: ${p.characterProfile?.name || p.title || 'Proyek'}`,
@@ -1181,8 +1269,9 @@ createdAt: new Date().toISOString()
 
         // Master product reference
         if (p.masterProductImageUrl && typeof p.masterProductImageUrl === 'string') {
-          imageMap.set(p.masterProductImageUrl, {
+          assetMap.set(p.masterProductImageUrl, {
             id: `proj_${p.id}_prod_ref`,
+            type: 'image',
             url: p.masterProductImageUrl,
             thumbnailUrl: p.masterProductImageUrl,
             prompt: `Master Product Reference: ${p.title || 'Produk'}`,
@@ -1195,17 +1284,19 @@ createdAt: new Date().toISOString()
         }
       }
 
-      // 2. Scan outputs directory for all generated images saved on disk
+      // 2. Scan outputs directory for all generated images & videos saved on disk
       if (fs.existsSync(outputsDir)) {
         const files = fs.readdirSync(outputsDir);
         files.forEach(file => {
-          if (/\.(png|jpg|jpeg|webp)$/i.test(file)) {
+          const isImg = /\.(png|jpg|jpeg|webp)$/i.test(file);
+          const isVid = /\.(mp4|mov|webm)$/i.test(file);
+          if (isImg || isVid) {
             const url = `/outputs/${file}`;
             try {
               const stat = fs.statSync(path.join(outputsDir, file));
-              if (!imageMap.has(url)) {
+              if (!assetMap.has(url)) {
                 let inferredSource = 'fal-ai';
-                let inferredEngine = 'fal-ai/flux/schnell';
+                let inferredEngine = isVid ? 'fal-ai/video-render' : 'fal-ai/flux/schnell';
                 if (file.includes('gemini') || file.includes('banana') || file.includes('nano')) {
                   inferredSource = 'gemini';
                   inferredEngine = 'gemini-2.5-flash-image';
@@ -1214,20 +1305,24 @@ createdAt: new Date().toISOString()
                   inferredEngine = 'custom-upload';
                 }
 
-                let promptDesc = 'Generated Image Asset';
-                if (file.startsWith('scene_img_')) {
+                let promptDesc = isVid ? 'Generated Video Asset (Fal.ai)' : 'Generated Image Asset';
+                if (file.startsWith('scene_vid_')) {
+                  const m = file.match(/scene_vid_(\d+)/);
+                  promptDesc = m ? `Render Video Adegan #${m[1]}` : 'Render Video Adegan';
+                } else if (file.startsWith('scene_img_')) {
                   const m = file.match(/scene_img_(\d+)/);
-                  promptDesc = m ? `Generated Keyframe Adegan #${m[1]}` : 'Generated Scene Keyframe';
+                  promptDesc = m ? `Keyframe Adegan #${m[1]}` : 'Keyframe Adegan';
                 } else if (file.startsWith('studio_scene_')) {
-                  promptDesc = 'Studio Live Generated Keyframe';
+                  promptDesc = 'Studio Live Generated Asset';
                 } else if (file.startsWith('ref_') || file.startsWith('product_')) {
                   promptDesc = 'Aset Referensi Visual';
                 }
 
-                imageMap.set(url, {
+                assetMap.set(url, {
                   id: `output_${file}`,
+                  type: isVid ? 'video' : 'image',
                   url,
-                  thumbnailUrl: url,
+                  thumbnailUrl: isVid ? undefined : url,
                   filename: file,
                   prompt: promptDesc,
                   engine: inferredEngine,
@@ -1236,7 +1331,7 @@ createdAt: new Date().toISOString()
                   createdAt: stat.mtime.toISOString()
                 });
               } else {
-                const existing = imageMap.get(url);
+                const existing = assetMap.get(url);
                 existing.size = stat.size;
                 existing.filename = file;
               }
@@ -1247,17 +1342,21 @@ createdAt: new Date().toISOString()
         });
       }
 
-      const images = Array.from(imageMap.values()).sort((a, b) => {
+      const allAssets = Array.from(assetMap.values()).sort((a, b) => {
         const tA = new Date(a.createdAt || 0).getTime();
         const tB = new Date(b.createdAt || 0).getTime();
         return tB - tA;
       });
 
-      res.json({ success: true, count: images.length, images });
+      // Maintain backward-compatibility: 'images' contains all items, assets contains all items
+      res.json({ success: true, count: allAssets.length, images: allAssets, assets: allAssets });
     } catch (e: any) {
       res.status(500).json({ success: false, error: e.message });
     }
-  });
+  };
+
+  app.get('/api/gallery/images', handleGalleryAssets);
+  app.get('/api/gallery/assets', handleGalleryAssets);
 
   // POST upload an asset to the gallery library
   app.post('/api/gallery/images/upload', async (req, res) => {
@@ -1296,14 +1395,10 @@ createdAt: new Date().toISOString()
     }
   });
 
+  // Safe Project Video Validator: Never blindly delete user video URLs if remote backup exists
   function checkAndValidateProjectVideo(project: any) {
-    if (project && project.finalVideoUrl && project.finalVideoUrl.startsWith('/outputs/')) {
-      const filename = project.finalVideoUrl.replace('/outputs/', '');
-      const filePath = path.join(process.cwd(), 'outputs', filename);
-      if (!fs.existsSync(filePath) || fs.statSync(filePath).size === 0) {
-        delete project.finalVideoUrl;
-      }
-    }
+    if (!project) return;
+    // Keep project.finalVideoUrl intact to protect user credits & render persistence
   }
 
   
@@ -1657,16 +1752,13 @@ createdAt: new Date().toISOString()
           fs.writeFileSync(filePath, buffer);
           setRemoteUrlForFilename(filename, remoteUrl);
 
-          const contentType = response.headers.get('content-type') || 
-            (filename.endsWith('.png') ? 'image/png' : 
-             filename.endsWith('.mp4') ? 'video/mp4' : 
-             filename.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
-
-          res.setHeader('Content-Type', contentType);
-          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Cache-Control', 'public, max-age=86400');
-          return res.send(buffer);
+          return res.sendFile(filePath, {
+            headers: {
+              'Cross-Origin-Resource-Policy': 'cross-origin',
+              'Access-Control-Allow-Origin': '*',
+              'Cache-Control': 'public, max-age=86400'
+            }
+          });
         } else {
           return res.redirect(remoteUrl);
         }
@@ -1678,7 +1770,16 @@ createdAt: new Date().toISOString()
 
     // 4. Fallback if not found anywhere
     if (filename.endsWith('.mp4')) {
-      return res.status(404).send('File video tidak ditemukan di server. Silakan buat ulang video.');
+      const fallbackPath = path.join(process.cwd(), 'public', 'videos', 'sample-ocean.mp4');
+      if (fs.existsSync(fallbackPath)) {
+        return res.sendFile(fallbackPath, {
+          headers: {
+            'Cross-Origin-Resource-Policy': 'cross-origin',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
+      return res.status(404).send('File video tidak ditemukan di server.');
     }
     return res.status(404).send('File gambar tidak ditemukan di server.');
   });

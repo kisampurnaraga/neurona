@@ -28,7 +28,7 @@ class ApiKeyRotatorService {
   private openAIIndex = 0;
   private falIndex = 0;
 
-  private userClearedPool = true;
+  private userClearedPool = false;
 
   private saveState(): void {
     try {
@@ -64,10 +64,23 @@ class ApiKeyRotatorService {
     }
   }
 
-
   constructor() {
     // Load previous state if available
     this.loadState();
+    this.reloadKeysFromEnv();
+  }
+
+  public hasActiveKey(provider: 'gemini' | 'veo' | 'openai' | 'fal'): boolean {
+    this.reloadKeysFromEnv();
+    const map = this.getMap(provider);
+    if (map.size > 0) {
+      return Array.from(map.values()).some(k => k.status === 'ACTIVE' || k.status === 'COOLDOWN');
+    }
+    if (provider === 'gemini') return Boolean(process.env.GEMINI_API_KEY || process.env.GEMINI_MANUAL_API_KEY || process.env.GEMINI_API_KEYS);
+    if (provider === 'veo') return Boolean(process.env.VEO_API_KEY || process.env.VEO_MANUAL_API_KEY || process.env.GEMINI_API_KEY);
+    if (provider === 'openai') return Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEYS);
+    if (provider === 'fal') return Boolean(process.env.FAL_KEY || process.env.FAL_API_KEY || process.env.FAL_KEYS);
+    return false;
   }
 
   public clearAllKeys(provider?: 'gemini' | 'veo' | 'openai' | 'fal' | 'all'): void {
