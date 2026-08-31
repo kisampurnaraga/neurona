@@ -217,22 +217,26 @@ export class VideoEditor {
              }
           }
 
-          // 1b. Download TTS
+          // 1b. Synthesize Narration TTS with Selected AI Voice (ChatGPT / Fal.ai / Google / Gemini)
           if (text) {
              try {
-                 const ttsProvider = project.ttsVoiceConfig?.provider || 'google';
+                 const voiceId = project.ttsVoiceConfig?.voiceName || project.ttsVoiceConfig?.voiceId || (project.ttsVoiceConfig as any)?.id || 'openai-female-nova';
+                 const provider = project.ttsVoiceConfig?.provider || (voiceId.startsWith('openai') ? 'openai' : voiceId.startsWith('fal') ? 'fal-ai' : voiceId.startsWith('gemini') ? 'gemini' : 'google');
+                 console.log(`[VideoEditor] Generating TTS narration for scene ${i+1} using [${provider}] voice '${voiceId}'...`);
                  
-                 if (ttsProvider === 'tryaudio') {
-                     const buffer = await TTSService.generateTTS('tryaudio', text, project.ttsVoiceConfig);
-                     fs.writeFileSync(localTtsPath, buffer);
-                     hasTts = true;
-                 } else {
-                     const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=id&client=tw-ob`;
-                     await downloadFile(ttsUrl, localTtsPath);
-                     hasTts = true;
+                 const buffer = await TTSService.generateTTS(provider, text, {
+                   ...project.ttsVoiceConfig,
+                   voiceName: voiceId,
+                   voiceGender: project.ttsVoiceConfig?.voiceGender || (voiceId.includes('male') ? 'male' : 'female')
+                 });
+                 
+                 if (buffer && buffer.length > 0) {
+                   fs.writeFileSync(localTtsPath, buffer);
+                   hasTts = true;
+                   console.log(`[VideoEditor] TTS adegan ${i+1} berhasil (${buffer.length} bytes)`);
                  }
-             } catch(e) {
-                 console.error(`[VideoEditor] Gagal TTS untuk adegan ${i+1}, fallback ke audio hening.`, e);
+             } catch(e: any) {
+                 console.error(`[VideoEditor] Gagal TTS untuk adegan ${i+1}:`, e?.message || e);
              }
           }
 

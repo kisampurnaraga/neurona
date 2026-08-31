@@ -13,7 +13,7 @@ import { ConversationalIntentRouter } from "./src/server/core/IntentRouter";
 import { FounderService } from "./src/server/fcc/FounderService";
 import { keyRotator } from "./server/keyRotator";
 import { cleanApiKeyString } from "./server/utils/credentialValidator";
-import { TTSService } from "./server/ttsService";
+import { TTSService, SUPPORTED_VOICE_PRESETS } from "./server/services/ttsService";
 import { verifyToken, requireRole, generateToken, userDatabase, AuthenticatedRequest, UserSession } from "./server/middleware/auth";
 import videoStudioRouter from "./server/routes/videoStudio";
 import workerRouter from "./server/routes/workerRoute";
@@ -509,21 +509,17 @@ createdAt: new Date().toISOString()
   app.get('/api/tts/voices', (req, res) => {
     res.json({
       success: true,
-      voices: [
-        { id: 'id-ID-Journey-O', name: 'Google Journey-O (ID ♀ Natural)', gender: 'female', provider: 'google', lang: 'id-ID', badge: 'GOOGLE JOURNEY', description: 'Suara wanita Indonesia ultra-realistis dengan intonasi natural ekspresif' },
-        { id: 'id-ID-Wavenet-A', name: 'Google Wavenet-A (ID ♀ Professional)', gender: 'female', provider: 'google', lang: 'id-ID', badge: 'GOOGLE WAVENET', description: 'Suara wanita Indonesia formal & berwibawa untuk edukasi dan korporat' },
-        { id: 'id-ID-Wavenet-B', name: 'Google Wavenet-B (ID ♂ Energetic)', gender: 'male', provider: 'google', lang: 'id-ID', badge: 'GOOGLE WAVENET', description: 'Suara pria Indonesia berenergi & dinamis untuk promosi' },
-        { id: 'en-US-Journey-D', name: 'Google Journey-D (EN ♂ Cinematic Male)', gender: 'male', provider: 'google', lang: 'en-US', badge: 'GOOGLE JOURNEY', description: 'Suara pria Amerika karismatik narator bioskop' },
-        { id: 'en-US-Journey-F', name: 'Google Journey-F (EN ♀ Natural Female)', gender: 'female', provider: 'google', lang: 'en-US', badge: 'GOOGLE JOURNEY', description: 'Suara wanita Amerika modern artikulatif dan natural' },
-        { id: 'ja-JP-Neural2-B', name: 'Google Neural2-B (JA ♀ Seiyuu Anime)', gender: 'female', provider: 'google', lang: 'ja-JP', badge: 'GOOGLE NEURAL2', description: 'Suara seiyuu anime Jepang ceria dan ekspresif' },
-        { id: 'openai-female-nova', name: 'ChatGPT Nova', gender: 'female', provider: 'openai', lang: 'id-ID', badge: 'CHATGPT', description: 'Suara resmi ChatGPT energik dan ramah' },
-        { id: 'openai-male-onyx', name: 'ChatGPT Onyx', gender: 'male', provider: 'openai', lang: 'id-ID', badge: 'CHATGPT', description: 'Suara pria berwibawa berat khas host podcast' },
-        { id: 'openai-female-shimmer', name: 'ChatGPT Shimmer', gender: 'female', provider: 'openai', lang: 'id-ID', badge: 'OPENAI', description: 'Suara wanita lembut jernih dan estetik' },
-        { id: 'openai-male-echo', name: 'ChatGPT Echo', gender: 'male', provider: 'openai', lang: 'id-ID', badge: 'OPENAI', description: 'Suara pria hangat dan santai' },
-        { id: 'openai-neutral-alloy', name: 'ChatGPT Alloy', gender: 'female', provider: 'openai', lang: 'id-ID', badge: 'ORIGINAL', description: 'Suara legendaris ChatGPT yang seimbang dan netral' },
-        { id: 'tryaudio-female-citra', name: 'Citra Kirana (Neural AI)', gender: 'female', provider: 'tryaudio', lang: 'id-ID', badge: 'POPULAR', description: 'Suara wanita ceria ramah hook TikTok & affiliate' },
-        { id: 'tryaudio-male-dimas', name: 'Dimas Perkasa (Neural AI)', gender: 'male', provider: 'tryaudio', lang: 'id-ID', badge: 'CINEMATIC', description: 'Suara pria epik dan mantap untuk narasi video promosi' }
-      ]
+      voices: SUPPORTED_VOICE_PRESETS.map(v => ({
+        id: v.id,
+        name: v.name,
+        gender: v.ssmlGender.toLowerCase(),
+        provider: v.provider,
+        lang: v.languageCode,
+        category: v.category,
+        model: v.model,
+        badge: v.category.toUpperCase(),
+        description: v.description
+      }))
     });
   });
 
@@ -1284,63 +1280,80 @@ createdAt: new Date().toISOString()
         }
       }
 
-      // 2. Scan outputs directory for all generated images & videos saved on disk
-      if (fs.existsSync(outputsDir)) {
-        const files = fs.readdirSync(outputsDir);
-        files.forEach(file => {
-          const isImg = /\.(png|jpg|jpeg|webp)$/i.test(file);
-          const isVid = /\.(mp4|mov|webm)$/i.test(file);
-          if (isImg || isVid) {
-            const url = `/outputs/${file}`;
-            try {
-              const stat = fs.statSync(path.join(outputsDir, file));
-              if (!assetMap.has(url)) {
-                let inferredSource = 'fal-ai';
-                let inferredEngine = isVid ? 'fal-ai/video-render' : 'fal-ai/flux/schnell';
-                if (file.includes('gemini') || file.includes('banana') || file.includes('nano')) {
-                  inferredSource = 'gemini';
-                  inferredEngine = 'gemini-2.5-flash-image';
-                } else if (file.includes('ref') || file.includes('upload') || file.includes('avatar') || file.includes('product')) {
-                  inferredSource = 'uploaded';
-                  inferredEngine = 'custom-upload';
-                }
+      // 2. Helper to recursively scan directory for media files
+      const scanMediaDir = (dirPath: string, urlPrefix: string) => {
+        if (!fs.existsSync(dirPath)) return;
+        try {
+          const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = path.join(dirPath, entry.name);
+            if (entry.isDirectory()) {
+              scanMediaDir(fullPath, `${urlPrefix}/${entry.name}`);
+            } else if (entry.isFile()) {
+              const file = entry.name;
+              const isImg = /\.(png|jpg|jpeg|webp)$/i.test(file);
+              const isVid = /\.(mp4|mov|webm)$/i.test(file);
+              if (isImg || isVid) {
+                const url = `${urlPrefix}/${file}`;
+                try {
+                  const stat = fs.statSync(fullPath);
+                  if (!assetMap.has(url)) {
+                    let inferredSource = 'fal-ai';
+                    let inferredEngine = isVid ? 'fal-ai/video-render' : 'fal-ai/flux/schnell';
+                    if (file.includes('gemini') || file.includes('banana') || file.includes('nano')) {
+                      inferredSource = 'gemini';
+                      inferredEngine = 'gemini-2.5-flash-image';
+                    } else if (file.includes('ref') || file.includes('upload') || file.includes('avatar') || file.includes('product')) {
+                      inferredSource = 'uploaded';
+                      inferredEngine = 'custom-upload';
+                    }
 
-                let promptDesc = isVid ? 'Generated Video Asset (Fal.ai)' : 'Generated Image Asset';
-                if (file.startsWith('scene_vid_')) {
-                  const m = file.match(/scene_vid_(\d+)/);
-                  promptDesc = m ? `Render Video Adegan #${m[1]}` : 'Render Video Adegan';
-                } else if (file.startsWith('scene_img_')) {
-                  const m = file.match(/scene_img_(\d+)/);
-                  promptDesc = m ? `Keyframe Adegan #${m[1]}` : 'Keyframe Adegan';
-                } else if (file.startsWith('studio_scene_')) {
-                  promptDesc = 'Studio Live Generated Asset';
-                } else if (file.startsWith('ref_') || file.startsWith('product_')) {
-                  promptDesc = 'Aset Referensi Visual';
-                }
+                    let promptDesc = isVid ? 'Video Render Fal.ai' : 'Generated Image Asset';
+                    if (file.startsWith('fal_rendered_scene_') || file.startsWith('scene_mixed_') || file.startsWith('scene_vid_')) {
+                      const m = file.match(/_(\d+)/);
+                      const num = m ? parseInt(m[1]) + 1 : 1;
+                      promptDesc = `Video Render Fal.ai Adegan #${num}`;
+                      inferredEngine = 'fal-ai/video-render';
+                      inferredSource = 'fal-ai';
+                    } else if (file.startsWith('scene_img_')) {
+                      const m = file.match(/scene_img_(\d+)/);
+                      promptDesc = m ? `Keyframe Adegan #${m[1]}` : 'Keyframe Adegan';
+                    } else if (file.startsWith('studio_scene_')) {
+                      promptDesc = 'Studio Live Generated Asset';
+                    } else if (file.startsWith('sample-') || urlPrefix.includes('videos')) {
+                      promptDesc = `Koleksi Video Contoh: ${file.replace(/\.[^/.]+$/, '').replace('sample-', '')}`;
+                      inferredSource = 'preset';
+                      inferredEngine = 'sample-video-clip';
+                    }
 
-                assetMap.set(url, {
-                  id: `output_${file}`,
-                  type: isVid ? 'video' : 'image',
-                  url,
-                  thumbnailUrl: isVid ? undefined : url,
-                  filename: file,
-                  prompt: promptDesc,
-                  engine: inferredEngine,
-                  source: inferredSource,
-                  size: stat.size,
-                  createdAt: stat.mtime.toISOString()
-                });
-              } else {
-                const existing = assetMap.get(url);
-                existing.size = stat.size;
-                existing.filename = file;
+                    assetMap.set(url, {
+                      id: `asset_${file}_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+                      type: isVid ? 'video' : 'image',
+                      url,
+                      thumbnailUrl: isVid ? undefined : url,
+                      filename: file,
+                      prompt: promptDesc,
+                      engine: inferredEngine,
+                      source: inferredSource,
+                      size: stat.size,
+                      createdAt: stat.mtime.toISOString()
+                    });
+                  }
+                } catch (statErr) {
+                  // ignore deleted temp files
+                }
               }
-            } catch (statErr) {
-              // Ignore stat errors for deleted temp files
             }
           }
-        });
-      }
+        } catch (e) {
+          console.warn('[handleGalleryAssets] Scan error:', e);
+        }
+      };
+
+      // Scan outputs directory & public videos
+      scanMediaDir(outputsDir, '/outputs');
+      const publicVideosDir = path.join(process.cwd(), 'public', 'videos');
+      scanMediaDir(publicVideosDir, '/videos');
 
       const allAssets = Array.from(assetMap.values()).sort((a, b) => {
         const tA = new Date(a.createdAt || 0).getTime();

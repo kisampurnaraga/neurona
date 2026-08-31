@@ -875,15 +875,19 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
         throw new Error(`Ada ${missingVideos.length} adegan yang belum memiliki video. Pastikan seluruh adegan telah di-render sebelum menggabungkan video.`);
       }
 
+      const matchedVoice = NARRATOR_VOICES.find(v => v.id === selectedNarratorVoice);
+      const voiceProvider = matchedVoice?.provider || (selectedNarratorVoice.startsWith('openai') ? 'openai' : selectedNarratorVoice.startsWith('fal') ? 'fal-ai' : selectedNarratorVoice === 'voice_clone' ? 'minimax_clone' : 'google');
+      const resolvedVoiceName = matchedVoice?.voiceKey || matchedVoice?.name || selectedNarratorVoice;
+
       const res = await fetch(`/api/projects/${project.id}/stitch-master`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           subtitleStyle,
           ttsVoiceConfig: {
-            provider: selectedNarratorVoice,
+            provider: voiceProvider,
             voiceId: selectedNarratorVoice === 'voice_clone' ? clonedVoiceId : selectedNarratorVoice,
-            voiceName: NARRATOR_VOICES.find(v => v.id === selectedNarratorVoice)?.name,
+            voiceName: resolvedVoiceName,
             clonedVoiceId: clonedVoiceId
           }
         })
@@ -3321,10 +3325,11 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
               <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-3 no-scrollbar">
                 {[
                   { id: 'all', label: 'Semua Suara' },
+                  { id: 'ChatGPT', label: '🌟 ChatGPT (OpenAI)' },
+                  { id: 'Fal.ai', label: '⚡ Fal.ai Natural' },
                   { id: 'Journey', label: 'Google Journey' },
                   { id: 'Neural2', label: 'Google Neural2' },
                   { id: 'Wavenet', label: 'Google WaveNet' },
-                  { id: 'Standard', label: 'Google Standard' },
                   { id: 'Free', label: 'Gratis Browser' },
                   { id: 'Clone', label: 'Voice Cloning' }
                 ].map((cat) => (
@@ -4469,6 +4474,13 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => setGalleryFilter('video')}
+                  className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${galleryFilter === 'video' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                >
+                  🎥 Video ({galleryImages.filter(i => i.type === 'video' || (typeof i.url === 'string' && i.url.includes('.mp4'))).length})
+                </button>
+                <button
+                  type="button"
                   onClick={() => setGalleryFilter('fal-ai')}
                   className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition cursor-pointer ${galleryFilter === 'fal-ai' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}`}
                 >
@@ -4496,49 +4508,83 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   type="text"
                   value={gallerySearch}
                   onChange={(e) => setGallerySearch(e.target.value)}
-                  placeholder="Cari prompt..."
+                  placeholder="Cari prompt / video..."
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                 />
               </div>
             </div>
 
-            {/* Grid of Selectable Images */}
+            {/* Grid of Selectable Images and Videos */}
             <div className="p-4 overflow-y-auto max-h-[60vh]">
               {filteredGalleryImages.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 space-y-2">
                   <Images size={36} className="text-slate-600 mx-auto" />
-                  <p className="text-xs">Tidak ada gambar yang cocok di galeri.</p>
+                  <p className="text-xs">Tidak ada gambar atau video yang cocok di galeri.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                  {filteredGalleryImages.map((img) => (
-                    <div
-                      key={img.id}
-                      onClick={() => handleApplyImageToScene(pickerSceneTarget.id, img.url)}
-                      className="group relative bg-slate-950 border border-slate-800 hover:border-emerald-400 hover:ring-2 hover:ring-emerald-500/40 rounded-xl overflow-hidden cursor-pointer transition-all hover:scale-[1.02] flex flex-col shadow-md"
-                    >
-                      <div className="aspect-video w-full relative bg-black overflow-hidden">
-                        <img
-                          src={img.thumbnailUrl || img.url}
-                          alt={img.prompt || 'Asset'}
-                          referrerPolicy="no-referrer"
-                          crossOrigin="anonymous"
-                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                        />
-                        <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/80 text-[8px] font-mono text-emerald-300 border border-emerald-500/30">
-                          {img.source === 'fal-ai' ? 'Fal.ai' : img.source === 'gemini' ? 'Gemini' : 'Upload'}
+                  {filteredGalleryImages.map((img) => {
+                    const isVid = img.type === 'video' || (typeof img.url === 'string' && img.url.includes('.mp4'));
+                    return (
+                      <div
+                        key={img.id}
+                        onClick={() => {
+                          if (isVid) {
+                            handleApplyVideoToScene(pickerSceneTarget.id, img.url);
+                            setPickerSceneTarget(null);
+                          } else {
+                            handleApplyImageToScene(pickerSceneTarget.id, img.url);
+                          }
+                        }}
+                        className="group relative bg-slate-950 border border-slate-800 hover:border-emerald-400 hover:ring-2 hover:ring-emerald-500/40 rounded-xl overflow-hidden cursor-pointer transition-all hover:scale-[1.02] flex flex-col shadow-md"
+                      >
+                        <div className="aspect-video w-full relative bg-black overflow-hidden">
+                          {isVid ? (
+                            <div className="w-full h-full bg-slate-950 flex items-center justify-center relative">
+                              {img.thumbnailUrl && img.thumbnailUrl !== img.url ? (
+                                <img
+                                  src={img.thumbnailUrl}
+                                  alt={img.prompt || 'Video thumbnail'}
+                                  referrerPolicy="no-referrer"
+                                  crossOrigin="anonymous"
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex flex-col items-center justify-center gap-1 text-emerald-400">
+                                  <Film size={28} />
+                                  <span className="text-[9px] font-mono">Video MP4</span>
+                                </div>
+                              )}
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                                <div className="w-7 h-7 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center shadow">
+                                  <Play size={12} className="ml-0.5 fill-current" />
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <img
+                              src={img.thumbnailUrl || img.url}
+                              alt={img.prompt || 'Asset'}
+                              referrerPolicy="no-referrer"
+                              crossOrigin="anonymous"
+                              className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                            />
+                          )}
+                          <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/80 text-[8px] font-mono text-emerald-300 border border-emerald-500/30">
+                            {isVid ? '🎥 VIDEO' : img.source === 'fal-ai' ? 'Fal.ai' : img.source === 'gemini' ? 'Gemini' : 'Upload'}
+                          </div>
+                          <div className="absolute inset-0 bg-emerald-950/70 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                            <span className="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold text-xs shadow-lg">
+                              {isVid ? '🎬 Pasang Video Ini' : 'Gunakan Foto Ini'}
+                            </span>
+                          </div>
                         </div>
-                        <div className="absolute inset-0 bg-emerald-950/70 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-                          <span className="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold text-xs shadow-lg">
-                            Gunakan Foto Ini
-                          </span>
+                        <div className="p-2 text-[10px] text-slate-300 line-clamp-2 leading-tight">
+                          {img.prompt || (isVid ? 'Rendered Scene Video' : 'Keyframe Visual')}
                         </div>
                       </div>
-                      <div className="p-2 text-[10px] text-slate-300 line-clamp-2 leading-tight">
-                        {img.prompt || 'Keyframe Visual'}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

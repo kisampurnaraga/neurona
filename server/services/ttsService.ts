@@ -12,58 +12,178 @@ export interface VoiceOption {
   name: string;
   languageCode: string;
   ssmlGender: 'MALE' | 'FEMALE' | 'NEUTRAL';
-  category: 'Journey' | 'Neural2' | 'Wavenet' | 'Studio' | 'Standard';
+  category: 'ChatGPT' | 'Fal.ai' | 'Journey' | 'Neural2' | 'Wavenet' | 'Gemini';
+  provider: 'openai' | 'fal-ai' | 'google' | 'gemini';
   description: string;
+  model?: string;
 }
 
 export const SUPPORTED_VOICE_PRESETS: VoiceOption[] = [
+  // 1. ChatGPT (OpenAI) TTS - Natural Indonesian
+  {
+    id: 'openai-female-nova',
+    name: 'ChatGPT Nova (Wanita Natural & Ceria)',
+    languageCode: 'id-ID',
+    ssmlGender: 'FEMALE',
+    category: 'ChatGPT',
+    provider: 'openai',
+    description: 'Suara resmi ChatGPT energik, ramah, dan intonasi sangat luwes bahasa Indonesia'
+  },
+  {
+    id: 'openai-female-shimmer',
+    name: 'ChatGPT Shimmer (Wanita Lembut & Elegan)',
+    languageCode: 'id-ID',
+    ssmlGender: 'FEMALE',
+    category: 'ChatGPT',
+    provider: 'openai',
+    description: 'Suara wanita lembut, hangat, jernih, sangat cocok untuk narasi storytelling'
+  },
+  {
+    id: 'openai-neutral-alloy',
+    name: 'ChatGPT Alloy (Netral Jernih & Profesional)',
+    languageCode: 'id-ID',
+    ssmlGender: 'NEUTRAL',
+    category: 'ChatGPT',
+    provider: 'openai',
+    description: 'Suara ChatGPT seimbang, profesional, jelas untuk tutorial & edukasi'
+  },
+  {
+    id: 'openai-male-onyx',
+    name: 'ChatGPT Onyx (Pria Berwibawa & Berat)',
+    languageCode: 'id-ID',
+    ssmlGender: 'MALE',
+    category: 'ChatGPT',
+    provider: 'openai',
+    description: 'Suara pria berat, maskulin, karismatik khas trailer bioskop atau podcast'
+  },
+  {
+    id: 'openai-male-echo',
+    name: 'ChatGPT Echo (Pria Hangat & Dinamis)',
+    languageCode: 'id-ID',
+    ssmlGender: 'MALE',
+    category: 'ChatGPT',
+    provider: 'openai',
+    description: 'Suara pria kasual, ramah, dan sangat natural untuk konten media sosial'
+  },
+  {
+    id: 'openai-male-fable',
+    name: 'ChatGPT Fable (Pria Narator Mendalam)',
+    languageCode: 'id-ID',
+    ssmlGender: 'MALE',
+    category: 'ChatGPT',
+    provider: 'openai',
+    description: 'Suara pria teatrikal, artikulatif, ideal untuk cerita dokumenter'
+  },
+
+  // 2. Fal.ai Natural Indonesian & Multilingual TTS Models
+  {
+    id: 'fal-minimax-female',
+    name: 'Fal.ai MiniMax Natural (Wanita Ekspresif ID)',
+    languageCode: 'id-ID',
+    ssmlGender: 'FEMALE',
+    category: 'Fal.ai',
+    provider: 'fal-ai',
+    model: 'fal-ai/minimax-voice',
+    description: 'Model speech neural MiniMax dengan artikulasi super natural bahasa Indonesia'
+  },
+  {
+    id: 'fal-minimax-male',
+    name: 'Fal.ai MiniMax Deep (Pria Karismatik ID)',
+    languageCode: 'id-ID',
+    ssmlGender: 'MALE',
+    category: 'Fal.ai',
+    provider: 'fal-ai',
+    model: 'fal-ai/minimax-voice',
+    description: 'Model speech neural MiniMax pria dengan intonasi mantap dan tegas'
+  },
+  {
+    id: 'fal-playht-id',
+    name: 'Fal.ai PlayHT v3 Neural (Multilingual ID)',
+    languageCode: 'id-ID',
+    ssmlGender: 'FEMALE',
+    category: 'Fal.ai',
+    provider: 'fal-ai',
+    model: 'fal-ai/playht/tts/v3',
+    description: 'PlayHT v3 model ultra-realistis dengan emosi dinamis'
+  },
+  {
+    id: 'fal-elevenlabs-id',
+    name: 'Fal.ai ElevenLabs Multilingual v2 (Indonesia)',
+    languageCode: 'id-ID',
+    ssmlGender: 'FEMALE',
+    category: 'Fal.ai',
+    provider: 'fal-ai',
+    model: 'fal-ai/elevenlabs/tts',
+    description: 'ElevenLabs v2 natural speech synthesis dengan intonasi lokal Indonesia'
+  },
+  {
+    id: 'fal-kokoro-id',
+    name: 'Fal.ai Kokoro Multi-Language (Natural ID)',
+    languageCode: 'id-ID',
+    ssmlGender: 'FEMALE',
+    category: 'Fal.ai',
+    provider: 'fal-ai',
+    model: 'fal-ai/kokoro',
+    description: 'Kokoro lightweight neural voice yang cepat dan jernih'
+  },
+  {
+    id: 'fal-f5-id',
+    name: 'Fal.ai F5-TTS Neural (Fast Articulation)',
+    languageCode: 'id-ID',
+    ssmlGender: 'MALE',
+    category: 'Fal.ai',
+    provider: 'fal-ai',
+    model: 'fal-ai/f5-tts',
+    description: 'F5-TTS neural speed synthesis untuk narasi cepat dan responsif'
+  },
+
+  // 3. Google Cloud Journey & Neural
   {
     id: 'id-ID-Journey-O',
-    name: 'Indonesian Natural Female (Journey-O)',
+    name: 'Google Journey-O (Wanita Indonesia Ultra-Natural)',
     languageCode: 'id-ID',
     ssmlGender: 'FEMALE',
     category: 'Journey',
+    provider: 'google',
     description: 'Suara wanita Indonesia ultra-realistis dengan intonasi natural ekspresif'
   },
   {
     id: 'id-ID-Wavenet-A',
-    name: 'Indonesian Professional Female (Wavenet-A)',
+    name: 'Google Wavenet-A (Wanita Indonesia Profesional)',
     languageCode: 'id-ID',
     ssmlGender: 'FEMALE',
     category: 'Wavenet',
+    provider: 'google',
     description: 'Suara wanita Indonesia formal dan jernih, cocok untuk edukasi & tutorial'
   },
   {
     id: 'id-ID-Wavenet-B',
-    name: 'Indonesian Energetic Male (Wavenet-B)',
+    name: 'Google Wavenet-B (Pria Indonesia Energetik)',
     languageCode: 'id-ID',
     ssmlGender: 'MALE',
     category: 'Wavenet',
+    provider: 'google',
     description: 'Suara pria Indonesia bertenaga, ideal untuk konten promo & marketing'
   },
+
+  // 4. Gemini Speech AI
   {
-    id: 'en-US-Journey-D',
-    name: 'English Cinematic Male (Journey-D)',
-    languageCode: 'en-US',
+    id: 'gemini-kore',
+    name: 'Gemini Kore (Wanita Ceria & Ramah)',
+    languageCode: 'id-ID',
+    ssmlGender: 'FEMALE',
+    category: 'Gemini',
+    provider: 'gemini',
+    description: 'Speech synthesis native Gemini Audio Modality wanita'
+  },
+  {
+    id: 'gemini-puck',
+    name: 'Gemini Puck (Pria Dinamis & Percaya Diri)',
+    languageCode: 'id-ID',
     ssmlGender: 'MALE',
-    category: 'Journey',
-    description: 'Suara pria Amerika karismatik narator dokumenter & film'
-  },
-  {
-    id: 'en-US-Journey-F',
-    name: 'English Natural Female (Journey-F)',
-    languageCode: 'en-US',
-    ssmlGender: 'FEMALE',
-    category: 'Journey',
-    description: 'Suara wanita Amerika modern, ramah, dan artikulatif'
-  },
-  {
-    id: 'ja-JP-Neural2-B',
-    name: 'Japanese Seiyuu Female (Neural2-B)',
-    languageCode: 'ja-JP',
-    ssmlGender: 'FEMALE',
-    category: 'Neural2',
-    description: 'Suara anime seiyuu Jepang bersemangat dan ekspresif'
+    category: 'Gemini',
+    provider: 'gemini',
+    description: 'Speech synthesis native Gemini Audio Modality pria'
   }
 ];
 
@@ -79,7 +199,6 @@ export class TTSService {
           keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS || undefined,
         });
       } catch (err: any) {
-        console.warn('[TTSService] Notice initializing Google Cloud TTS client:', err?.message || err);
         return null;
       }
     }
@@ -112,12 +231,121 @@ export class TTSService {
   }
 
   /**
-   * Generates voice narration using Google Cloud TTS API (Journey, Neural2, Wavenet)
-   * with automated fallbacks to Gemini Flash TTS, OpenAI TTS, and harmonic audio.
-   * @param text Script text to synthesize
-   * @param voiceType Voice ID (e.g. 'id-ID-Journey-O', 'en-US-Journey-D', 'ja-JP-Neural2-B')
+   * Generates ChatGPT / OpenAI TTS Speech
    */
-  public static async generateVoice(text: string, voiceType = 'id-ID-Journey-O'): Promise<{ buffer: Buffer; tempFilePath: string }> {
+  public static async generateOpenAITTS(text: string, voiceName = 'nova', speed = 1.0): Promise<{ buffer: Buffer; tempFilePath: string } | null> {
+    const openAIConfig = FounderService.getOpenAIConfig();
+    const openAIKey = openAIConfig.apiKey || process.env.OPENAI_API_KEY;
+    if (!openAIKey) return null;
+
+    const normalizedVoice = voiceName.replace('openai-', '').replace('female-', '').replace('male-', '').replace('neutral-', '').toLowerCase();
+    const validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+    const chosenVoice = validVoices.includes(normalizedVoice) ? normalizedVoice : 'nova';
+
+    console.log(`[TTSService] Generating ChatGPT (OpenAI) TTS voice: '${chosenVoice}', speed: ${speed}...`);
+    const endpoint = `${openAIConfig.endpoint || 'https://api.openai.com/v1'}/audio/speech`;
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${openAIKey}`
+      },
+      body: JSON.stringify({
+        model: 'tts-1',
+        input: text,
+        voice: chosenVoice,
+        speed: speed || 1.0
+      })
+    });
+
+    if (response.ok) {
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const tempPath = path.join(os.tmpdir(), `openai_tts_${Date.now()}_${chosenVoice}.mp3`);
+      fs.writeFileSync(tempPath, buffer);
+      console.log(`[TTSService] ChatGPT TTS success (${buffer.length} bytes) -> ${tempPath}`);
+      return { buffer, tempFilePath: tempPath };
+    } else {
+      const errTxt = await response.text().catch(() => '');
+      console.warn(`[TTSService] OpenAI TTS error (${response.status}): ${errTxt}`);
+      return null;
+    }
+  }
+
+  /**
+   * Generates Fal.ai Natural Speech (MiniMax, PlayHT, ElevenLabs, Kokoro, F5-TTS)
+   */
+  public static async generateFalTTS(text: string, modelId = 'fal-ai/minimax-voice', voiceConfig?: any): Promise<{ buffer: Buffer; tempFilePath: string } | null> {
+    const falConfig = FounderService.getFalConfig();
+    const falKey = falConfig.apiKey || process.env.FAL_KEY;
+    if (!falKey) return null;
+
+    console.log(`[TTSService] Generating Fal.ai TTS model: '${modelId}'...`);
+
+    let endpoint = `https://fal.run/${modelId}`;
+    let payload: any = { prompt: text };
+
+    if (modelId.includes('minimax')) {
+      payload = {
+        prompt: text,
+        voice_id: voiceConfig?.voiceGender === 'male' || voiceConfig?.voiceName?.includes('male') ? 'male-qn-qingse' : 'female-shaonv'
+      };
+    } else if (modelId.includes('playht')) {
+      payload = {
+        text: text,
+        voice: voiceConfig?.voiceId || 's3://voice-cloning-zero-shot/d9ff78ba-d016-47f6-b0ef-dd630f59414e/female-cs/manifest.json'
+      };
+    } else if (modelId.includes('elevenlabs')) {
+      payload = {
+        prompt: text,
+        model_id: 'eleven_multilingual_v2'
+      };
+    } else if (modelId.includes('f5-tts')) {
+      payload = {
+        gen_text: text
+      };
+    } else if (modelId.includes('kokoro')) {
+      payload = {
+        prompt: text,
+        voice: voiceConfig?.voiceGender === 'male' ? 'am_adam' : 'af_heart'
+      };
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Key ${falKey}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+      const data: any = await response.json();
+      const audioUrl = data.audio?.url || data.audio_url?.url || data.audio_url || data.url;
+      if (audioUrl) {
+        console.log(`[TTSService] Fal.ai TTS generated audio URL: ${audioUrl}`);
+        const audioResp = await fetch(audioUrl);
+        if (audioResp.ok) {
+          const arrBuf = await audioResp.arrayBuffer();
+          const buffer = Buffer.from(arrBuf);
+          const tempPath = path.join(os.tmpdir(), `fal_tts_${Date.now()}.mp3`);
+          fs.writeFileSync(tempPath, buffer);
+          return { buffer, tempFilePath: tempPath };
+        }
+      }
+    } else {
+      const errTxt = await response.text().catch(() => '');
+      console.warn(`[TTSService] Fal.ai TTS error (${response.status}): ${errTxt}`);
+    }
+    return null;
+  }
+
+  /**
+   * Main unified generateVoice synthesis handler
+   */
+  public static async generateVoice(text: string, voiceType = 'id-ID-Journey-O', extraConfig?: any): Promise<{ buffer: Buffer; tempFilePath: string }> {
     const cleanText = text.trim();
     if (!cleanText) {
       const emptyBuffer = this.generateStudioFeedbackAudio('female');
@@ -126,31 +354,51 @@ export class TTSService {
       return { buffer: emptyBuffer, tempFilePath: tempPath };
     }
 
-    // ----------------------------------------------------
-    // 1. Google Cloud Text-to-Speech API
-    // ----------------------------------------------------
+    const preset = SUPPORTED_VOICE_PRESETS.find(p => p.id === voiceType) || {
+      id: voiceType,
+      provider: voiceType.startsWith('openai') ? 'openai' : voiceType.startsWith('fal') ? 'fal-ai' : voiceType.startsWith('gemini') ? 'gemini' : 'google',
+      languageCode: 'id-ID',
+      ssmlGender: voiceType.toLowerCase().includes('male') ? 'MALE' : 'FEMALE'
+    };
+
+    const targetProvider = extraConfig?.provider || preset.provider || 'google';
+
+    // 1. OpenAI ChatGPT TTS
+    if (targetProvider === 'openai' || voiceType.startsWith('openai')) {
+      try {
+        const openAiRes = await this.generateOpenAITTS(cleanText, voiceType, extraConfig?.speed || 1.0);
+        if (openAiRes) return openAiRes;
+      } catch (err) {
+        console.warn('[TTSService] OpenAI TTS error, trying fallbacks...', err);
+      }
+    }
+
+    // 2. Fal.ai Speech Models
+    if (targetProvider === 'fal-ai' || targetProvider === 'fal' || voiceType.startsWith('fal')) {
+      try {
+        const falModel = ('model' in preset ? (preset as any).model : undefined) || extraConfig?.model || 'fal-ai/minimax-voice';
+        const falRes = await this.generateFalTTS(cleanText, falModel, { ...preset, ...extraConfig });
+        if (falRes) return falRes;
+      } catch (err) {
+        console.warn('[TTSService] Fal.ai TTS error, trying fallbacks...', err);
+      }
+    }
+
+    // 3. Google Cloud Text-to-Speech API
     const client = this.getGcpTtsClient();
     if (client) {
       try {
         console.log(`[TTSService] Generating Google Cloud TTS with voice '${voiceType}'...`);
-        
-        // Find matching preset or parse language code
-        const preset = SUPPORTED_VOICE_PRESETS.find(p => p.id === voiceType) || {
-          id: voiceType,
-          languageCode: voiceType.startsWith('en') ? 'en-US' : voiceType.startsWith('ja') ? 'ja-JP' : 'id-ID',
-          ssmlGender: voiceType.toLowerCase().includes('male') || voiceType.endsWith('B') || voiceType.endsWith('D') ? 'MALE' : 'FEMALE'
-        };
-
         const request: protos.google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
           input: { text: cleanText },
           voice: {
-            languageCode: preset.languageCode,
-            name: voiceType.includes('-') ? voiceType : undefined,
+            languageCode: preset.languageCode || 'id-ID',
+            name: voiceType.includes('-') && !voiceType.startsWith('openai') && !voiceType.startsWith('fal') ? voiceType : undefined,
             ssmlGender: (preset.ssmlGender as any) || 'NEUTRAL',
           },
           audioConfig: {
             audioEncoding: 'MP3',
-            speakingRate: 1.0,
+            speakingRate: extraConfig?.speed || 1.0,
             pitch: 0.0,
           },
         };
@@ -168,27 +416,19 @@ export class TTSService {
       }
     }
 
-    // ----------------------------------------------------
-    // 2. Gemini Flash Native Speech AI (via KeyRotator)
-    // ----------------------------------------------------
+    // 4. Gemini Flash Native Speech AI (via KeyRotator)
     try {
       const isMale = voiceType.toLowerCase().includes('male') || voiceType.endsWith('B') || voiceType.endsWith('D');
       const geminiVoice = isMale ? 'Puck' : 'Kore';
-
       const promptText = isMale
         ? `Bicaralah dengan intonasi pria yang ramah, artikulatif, natural, dan berwibawa: "${cleanText}"`
         : `Bicaralah dengan intonasi wanita yang ceria, ramah, memikat, artikulatif, dan natural: "${cleanText}"`;
 
-      const candidateModels = [
-        'gemini-3.1-flash-tts-preview',
-        'gemini-3.6-flash'
-      ];
+      const candidateModels = ['gemini-3.1-flash-tts-preview', 'gemini-3.6-flash'];
 
-      return await keyRotator.executeGeminiWithRotation(async (ai, apiKey) => {
-        console.log(`[TTSService] Synthesizing via Gemini Speech AI (Persona: ${geminiVoice})...`);
+      const result = await keyRotator.executeGeminiWithRotation(async (ai) => {
         for (const modelName of candidateModels) {
           try {
-            console.log(`[TTSService] Synthesizing via Gemini Speech AI (Model: ${modelName}, Persona: ${geminiVoice})...`);
             const response = await ai.models.generateContent({
               model: modelName,
               contents: [{ parts: [{ text: promptText }] }],
@@ -214,57 +454,35 @@ export class TTSService {
               return { buffer: wavBuffer, tempFilePath: tempPath };
             }
           } catch (mErr: any) {
-            // Proceed to next candidate
             console.log(`[TTSService] Model ${modelName} failed: ${mErr.message}`);
           }
         }
         throw new Error("Failed to synthesize via all Gemini models.");
       });
+
+      if (result) return result;
     } catch (geminiErr: any) {
       console.log(`[TTSService] Gemini Flash TTS notice: ${geminiErr?.message || geminiErr}`);
     }
 
-    // ----------------------------------------------------
-    // 3. Fallback: OpenAI TTS / Acoustic WAV Fail-Safe
-    // ----------------------------------------------------
-    const openAIConfig = FounderService.getOpenAIConfig();
-    const openAIKey = openAIConfig.apiKey || process.env.OPENAI_API_KEY;
-
-    if (openAIKey) {
-      try {
-        const isMale = voiceType.toLowerCase().includes('male') || voiceType.endsWith('B') || voiceType.endsWith('D');
-        const openAiVoice = isMale ? 'onyx' : 'nova';
-        
-        console.log(`[TTSService] Calling OpenAI TTS fallback (Voice: ${openAiVoice})...`);
-        const openAiEndpoint = `${openAIConfig.endpoint || 'https://api.openai.com/v1'}/audio/speech`;
-        
-        const response = await fetch(openAiEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${openAIKey}`
-          },
-          body: JSON.stringify({
-            model: 'tts-1',
-            input: cleanText,
-            voice: openAiVoice,
-            speed: 1.0
-          })
-        });
-
-        if (response.ok) {
-          const arrayBuffer = await response.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-          const tempPath = path.join(os.tmpdir(), `openai_tts_${Date.now()}.mp3`);
-          fs.writeFileSync(tempPath, buffer);
-          return { buffer, tempFilePath: tempPath };
-        }
-      } catch (openAiErr) {
-        console.warn("[TTSService] OpenAI TTS error:", openAiErr);
+    // 5. Try Google Translate TTS as fast online fallback
+    try {
+      const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=id&client=tw-ob`;
+      const gResp = await fetch(googleTtsUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+      });
+      if (gResp.ok) {
+        const arrBuf = await gResp.arrayBuffer();
+        const buffer = Buffer.from(arrBuf);
+        const tempPath = path.join(os.tmpdir(), `gtrans_tts_${Date.now()}.mp3`);
+        fs.writeFileSync(tempPath, buffer);
+        return { buffer, tempFilePath: tempPath };
       }
+    } catch (gtErr) {
+      console.warn('[TTSService] Google Translate TTS fallback error:', gtErr);
     }
 
-    // Acoustic Harmonic fail-safe
+    // 6. Acoustic Harmonic Fail-Safe
     console.log(`[TTSService] Using studio acoustic audio fallback.`);
     const isMale = voiceType.toLowerCase().includes('male') || voiceType.endsWith('B') || voiceType.endsWith('D');
     const fallbackBuffer = this.generateStudioFeedbackAudio(isMale ? 'male' : 'female');
@@ -274,8 +492,8 @@ export class TTSService {
   }
 
   public static async generateTTS(provider: string, text: string, config?: any): Promise<Buffer> {
-    const voiceType = config?.voiceName || config?.voiceKey || 'id-ID-Journey-O';
-    const result = await this.generateVoice(text, voiceType);
+    const voiceType = config?.voiceName || config?.voiceKey || config?.voiceId || config?.id || 'id-ID-Journey-O';
+    const result = await this.generateVoice(text, voiceType, { provider, ...config });
     return result.buffer;
   }
 
@@ -325,3 +543,4 @@ export class TTSService {
     return buffer;
   }
 }
+

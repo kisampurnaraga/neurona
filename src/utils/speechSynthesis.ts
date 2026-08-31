@@ -6,7 +6,7 @@ export interface VoiceOption {
   id: string;
   name: string;
   gender: 'male' | 'female';
-  provider: 'google' | 'openai' | 'tryaudio' | 'elevenlabs' | 'webspeech' | 'minimax_clone';
+  provider: 'google' | 'openai' | 'fal-ai' | 'tryaudio' | 'elevenlabs' | 'webspeech' | 'minimax_clone';
   engine: string;
   voiceKey: string;
   lang: string;
@@ -16,32 +16,205 @@ export interface VoiceOption {
   badgeColor: string;
   creditCost: number;
   creditCostText: string;
-  category: 'Journey' | 'Wavenet' | 'Neural2' | 'Standard' | 'Free' | 'Clone' | 'OpenAI';
+  category: 'ChatGPT' | 'Fal.ai' | 'Journey' | 'Wavenet' | 'Neural2' | 'Standard' | 'Free' | 'Clone';
   demoText: string;
   sampleUrl?: string;
+  model?: string;
 }
 
 export const AVAILABLE_VOICES: VoiceOption[] = [
-  // 0. Free Browser TTS
+  // 1. ChatGPT (OpenAI) TTS - Natural Indonesian (Top Recommended)
   {
-    id: 'webspeech',
-    name: 'Browser TTS (Web Speech API)',
+    id: 'openai-female-nova',
+    name: 'ChatGPT Nova (Wanita Natural & Ceria)',
     gender: 'female',
-    provider: 'webspeech',
-    engine: 'webspeech',
-    voiceKey: 'webspeech',
+    provider: 'openai',
+    engine: 'openai/tts-1',
+    voiceKey: 'nova',
     lang: 'id-ID',
-    description: 'Sintesis vokal bawaan browser HP/PC (id-ID). Gratis 0 kredit.',
-    avatar: '🌐',
-    badge: 'GRATIS',
+    description: 'Suara resmi ChatGPT energik, ramah, dan intonasi sangat luwes berbahasa Indonesia',
+    avatar: '🌟',
+    badge: 'CHATGPT NOVA',
     badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-    creditCost: 0,
-    creditCostText: '0 CR / Video',
-    category: 'Free',
-    demoText: 'Halo! Ini adalah contoh sampel suara narator gratis dari browser Anda.'
+    creditCost: 15,
+    creditCostText: '15 CR / Video',
+    category: 'ChatGPT',
+    demoText: 'Halo semuanya! Ini adalah contoh suara ChatGPT Nova yang natural, ramah, dan sangat ekspresif.'
+  },
+  {
+    id: 'openai-female-shimmer',
+    name: 'ChatGPT Shimmer (Wanita Lembut & Elegan)',
+    gender: 'female',
+    provider: 'openai',
+    engine: 'openai/tts-1',
+    voiceKey: 'shimmer',
+    lang: 'id-ID',
+    description: 'Suara wanita lembut, hangat, jernih, sangat cocok untuk narasi storytelling & visual estetik',
+    avatar: '🌸',
+    badge: 'CHATGPT SHIMMER',
+    badgeColor: 'bg-pink-500/20 text-pink-300 border-pink-500/40',
+    creditCost: 15,
+    creditCostText: '15 CR / Video',
+    category: 'ChatGPT',
+    demoText: 'Selamat datang kembali. Dengarkan kelembutan intonasi ChatGPT Shimmer untuk narasi kisah Anda.'
+  },
+  {
+    id: 'openai-neutral-alloy',
+    name: 'ChatGPT Alloy (Netral Jernih & Profesional)',
+    gender: 'female',
+    provider: 'openai',
+    engine: 'openai/tts-1',
+    voiceKey: 'alloy',
+    lang: 'id-ID',
+    description: 'Suara seimbang, bersih, dan artikulatif untuk konten edukasi, tutorial, dan presentasi',
+    avatar: '💎',
+    badge: 'CHATGPT ALLOY',
+    badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
+    creditCost: 15,
+    creditCostText: '15 CR / Video',
+    category: 'ChatGPT',
+    demoText: 'Halo! Ini adalah suara ChatGPT Alloy yang jernih, profesional, dan sangat mudah dipahami.'
+  },
+  {
+    id: 'openai-male-onyx',
+    name: 'ChatGPT Onyx (Pria Berwibawa & Berat)',
+    gender: 'male',
+    provider: 'openai',
+    engine: 'openai/tts-1',
+    voiceKey: 'onyx',
+    lang: 'id-ID',
+    description: 'Suara pria berat, mantap, maskulin khas trailer film atau narator podcast investigasi',
+    avatar: '🎙️',
+    badge: 'CHATGPT ONYX',
+    badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+    creditCost: 15,
+    creditCostText: '15 CR / Video',
+    category: 'ChatGPT',
+    demoText: 'Sebuah kisah perjalanan yang tak terlupakan. Bersama ChatGPT Onyx, setiap kata berbobot nyata.'
+  },
+  {
+    id: 'openai-male-echo',
+    name: 'ChatGPT Echo (Pria Hangat & Dinamis)',
+    gender: 'male',
+    provider: 'openai',
+    engine: 'openai/tts-1',
+    voiceKey: 'echo',
+    lang: 'id-ID',
+    description: 'Suara pria santai, bersahabat, cocok untuk konten lifestyle, TikTok, dan reels harian',
+    avatar: '⚡',
+    badge: 'CHATGPT ECHO',
+    badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+    creditCost: 15,
+    creditCostText: '15 CR / Video',
+    category: 'ChatGPT',
+    demoText: 'Hai teman-teman! Ini sampel vokal ChatGPT Echo yang kasual, santai, dan dinamis.'
+  },
+  {
+    id: 'openai-male-fable',
+    name: 'ChatGPT Fable (Pria Narator Mendalam)',
+    gender: 'male',
+    provider: 'openai',
+    engine: 'openai/tts-1',
+    voiceKey: 'fable',
+    lang: 'id-ID',
+    description: 'Suara pria ekspresif dan teatrikal untuk dongeng, animasi, dan dokumenter',
+    avatar: '📜',
+    badge: 'CHATGPT FABLE',
+    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+    creditCost: 15,
+    creditCostText: '15 CR / Video',
+    category: 'ChatGPT',
+    demoText: 'Alkisah di suatu negeri yang megah. Dengarkan narasi vokal ChatGPT Fable yang menghidupkan cerita.'
   },
 
-  // 1. Google Cloud Text-to-Speech (Journey Tier)
+  // 2. Fal.ai Natural Speech Models (Indonesian & Multilingual)
+  {
+    id: 'fal-minimax-female',
+    name: 'Fal.ai MiniMax Natural (Wanita Ekspresif ID)',
+    gender: 'female',
+    provider: 'fal-ai',
+    engine: 'fal-ai/minimax-voice',
+    voiceKey: 'female-shaonv',
+    lang: 'id-ID',
+    description: 'Model speech neural MiniMax dengan artikulasi super natural bahasa Indonesia',
+    avatar: '✨',
+    badge: 'FAL MINIMAX',
+    badgeColor: 'bg-violet-500/20 text-violet-300 border-violet-500/40',
+    creditCost: 20,
+    creditCostText: '20 CR / Video',
+    category: 'Fal.ai',
+    demoText: 'Halo sahabat kreatif! Ini sampel suara neural MiniMax dari Fal.ai yang sangat natural.'
+  },
+  {
+    id: 'fal-minimax-male',
+    name: 'Fal.ai MiniMax Deep (Pria Karismatik ID)',
+    gender: 'male',
+    provider: 'fal-ai',
+    engine: 'fal-ai/minimax-voice',
+    voiceKey: 'male-qn-qingse',
+    lang: 'id-ID',
+    description: 'Model speech neural MiniMax pria dengan intonasi mantap dan tegas berbahasa Indonesia',
+    avatar: '👔',
+    badge: 'FAL MINIMAX',
+    badgeColor: 'bg-violet-500/20 text-violet-300 border-violet-500/40',
+    creditCost: 20,
+    creditCostText: '20 CR / Video',
+    category: 'Fal.ai',
+    demoText: 'Halo semuanya! Ini adalah vokal MiniMax Fal.ai pria dengan ketegasan narasi yang prima.'
+  },
+  {
+    id: 'fal-playht-id',
+    name: 'Fal.ai PlayHT v3 Neural (Multilingual ID)',
+    gender: 'female',
+    provider: 'fal-ai',
+    engine: 'fal-ai/playht/tts/v3',
+    voiceKey: 'playht-id',
+    lang: 'id-ID',
+    description: 'PlayHT v3 model ultra-realistis dengan emosi dinamis untuk video komersial',
+    avatar: '🎧',
+    badge: 'FAL PLAYHT',
+    badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
+    creditCost: 20,
+    creditCostText: '20 CR / Video',
+    category: 'Fal.ai',
+    demoText: 'Selamat datang di generasi baru suara AI PlayHT v3 pada platform Fal.ai.'
+  },
+  {
+    id: 'fal-elevenlabs-id',
+    name: 'Fal.ai ElevenLabs v2 (Natural Bahasa Indonesia)',
+    gender: 'female',
+    provider: 'fal-ai',
+    engine: 'fal-ai/elevenlabs/tts',
+    voiceKey: 'eleven-multilingual-v2',
+    lang: 'id-ID',
+    description: 'ElevenLabs v2 natural speech synthesis dengan intonasi lokal Indonesia yang akurat',
+    avatar: '💫',
+    badge: 'FAL ELEVENLABS',
+    badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+    creditCost: 25,
+    creditCostText: '25 CR / Video',
+    category: 'Fal.ai',
+    demoText: 'Teknologi ElevenLabs v2 menghadirkan suara bahasa Indonesia dengan nuansa emosi mendalam.'
+  },
+  {
+    id: 'fal-kokoro-id',
+    name: 'Fal.ai Kokoro Multi-Language (Natural ID)',
+    gender: 'female',
+    provider: 'fal-ai',
+    engine: 'fal-ai/kokoro',
+    voiceKey: 'af_heart',
+    lang: 'id-ID',
+    description: 'Kokoro lightweight neural voice yang cepat, jernih, dan hemat latency',
+    avatar: '🍃',
+    badge: 'FAL KOKORO',
+    badgeColor: 'bg-teal-500/20 text-teal-300 border-teal-500/40',
+    creditCost: 15,
+    creditCostText: '15 CR / Video',
+    category: 'Fal.ai',
+    demoText: 'Ini adalah sampel suara Kokoro AI yang responsif dan sangat jernih.'
+  },
+
+  // 3. Google Cloud Text-to-Speech (Journey Tier)
   {
     id: 'id-ID-Journey-O',
     name: 'Google Journey-O (ID ♀ Natural)',
@@ -94,7 +267,7 @@ export const AVAILABLE_VOICES: VoiceOption[] = [
     demoText: 'Hello! This is a sample of Google Journey-F with a warm and expressive tone.'
   },
 
-  // 2. Google Cloud Text-to-Speech (Neural2 Tier)
+  // 4. Google Cloud Text-to-Speech (Neural2 Tier)
   {
     id: 'id-ID-Neural2-A',
     name: 'Google Neural2-A (ID ♀ Modern)',
@@ -129,25 +302,8 @@ export const AVAILABLE_VOICES: VoiceOption[] = [
     category: 'Neural2',
     demoText: 'Halo kawan! Ini adalah vokal Google Neural2-B yang mantap dan berbobot komersial.'
   },
-  {
-    id: 'ja-JP-Neural2-B',
-    name: 'Google Neural2-B (JA ♀ Seiyuu)',
-    gender: 'female',
-    provider: 'google',
-    engine: 'google',
-    voiceKey: 'ja-JP-Neural2-B',
-    lang: 'ja-JP',
-    description: 'Suara seiyuu anime Jepang ceria & ekspresif untuk animasi & promo anime',
-    avatar: '🎌',
-    badge: 'GOOGLE NEURAL2',
-    badgeColor: 'bg-pink-500/20 text-pink-300 border-pink-500/40',
-    creditCost: 20,
-    creditCostText: '20 CR / Video',
-    category: 'Neural2',
-    demoText: 'こんにちは！これはGoogle Neural2-Bの日本語ボイスサンプルです。'
-  },
 
-  // 3. Google Cloud Text-to-Speech (WaveNet Tier)
+  // 5. Google Cloud Text-to-Speech (WaveNet Tier)
   {
     id: 'id-ID-Wavenet-A',
     name: 'Google Wavenet-A (ID ♀ Professional)',
@@ -183,43 +339,26 @@ export const AVAILABLE_VOICES: VoiceOption[] = [
     demoText: 'Gila sih! Ini sampel suara Google WaveNet-B yang dinamis dan berenergi tinggi!'
   },
 
-  // 4. Google Cloud Text-to-Speech (Standard Tier)
+  // 6. Free Browser TTS
   {
-    id: 'id-ID-Standard-A',
-    name: 'Google Standard-A (ID ♀ Basic)',
+    id: 'webspeech',
+    name: 'Browser TTS (Web Speech API)',
     gender: 'female',
-    provider: 'google',
-    engine: 'google',
-    voiceKey: 'id-ID-Standard-A',
+    provider: 'webspeech',
+    engine: 'webspeech',
+    voiceKey: 'webspeech',
     lang: 'id-ID',
-    description: 'Suara sintesis dasar Google Indonesia. Ekonomis & hemat penggunaan kredit.',
-    avatar: '🍃',
-    badge: 'GOOGLE STANDARD',
+    description: 'Sintesis vokal bawaan browser HP/PC (id-ID). Gratis 0 kredit.',
+    avatar: '🌐',
+    badge: 'GRATIS',
     badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-    creditCost: 5,
-    creditCostText: '5 CR / Video',
-    category: 'Standard',
-    demoText: 'Halo! Ini sampel suara Google Standard-A yang ekonomis dan hemat penggunaan kredit.'
-  },
-  {
-    id: 'id-ID-Standard-B',
-    name: 'Google Standard-B (ID ♂ Basic)',
-    gender: 'male',
-    provider: 'google',
-    engine: 'google',
-    voiceKey: 'id-ID-Standard-B',
-    lang: 'id-ID',
-    description: 'Suara sintesis pria standar Google Indonesia. Opsi hemat biaya.',
-    avatar: '🌱',
-    badge: 'GOOGLE STANDARD',
-    badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-    creditCost: 5,
-    creditCostText: '5 CR / Video',
-    category: 'Standard',
-    demoText: 'Halo! Ini contoh sampel suara Google Standard-B pria yang hemat dan efisien.'
+    creditCost: 0,
+    creditCostText: '0 CR / Video',
+    category: 'Free',
+    demoText: 'Halo! Ini adalah contoh sampel suara narator gratis dari browser Anda.'
   },
 
-  // 5. MiniMax Voice Cloning
+  // 7. MiniMax Voice Cloning
   {
     id: 'voice_clone',
     name: 'Voice Cloning (MiniMax Voice Clone)',
