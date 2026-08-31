@@ -1210,6 +1210,7 @@ export default function App() {
             onClose={() => setIsStoryboardMatrixOpen(false)}
             project={project}
             currentCredits={userCredits}
+            onResetProject={handleResetHub}
             onApproveAndPay={(cost, subtitleStyle) => {
               setIsStoryboardMatrixOpen(false);
               if (subtitleStyle) {
@@ -1584,14 +1585,14 @@ export default function App() {
 
                   <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
                     {project.storyboard.scenes.map((sc, idx) => {
-                      const imgSource = sc.imageUrl; // only use generated imageUrl, not assetUrl which might be product lock
+                      const imgSource = sc.imageUrl || sc.assetUrl;
                       return (
                       <div key={sc.id || idx} className="p-3 rounded-xl bg-black/40 border border-white/5 text-xs flex flex-col md:flex-row gap-3">
                         {/* Thumbnail Container */}
                         <div className="shrink-0 w-full md:w-32 aspect-video md:aspect-[4/3] bg-slate-900 border border-slate-800 rounded-lg overflow-hidden flex flex-col relative group">
                           {imgSource ? (
                             <>
-                              <img src={imgSource} alt={`Scene ${idx+1}`} className="w-full h-full object-cover" />
+                              <img src={imgSource} alt={`Scene ${idx+1}`} referrerPolicy="no-referrer" crossOrigin="anonymous" className="w-full h-full object-cover" />
                               <button 
                                 onClick={() => handleDownloadAsset(imgSource, `Scene_${idx+1}_Visual.jpg`)}
                                 className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -1852,7 +1853,7 @@ export default function App() {
                 <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
                   {project?.storyboard?.scenes?.map((scene, idx) => {
                     const isSelected = selectedSceneIndex === idx;
-                    const imgSource = scene.imageUrl; // only use generated imageUrl
+                    const imgSource = scene.imageUrl || scene.assetUrl;
                     return (
                       <div
                         key={scene.id || idx}
@@ -1867,7 +1868,7 @@ export default function App() {
                         <div className="shrink-0 w-full sm:w-24 aspect-video sm:aspect-[4/3] bg-slate-900 border border-slate-800 rounded-lg overflow-hidden flex flex-col relative group">
                           {imgSource ? (
                             <>
-                              <img src={imgSource} alt={`Scene ${idx+1}`} className="w-full h-full object-cover" />
+                              <img src={imgSource} alt={`Scene ${idx+1}`} referrerPolicy="no-referrer" crossOrigin="anonymous" className="w-full h-full object-cover" />
                               <button 
                                 onClick={(e) => { e.stopPropagation(); handleDownloadAsset(imgSource, `Scene_${idx+1}_Visual.jpg`); }}
                                 className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"

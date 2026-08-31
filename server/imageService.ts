@@ -1123,6 +1123,38 @@ export class ImageGenerationService {
 
     referenceImageUrls = sanitizeReferenceImageUrls(referenceImageUrls);
 
+    const extractAnyFalImageUrl = (json: any): string | undefined => {
+      if (!json) return undefined;
+      if (typeof json === 'string' && (json.startsWith('http') || json.startsWith('data:'))) return json;
+      if (Array.isArray(json)) {
+        for (const item of json) {
+          const u = extractAnyFalImageUrl(item);
+          if (u) return u;
+        }
+      }
+      if (Array.isArray(json.images) && json.images.length > 0) {
+        const first = json.images[0];
+        if (typeof first === 'string') return first;
+        if (first && typeof first.url === 'string') return first.url;
+        if (first && typeof first.image_url === 'string') return first.image_url;
+      }
+      if (json.image) {
+        if (typeof json.image === 'string') return json.image;
+        if (typeof json.image.url === 'string') return json.image.url;
+      }
+      if (Array.isArray(json.output) && json.output.length > 0) {
+        const first = json.output[0];
+        if (typeof first === 'string') return first;
+        if (first && typeof first.url === 'string') return first.url;
+      } else if (typeof json.output === 'string') {
+        return json.output;
+      }
+      if (json.data) {
+        return extractAnyFalImageUrl(json.data);
+      }
+      return undefined;
+    };
+
     let falQuotaErrorOccurred = false;
     let falQuotaErrorMessage = '';
     let lastFalError = '';
@@ -1217,7 +1249,7 @@ export class ImageGenerationService {
                     }
                   }
                }
-               imageUrl = completedJson?.images?.[0]?.url || completedJson?.output?.[0];
+               imageUrl = extractAnyFalImageUrl(completedJson);
             }
           } else {
             // DIRECT SYNC MODE
@@ -1233,7 +1265,7 @@ export class ImageGenerationService {
             resStatus = res.status;
             if (res.ok) {
               const json: any = await res.json();
-              imageUrl = json?.images?.[0]?.url || json?.output?.[0];
+              imageUrl = extractAnyFalImageUrl(json);
             } else {
               const errText = await res.text().catch(() => '');
               let parsedDetail = errText;

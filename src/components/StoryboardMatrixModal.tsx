@@ -49,7 +49,7 @@ import {
   Wand2,
   AlertTriangle,
   CheckCircle,
-  RefreshCw
+  RefreshCw, Trash2
 } from 'lucide-react';
 import type { ProductionProject, Scene } from '../shared/types';
 import { neuronaVoice, AVAILABLE_VOICES, VoiceOption } from '../utils/speechSynthesis';
@@ -69,6 +69,7 @@ interface StoryboardMatrixModalProps {
   onGenerateSceneVideo?: (sceneId: string, cost: number, videoModel?: string) => Promise<void>;
   onChooseStoryboardOnly?: () => Promise<void>;
   onResyncScene?: (action: 'ADD' | 'REMOVE', targetIndex: number) => Promise<void>;
+  onResetProject?: () => void;
 }
 
 export type ImageModelId = 'standard' | 'precision' | 'draft' | 'chatgpt-image-2' | 'gemini-imagen-3' | 'flux-diffusion' | 'nano-asli-lite' | 'nano-asli' | 'nano-asli-pro' | 'nano-asli-premium' | 'nano-asli-ultra';
@@ -199,7 +200,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   onGenerateAllImages,
   onGenerateSceneVideo,
   onChooseStoryboardOnly,
-  onResyncScene
+  onResyncScene,
+  onResetProject
 }) => {
   const [activeTab, setActiveTab] = useState<'SCENES' | 'TIERS'>('SCENES');
   const [selectedImageEngine, setSelectedImageEngine] = useState<ImageModelId>(() => {
@@ -1011,6 +1013,21 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                 <Download size={12} />
                 <span>JSON</span>
               </button>
+              {onResetProject && (
+                <button
+                  onClick={() => {
+                    if (window.confirm("Apakah Anda yakin ingin menghapus Storyboard ini dan mengulang dari awal?")) {
+                      onResetProject();
+                      onClose();
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-900/60 hover:bg-rose-900 border border-rose-500/50 text-[11px] text-rose-300 transition cursor-pointer"
+                  title="Hapus Storyboard & Reset Proyek"
+                >
+                  <Trash2 size={12} />
+                  <span className="hidden sm:inline">Reset Proyek</span>
+                </button>
+              )}
               <button 
                 onClick={onClose}
                 className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0"
@@ -1519,7 +1536,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   const isI2VCopied = copiedSceneId === scene.id && copiedType === 'I2V';
                   const isVoiceCopied = copiedSceneId === scene.id && copiedType === 'VOICEOVER';
                   const isThisVoicePlaying = playingVoiceIndex === idx;
-                  const hasImage = scene.imageStatus === 'COMPLETED';
+                  const displayImageSrc = scene.imageUrl || scene.assetUrl || null;
+                  const hasImage = Boolean(displayImageSrc) || scene.imageStatus === 'COMPLETED';
                   const isImageFailed = scene.imageStatus === 'FAILED';
                   const isImageGenerating = scene.imageStatus === 'GENERATING' || isProcessingAction === `image-${scene.id}`;
                   const isVideoGenerating = scene.videoStatus === 'GENERATING' || isProcessingAction === `video-${scene.id}`;
@@ -1796,17 +1814,23 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                         </button>
                                       </div>
                                     </div>
-                                  ) : hasImage ? (
+                                  ) : displayImageSrc ? (
                                     <>
                                       <img 
-                                        src={scene.imageUrl} 
+                                        src={displayImageSrc} 
                                         alt={`Keyframe Adegan ${idx + 1}`} 
+                                        referrerPolicy="no-referrer"
+                                        crossOrigin="anonymous"
                                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                                        
+                                        onError={(e) => {
+                                          if (scene.assetUrl && e.currentTarget.src !== scene.assetUrl) {
+                                            e.currentTarget.src = scene.assetUrl;
+                                          }
+                                        }}
                                       />
                                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
                                         <button
-                                          onClick={() => setPreviewImageUrl(scene.imageUrl || null)}
+                                          onClick={() => setPreviewImageUrl(displayImageSrc)}
                                           className="p-1.5 px-2.5 rounded-lg bg-white/20 hover:bg-white/40 text-white text-xs flex items-center gap-1 backdrop-blur-sm transition cursor-pointer"
                                         >
                                           <Eye size={13} />
@@ -1814,7 +1838,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                         </button>
                                         <button
                                           onClick={() => {
-                                            const url = scene.imageUrl;
+                                            const url = displayImageSrc;
                                             if (url) {
                                               const a = document.createElement('a');
                                               a.href = url;
@@ -2487,6 +2511,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
             <img 
               src={previewImageUrl} 
               alt="Keyframe Preview" 
+              referrerPolicy="no-referrer"
+              crossOrigin="anonymous"
               className="max-w-full max-h-[85vh] rounded-2xl border border-purple-500/40 shadow-2xl object-contain"
             />
             <button
@@ -3007,6 +3033,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                     <img 
                                       src={activeScene.imageUrl || activeScene.videoUrl} 
                                       alt={`Scene ${activeIndex + 1}`}
+                                      referrerPolicy="no-referrer"
+                                      crossOrigin="anonymous"
                                       className="w-full h-full object-cover animate-in fade-in duration-300"
                                     />
                                   ) : (
@@ -3094,6 +3122,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                               <img 
                                                 src={sc.imageUrl || sc.videoUrl} 
                                                 alt={sc.title || `Scene ${idx + 1}`}
+                                                referrerPolicy="no-referrer"
+                                                crossOrigin="anonymous"
                                                 className="w-full h-full object-cover"
                                               />
                                             ) : (

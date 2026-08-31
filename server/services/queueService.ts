@@ -180,7 +180,10 @@ export class QueueService {
       const targetModelId = modelId || FounderService.getFalConfig()?.model || FAL_TIER_DEFAULTS.balanced;
       
       let finalVideoUrl: string = '';
-      if (targetModelId.startsWith('veo-asli') || targetModelId === 'veo-lite' || targetModelId === 'veo-pro' || targetModelId.startsWith('veo')) {
+      if (
+        !targetModelId.startsWith('fal') && 
+        (targetModelId.startsWith('veo-asli') || targetModelId === 'google-veo' || targetModelId === 'google_veo')
+      ) {
         console.log(`[Worker] Step 1/3: Calling Google Veo Engine (${targetModelId})...`);
         const veoConfig = FounderService.getVeoConfig();
         const apiKey = veoConfig.apiKey || keyRotator.getNextVeoKey() || process.env.GEMINI_API_KEY;
@@ -206,8 +209,12 @@ export class QueueService {
                instances: [{ prompt: promptText }]
             })
           });
-          const data = await fetchRes.json();
-          if (data.error) throw new Error(data.error.message || 'Veo Generation Error');
+          const rawText = await fetchRes.text().catch(() => '');
+          let data: any = {};
+          try {
+            if (rawText) data = JSON.parse(rawText);
+          } catch {}
+          if (!fetchRes.ok || data.error) throw new Error(data.error?.message || rawText || `HTTP ${fetchRes.status}`);
           
           // Depending on API response, Veo could return video uri or long-running operation
           if (data.videoUri) {

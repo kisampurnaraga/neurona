@@ -61,9 +61,16 @@ export class GoogleVeoAdapter implements VideoGenerationProvider {
         })
       });
 
-      const data: any = await fetchRes.json();
+      const rawText = await fetchRes.text().catch(() => '');
+      let data: any = {};
+      try {
+        if (rawText) data = JSON.parse(rawText);
+      } catch {
+        // Response was not JSON
+      }
+
       if (!fetchRes.ok || data.error) {
-        const errDetail = data.error?.message || `HTTP ${fetchRes.status}: ${fetchRes.statusText}`;
+        const errDetail = data.error?.message || (rawText ? rawText.substring(0, 300) : `HTTP ${fetchRes.status}: ${fetchRes.statusText}`);
         keyRotator.reportKeyError('veo', apiKey, new Error(errDetail));
         throw new Error(`[GOOGLE_VEO_ERROR] Gagal render Google Veo (${targetVeoModel}): ${errDetail}`);
       }

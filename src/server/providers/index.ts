@@ -24,10 +24,28 @@ export function getAvailableVideoProviders() {
 export function getVideoProvider(preferredType?: string): VideoGenerationProvider {
   const providerType = (preferredType || activeProviderType || process.env.VIDEO_PROVIDER || 'fal').toLowerCase();
   
-  if (providerType.includes('veo') || providerType.includes('google') || providerType === 'google_veo') {
+  // 1. Fal.ai Hosted models (including Fal-hosted Veo, Seedance, Wan, Kling, Luma, Minimax, Hunyuan)
+  if (
+    providerType.startsWith('fal') || 
+    providerType.includes('fal-ai') || 
+    providerType.includes('fal.run') || 
+    providerType.includes('fal.ai')
+  ) {
+    return new FalVideoAdapter();
+  }
+
+  // 2. Direct Google Veo Generative Language API
+  if (
+    providerType === 'google_veo' || 
+    providerType === 'google-veo' || 
+    providerType === 'veo-asli' || 
+    providerType.startsWith('veo-asli') || 
+    providerType === 'google'
+  ) {
     return new GoogleVeoAdapter();
   }
 
+  // 3. BytePlus / Doubao native SDK
   if (providerType.includes('byteplus') || providerType.includes('pixeldance') || providerType.includes('doubao')) {
     return new BytePlusAdapter();
   }
@@ -36,7 +54,7 @@ export function getVideoProvider(preferredType?: string): VideoGenerationProvide
     return new MockVideoProvider();
   }
   
-  // Default to FalVideoAdapter for all 11 verified Fal.ai & ByteDance models
+  // Default to FalVideoAdapter for all verified Fal.ai & ByteDance models
   return new FalVideoAdapter();
 }
 
