@@ -735,11 +735,17 @@ export class ImageGenerationService {
           const alreadyHasProd = sanitizedText.toLowerCase().includes(prodName.toLowerCase());
           const prodSuffix = (!alreadyHasProd && prodName) ? `, featuring ${prodName} (${cleanProdDesc})` : '';
           
+          let baseText = "";
           if (/^(Photorealistic|Extreme|Full-body|Commercial|Fashion|Dynamic|Lifestyle|Authentic|Sharp|Macro)/i.test(sanitizedText) || sanitizedText.length > 50) {
-            promptParts.push(`${sanitizedText}${prodSuffix}`);
+            baseText = `${sanitizedText}${prodSuffix}`;
           } else {
-            const photoAnchor = `Authentic photograph of ${sanitizedText}${prodSuffix}`;
-            promptParts.push(photoAnchor);
+            baseText = `Authentic photograph of ${sanitizedText}${prodSuffix}`;
+          }
+
+          if (charSubjectEn && !baseText.toLowerCase().includes(charName.toLowerCase())) {
+             promptParts.push(`${baseText}, presented by ${charSubjectEn}`);
+          } else {
+             promptParts.push(baseText);
           }
         } else {
           const photoAnchor = `Authentic creator photograph of real hands presenting ${prodName}, ${cleanProdDesc}, held in clear view by ${charSubjectEn || 'the creator'}, natural warm indoor lighting, authentic human skin texture with pores`;
@@ -751,10 +757,18 @@ export class ImageGenerationService {
       } else {
         // PRIORITAS 4: Scene does NOT feature product (e.g. pain point, facial emotion, lifestyle context)
         promptParts.push("Scene Mode: Emotional Hook & Context (No product featured in this shot).");
+        
+        let baseText = "";
         if (sanitizedText) {
-          promptParts.push(`${sanitizedText}`);
+          baseText = `${sanitizedText}`;
         } else {
-          promptParts.push(`Cinematic lifestyle shot: ${sceneActionEn || 'candid authentic emotion'}`);
+          baseText = `Cinematic lifestyle shot: ${sceneActionEn || 'candid authentic emotion'}`;
+        }
+
+        if (charSubjectEn && !baseText.toLowerCase().includes(charName.toLowerCase())) {
+             promptParts.push(`${baseText}, featuring ${charSubjectEn}`);
+        } else {
+             promptParts.push(baseText);
         }
       }
 

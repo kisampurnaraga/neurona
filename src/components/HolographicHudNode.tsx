@@ -143,7 +143,7 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
 
   // Video Generation & TTS Voice Model Selection State
   const [selectedVideoModel, setSelectedVideoModel] = useState<string>(() => {
-    return localStorage.getItem('neurona_video_model') || 'fal-ai/wan-i2v';
+    return localStorage.getItem('neurona_video_model') || 'fal-ai/veo3.1/lite/image-to-video';
   });
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>(() => {
     return localStorage.getItem('neurona_voice_id') || 'tryaudio-female-citra';

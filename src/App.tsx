@@ -1241,6 +1241,17 @@ export default function App() {
             <SystemHealthDashboard onClose={() => setIsSystemHealthOpen(false)} />
           )}
 
+          {/* Caption Style Selector Modal */}
+          {showCaptionModal && (
+            <CaptionStyleSelectorModal
+              onSelect={(styleId) => {
+                setShowCaptionModal(false);
+                handleApprove(styleId);
+              }}
+              onCancel={() => setShowCaptionModal(false)}
+            />
+          )}
+
           {/* Credit Top-Up Modal */}
           <CreditTopUpModal
             isOpen={isCreditModalOpen}

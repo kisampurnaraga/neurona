@@ -393,11 +393,18 @@ export default function VideoTimeline({ project, onBack, onUpdateProject }: Vide
     setStitchMessage('Menjalankan fast re-stitch & penggabungan master video...');
 
     try {
-      const res = await fetch(`/api/projects/${project.id}/stitch-master`, {
+      const res = await fetch(`/api/projects/${project.id}/stitch-action`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
       });
-      const data = await res.json();
+      const resText = await res.text().catch(() => '');
+      let data: any = {};
+      try {
+        if (resText) data = JSON.parse(resText);
+      } catch {
+        throw new Error(`Server tidak mengembalikan respons JSON valid (Status ${res.status}): ${resText.substring(0, 120)}`);
+      }
       if (data.success && data.finalVideoUrl) {
         setStitchMessage('Fast re-stitch berhasil selesai!');
         setHermesMessage('Selesai! Master video telah diperbarui dengan frame override tanpa harus re-render ulang dari awal.');

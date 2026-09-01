@@ -9,7 +9,8 @@ import { CreditService } from "../../../server/creditService";
 import { keyRotator } from "../../../server/keyRotator";
 import { validateCredentialFormat, logCredentialAudit } from "../../../server/utils/credentialValidator";
 import { db } from '../../db/index';
-import { users, projects as projectsTable } from '../../db/schema';
+import { users, projects as projectsTable, systemSettings } from '../../db/schema';
+import { eq } from 'drizzle-orm';
 
 interface ProviderConfig {
   id: string;
@@ -49,8 +50,24 @@ export class FounderService {
 
   private static loadConfig() {
     try {
-      if (fs.existsSync(this.CONFIG_FILE)) {
-        const data = JSON.parse(fs.readFileSync(this.CONFIG_FILE, 'utf8'));
+      // 1. Try loading from persistent SQLite system_settings table
+      const row = db.select().from(systemSettings).where(eq(systemSettings.key, 'founder_service_config')).get();
+      let data: any = null;
+
+      if (row && row.value) {
+        try {
+          data = JSON.parse(row.value);
+        } catch (e) {}
+      }
+
+      // 2. If not yet in SQLite DB, migrate from .neurona_config.json once
+      if (!data && fs.existsSync(this.CONFIG_FILE)) {
+        try {
+          data = JSON.parse(fs.readFileSync(this.CONFIG_FILE, 'utf8'));
+        } catch (e) {}
+      }
+
+      if (data) {
         if (data.customFalConfig && this.customFalConfig) this.customFalConfig = { ...this.customFalConfig, ...data.customFalConfig };
         if (data.customBytePlusConfig && this.customBytePlusConfig) this.customBytePlusConfig = { ...this.customBytePlusConfig, ...data.customBytePlusConfig };
         if (data.customVeoConfig && this.customVeoConfig) this.customVeoConfig = { ...this.customVeoConfig, ...data.customVeoConfig };
@@ -63,15 +80,9 @@ export class FounderService {
         if (data.qaMinScoreThreshold !== undefined) this.qaMinScoreThreshold = data.qaMinScoreThreshold;
         if (data.qaAutoFixThreshold !== undefined) this.qaAutoFixThreshold = data.qaAutoFixThreshold;
         if (data.primaryVideoEngine) this.primaryVideoEngine = data.primaryVideoEngine;
-        
-        // Update process.env based on loaded config only if env is not already populated by system
-        if (this.customFalConfig?.apiKey && !process.env.FAL_KEY) process.env.FAL_KEY = this.customFalConfig.apiKey;
-        if (this.customBytePlusConfig?.apiKey && !process.env.BYTEPLUS_API_KEY) process.env.BYTEPLUS_API_KEY = this.customBytePlusConfig.apiKey;
-        if (this.customVeoConfig?.apiKey && !process.env.VEO_API_KEY) process.env.VEO_API_KEY = this.customVeoConfig.apiKey;
-        if (this.customOpenAIConfig?.apiKey && !process.env.OPENAI_API_KEY) process.env.OPENAI_API_KEY = this.customOpenAIConfig.apiKey;
       }
     } catch (e) {
-      console.error('Failed to load neurona config:', e);
+      console.error('[FounderService] Failed to load config from SQLite:', e);
     }
   }
 
@@ -91,9 +102,22 @@ export class FounderService {
         qaAutoFixThreshold: this.qaAutoFixThreshold,
         primaryVideoEngine: this.primaryVideoEngine,
       };
-      fs.writeFileSync(this.CONFIG_FILE, JSON.stringify(data, null, 2), 'utf8');
+
+      const now = new Date().toISOString();
+      const existing = db.select().from(systemSettings).where(eq(systemSettings.key, 'founder_service_config')).get();
+
+      if (existing) {
+        db.update(systemSettings)
+          .set({ value: JSON.stringify(data), updatedAt: now })
+          .where(eq(systemSettings.key, 'founder_service_config'))
+          .run();
+      } else {
+        db.insert(systemSettings)
+          .values({ key: 'founder_service_config', value: JSON.stringify(data), updatedAt: now })
+          .run();
+      }
     } catch (e) {
-      console.error('Failed to save neurona config:', e);
+      console.error('[FounderService] Failed to save config to SQLite:', e);
     }
   }
 
@@ -148,11 +172,11 @@ export class FounderService {
     lastTested?: string;
     status?: 'READY' | 'NOT_CONFIGURED' | 'ERROR';
   } = {
-    apiKey: process.env.BYTEPLUS_API_KEY || '',
-    endpointId: process.env.BYTEPLUS_ENDPOINT_ID || 'ep-20241108-neuronna-pixeldance-v1',
-    model: process.env.BYTEPLUS_MODEL || 'dreamina-seedance-2-0-mini-260615',
-    endpoint: process.env.BYTEPLUS_BASE_URL || 'https://ark.ap-southeast-1.byteplusapi.com/api/v3',
-    status: process.env.BYTEPLUS_API_KEY ? 'READY' : 'READY'
+    apiKey: '',
+    endpointId: 'ep-20241108-neuronna-pixeldance-v1',
+    model: 'dreamina-seedance-2-0-mini-260615',
+    endpoint: 'https://ark.ap-southeast-1.byteplusapi.com/api/v3',
+    status: 'NOT_CONFIGURED'
   };
 
   private static customOpenAIConfig: {
@@ -162,10 +186,10 @@ export class FounderService {
     lastTested?: string;
     status?: 'READY' | 'NOT_CONFIGURED' | 'ERROR';
   } = {
-    apiKey: process.env.OPENAI_API_KEY || '',
-    model: process.env.OPENAI_MODEL || 'gpt-4o',
+    apiKey: '',
+    model: 'gpt-4o',
     endpoint: 'https://api.openai.com/v1',
-    status: process.env.OPENAI_API_KEY ? 'READY' : 'NOT_CONFIGURED'
+    status: 'NOT_CONFIGURED'
   };
 
   private static customGptImage2Config: {
@@ -176,11 +200,11 @@ export class FounderService {
     lastTested?: string;
     status?: 'READY' | 'NOT_CONFIGURED' | 'ERROR';
   } = {
-    engine: 'chatgpt-image-2', // Default to ChatGPT Image 2!
-    apiKey: process.env.OPENAI_API_KEY || '',
+    engine: 'chatgpt-image-2',
+    apiKey: '',
     model: 'chatgpt-image-2',
     endpoint: 'https://api.openai.com/v1/images/generations',
-    status: process.env.OPENAI_API_KEY ? 'READY' : 'NOT_CONFIGURED'
+    status: 'NOT_CONFIGURED'
   };
 
   private static customGeminiBananaConfig: {
@@ -203,10 +227,10 @@ export class FounderService {
     lastTested?: string;
     status?: 'READY' | 'NOT_CONFIGURED' | 'ERROR';
   } = {
-    apiKey: process.env.FAL_KEY || '',
-    model: 'fal-ai/wan-i2v',
+    apiKey: '',
+    model: process.env.FAL_MODEL || 'fal-ai/veo3.1/lite/image-to-video',
     endpoint: 'https://api.fal.ai/v1',
-    status: process.env.FAL_KEY ? 'READY' : 'NOT_CONFIGURED'
+    status: 'NOT_CONFIGURED'
   };
 
   private static customVeoConfig: {
@@ -380,13 +404,7 @@ export class FounderService {
   }
 
   static getFalConfig() {
-    let key = this.customFalConfig.apiKey || process.env.FAL_KEY || '';
-    if (!key && process.env.GEMINI_API_KEY) {
-      const gKey = process.env.GEMINI_API_KEY.trim();
-      if (gKey.startsWith('AQ.') || gKey.startsWith('fal_') || gKey.includes(':')) {
-        key = gKey;
-      }
-    }
+    let key = this.customFalConfig.apiKey || keyRotator.getNextFalKey() || '';
     const vCheck = validateCredentialFormat('fal', key, 'FounderService.getFalConfig');
     if (!vCheck.valid) {
       key = '';
@@ -395,7 +413,7 @@ export class FounderService {
       apiKey: key,
       endpoint: this.customFalConfig.endpoint || 'https://api.fal.ai/v1',
       status: key ? 'READY' : 'NOT_CONFIGURED',
-      model: this.customFalConfig.model || 'fal-ai/wan-i2v'
+      model: this.customFalConfig.model || process.env.FAL_MODEL || 'fal-ai/veo3.1/lite/image-to-video'
     };
   }
 
@@ -410,7 +428,7 @@ export class FounderService {
   }
 
   static getVeoConfig() {
-    let key = this.customVeoConfig.apiKey || process.env.VEO_API_KEY || process.env.GEMINI_MANUAL_API_KEY || process.env.GEMINI_API_KEY || '';
+    let key = this.customVeoConfig.apiKey || keyRotator.getNextVeoKey() || '';
     const vCheck = validateCredentialFormat('veo', key, 'FounderService.getVeoConfig');
     if (!vCheck.valid) {
       key = '';
@@ -419,7 +437,7 @@ export class FounderService {
       apiKey: key,
       endpoint: this.customVeoConfig.endpoint || 'https://generativelanguage.googleapis.com/v1beta',
       status: key ? 'READY' : 'NOT_CONFIGURED',
-      model: this.customVeoConfig.model || 'veo-2.0-generate-video',
+      model: this.customVeoConfig.model || 'veo-2.0-generate-001',
       lastTested: this.customVeoConfig.lastTested
     };
   }
@@ -552,12 +570,12 @@ export class FounderService {
       },
       {
         id: 'fal',
-        name: 'Fal.ai Video Universal (11 Verified Models: Wan 2.1, Seedance, Kling, MiniMax, Hunyuan)',
+        name: 'Fal.ai Video Universal (11 Verified Models: Veo 3.1 Lite, Seedance, Kling, MiniMax, Wan 2.1)',
         type: 'VIDEO',
-        status: this.customFalConfig.status || (process.env.FAL_KEY ? 'READY' : 'NOT_CONFIGURED'),
-        configured: !!(this.customFalConfig.apiKey || process.env.FAL_KEY),
-        maskedKey: this.maskKey(this.customFalConfig.apiKey || process.env.FAL_KEY),
-        model: this.customFalConfig.model || 'fal-ai/wan-i2v',
+        status: (keyRotator.hasActiveKey('fal') || !!this.customFalConfig.apiKey) ? 'READY' : 'NOT_CONFIGURED',
+        configured: (keyRotator.hasActiveKey('fal') || !!this.customFalConfig.apiKey),
+        maskedKey: this.maskKey(this.customFalConfig.apiKey || ''),
+        model: this.customFalConfig.model || process.env.FAL_MODEL || 'fal-ai/veo3.1/lite/image-to-video',
         endpoint: this.customFalConfig.endpoint || 'https://api.fal.ai/v1',
         lastTested: this.customFalConfig.lastTested
       },
@@ -823,8 +841,9 @@ export class FounderService {
 
     if (providerId === 'fal') {
       if (data.apiKey !== undefined && data.apiKey !== '') {
-        this.customFalConfig.apiKey = data.apiKey.trim();
-        process.env.FAL_KEY = data.apiKey.trim();
+        const cleanKey = data.apiKey.trim();
+        this.customFalConfig.apiKey = cleanKey;
+        keyRotator.addKey('fal', cleanKey);
       }
       if (data.model) {
         this.customFalConfig.model = data.model.trim();
@@ -833,10 +852,11 @@ export class FounderService {
         this.customFalConfig.endpoint = data.endpoint.trim();
       }
       
-      this.customFalConfig.status = this.customFalConfig.apiKey ? 'READY' : 'NOT_CONFIGURED';
+      const hasKey = keyRotator.hasActiveKey('fal') || !!this.customFalConfig.apiKey;
+      this.customFalConfig.status = hasKey ? 'READY' : 'NOT_CONFIGURED';
       this.customFalConfig.lastTested = new Date().toISOString();
 
-      if (this.customFalConfig.apiKey) {
+      if (hasKey) {
         this.flags.production_mock_provider = false;
         if ((this.primaryVideoEngine as string).startsWith('fal')) {
           process.env.VIDEO_PROVIDER = 'fal';
@@ -1255,7 +1275,7 @@ export class FounderService {
     }
 
     if (providerId === 'fal') {
-      const key = this.customFalConfig.apiKey || process.env.FAL_KEY || process.env.FAL_API_KEY || keyRotator.getNextFalKey();
+      const key = keyRotator.getNextFalKey() || this.customFalConfig.apiKey || '';
       const timestamp = new Date().toISOString();
       this.customFalConfig.lastTested = timestamp;
 

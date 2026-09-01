@@ -189,7 +189,7 @@ async function renderWithFalVideoEngine(
   }
 
   const falConfig: any = FounderService.getFalConfig() || {};
-  const activeModelId = overrideModelId || falConfig.model || FAL_TIER_DEFAULTS.balanced;
+  const activeModelId = overrideModelId || falConfig.model || FAL_TIER_DEFAULTS.budget;
   const modelDef = getFalModel(activeModelId);
   const modelPath = modelDef.id;
 
@@ -200,6 +200,7 @@ async function renderWithFalVideoEngine(
     prompt,
     imageUrl: imageUrl || '',
     duration: scene.duration || modelDef.defaultDuration,
+    aspectRatio: (scene as any).metadata?.aspectRatio || (scene as any).aspectRatio || '16:9',
     generateAudio: modelDef.supportsAudio
   });
 
@@ -300,7 +301,7 @@ export class VideoRenderService {
     const engineLogs: string[] = [];
 
     // 1. Determine dynamic credit cost from model / tier
-    const targetModelId = modelId || (tier ? FAL_TIER_DEFAULTS[tier] : undefined) || FounderService.getFalConfig()?.model || FAL_TIER_DEFAULTS.balanced;
+    const targetModelId = modelId || (tier ? FAL_TIER_DEFAULTS[tier] : undefined) || FounderService.getFalConfig()?.model || FAL_TIER_DEFAULTS.budget;
     const calculatedCost = CreditService.calculateCreditCost(targetModelId, {
       duration: scenes[0]?.duration ? Number(scenes[0].duration) : 5
     });

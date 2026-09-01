@@ -39,6 +39,27 @@ function initTables(sqliteInstance: InstanceType<typeof Database>) {
       created_at TEXT,
       FOREIGN KEY (user_id) REFERENCES users(uid)
     );
+
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      key_encrypted TEXT NOT NULL,
+      masked_key TEXT NOT NULL,
+      status TEXT DEFAULT 'ACTIVE',
+      cooldown_until INTEGER,
+      total_requests INTEGER DEFAULT 0,
+      total_errors INTEGER DEFAULT 0,
+      last_used_at TEXT,
+      last_error_reason TEXT,
+      created_at TEXT,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT
+    );
   `);
 
   // Ensure columns exist on older database instances

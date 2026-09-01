@@ -1370,7 +1370,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                   <div className="relative">
                     <select
                       id="fcc-fal-model-select"
-                      value={inputModel || 'fal-ai/wan-i2v'}
+                      value={inputModel || 'fal-ai/veo3.1/lite/image-to-video'}
                       onChange={e => setInputModel(e.target.value)}
                       className="w-full bg-[#141414] border border-[#2a2a2a] focus:border-indigo-500 rounded-xl px-4 py-2.5 text-xs font-medium text-white outline-none transition-colors appearance-none cursor-pointer pr-10"
                     >

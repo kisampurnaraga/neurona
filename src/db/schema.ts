@@ -37,3 +37,24 @@ export const projectsRelations = relations(projects, ({ one }) => ({
     references: [users.uid],
   }),
 }));
+
+export const apiKeys = sqliteTable('api_keys', {
+  id: text('id').primaryKey(),
+  provider: text('provider').notNull(),
+  keyEncrypted: text('key_encrypted').notNull(),
+  maskedKey: text('masked_key').notNull(),
+  status: text('status').default('ACTIVE'),
+  cooldownUntil: integer('cooldown_until'),
+  totalRequests: integer('total_requests').default(0),
+  totalErrors: integer('total_errors').default(0),
+  lastUsedAt: text('last_used_at'),
+  lastErrorReason: text('last_error_reason'),
+  createdAt: text('created_at'),
+  updatedAt: text('updated_at'),
+});
+
+export const systemSettings = sqliteTable('system_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: text('updated_at'),
+});

@@ -72,8 +72,8 @@ export async function executeFalLiveTest(params: {
   if (target === 'all' || target === 'video_budget') {
     testDefs.push({
       testId: 'video_budget',
-      name: 'Video Tier Budget (Wan 2.1 14B I2V)',
-      modelId: 'fal-ai/wan-i2v',
+      name: 'Video Tier Budget (Google Veo 3.1 Lite)',
+      modelId: 'fal-ai/veo3.1/lite/image-to-video',
       type: 'video',
       tier: 'budget',
       prompt: params.customPrompt || 'Slow cinematic push-in camera movement towards the subject, soft atmospheric golden light'

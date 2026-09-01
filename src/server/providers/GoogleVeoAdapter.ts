@@ -2,6 +2,7 @@ import { ProviderStatus, Scene } from "../../shared/types";
 import { VideoGenerationProvider } from "./VideoProvider";
 import { FounderService } from "../fcc/FounderService";
 import { keyRotator } from "../../../server/keyRotator";
+import { GoogleGenAI } from "@google/genai";
 import fetch from "node-fetch";
 
 export class GoogleVeoAdapter implements VideoGenerationProvider {
@@ -36,12 +37,10 @@ export class GoogleVeoAdapter implements VideoGenerationProvider {
       throw new Error(`[VEO_API_KEY_MISSING] API Key Google Veo (Asli) belum dikonfigurasi di Pengaturan Founder atau Key Rotator.`);
     }
 
-    const videoModelId = (scene as any).videoModel || veoConfig.model || 'veo-2.0-generate-video';
-    let targetVeoModel = 'veo-2.0-generate-video';
-    if (videoModelId === 'veo-asli-pro' || videoModelId === 'veo-pro' || videoModelId.includes('3.0')) {
-      targetVeoModel = 'veo-3.0-generate-video';
-    } else if (videoModelId === 'veo-asli-lite' || videoModelId === 'veo-lite') {
-      targetVeoModel = 'veo-2.0-generate-video';
+    const videoModelId = (scene as any).videoModel || veoConfig.model || 'veo-2.0-generate-001';
+    let targetVeoModel = 'veo-2.0-generate-001';
+    if (videoModelId.includes('3.0') || videoModelId.includes('pro')) {
+      targetVeoModel = 'veo-2.0-generate-001'; // Default stable Veo 2.0
     }
 
     const promptText = scene.promptImageToVideo || scene.promptTextToImage || scene.visualDirection || 'High quality cinematic video scene';
@@ -49,49 +48,48 @@ export class GoogleVeoAdapter implements VideoGenerationProvider {
     if (onProgress) onProgress(`Rendering scene with Google Veo (${targetVeoModel})...`);
     console.log(`[GOOGLE VEO ADAPTER] Rendering scene using model: ${targetVeoModel}`);
 
-    const endpoint = veoConfig.endpoint || 'https://generativelanguage.googleapis.com/v1beta';
-    const baseUrl = endpoint.replace(/\/$/, '');
-
     try {
-      const fetchRes = await fetch(`${baseUrl}/models/${targetVeoModel}:generateVideo?key=${apiKey.trim()}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          instances: [{ prompt: promptText }]
-        })
+      const ai = new GoogleGenAI({ apiKey: apiKey.trim(), httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+      
+      const operation = await ai.models.generateVideos({
+        model: targetVeoModel,
+        prompt: promptText,
+        config: {
+          aspectRatio: (scene as any).aspectRatio === '16:9' ? '16:9' : '9:16',
+          numberOfVideos: 1
+        }
       });
 
-      const rawText = await fetchRes.text().catch(() => '');
-      let data: any = {};
-      try {
-        if (rawText) data = JSON.parse(rawText);
-      } catch {
-        // Response was not JSON
+      let currentOp = operation;
+      let attempts = 0;
+      const maxAttempts = 60; // Up to 5 minutes
+
+      while (!currentOp.done && attempts < maxAttempts) {
+        attempts++;
+        if (onProgress) onProgress(`Google Veo processing video (${attempts * 5}s)...`);
+        await new Promise((r) => setTimeout(r, 5000));
+        if (currentOp.name) {
+          currentOp = await ai.operations.getVideosOperation({ operation: currentOp });
+        }
       }
 
-      if (!fetchRes.ok || data.error) {
-        const errDetail = data.error?.message || (rawText ? rawText.substring(0, 300) : `HTTP ${fetchRes.status}: ${fetchRes.statusText}`);
-        keyRotator.reportKeyError('veo', apiKey, new Error(errDetail));
-        throw new Error(`[GOOGLE_VEO_ERROR] Gagal render Google Veo (${targetVeoModel}): ${errDetail}`);
+      if (currentOp.error) {
+        throw new Error(`Google Veo Error: ${currentOp.error.message || JSON.stringify(currentOp.error)}`);
       }
 
-      let videoUrl = '';
-      if (data.videoUri) {
-        videoUrl = data.videoUri;
-      } else if (data.candidates?.[0]?.content?.parts?.[0]?.videoUri) {
-        videoUrl = data.candidates[0].content.parts[0].videoUri;
-      } else if (data.name) {
-        videoUrl = data.name;
-      } else {
-        console.warn('[Google Veo Adapter] videoUri not found directly in payload, returning result:', data);
-        videoUrl = 'https://storage.googleapis.com/veo-videos/sample.mp4';
+      const generated = currentOp.response?.generatedVideos?.[0];
+      const videoUri = generated?.video?.uri;
+
+      if (!videoUri) {
+        throw new Error(`Google Veo did not return a valid video URI.`);
       }
 
-      return videoUrl;
+      return videoUri;
     } catch (err: any) {
       console.error(`[GOOGLE VEO ADAPTER] Error generating scene video:`, err.message);
       keyRotator.reportKeyError('veo', apiKey, err);
-      throw err;
+      throw new Error(`[GOOGLE_VEO_ERROR] Gagal render Google Veo (${targetVeoModel}): ${err.message}`);
     }
   }
 }
+

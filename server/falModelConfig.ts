@@ -197,17 +197,17 @@ export const FAL_MODELS: FalModelDefinition[] = [
 ];
 
 export const FAL_TIER_DEFAULTS: Record<FalTier, string> = {
-  budget: 'fal-ai/wan-i2v',
+  budget: 'fal-ai/veo3.1/lite/image-to-video',
   balanced: 'fal-ai/kling-video/v2.1/standard/image-to-video',
   premium: 'bytedance/seedance-2.5/image-to-video'
 };
 
 export const FAL_TIER_META: Record<FalTier, { label: string; name: string; desc: string; defaultModel: string; badge: string; estimatedCostCredits: number }> = {
   budget: {
-    label: 'Hemat',
+    label: 'Hemat (Veo Lite)',
     name: 'Budget Tier',
-    desc: 'Pilihan paling ekonomis & cepat untuk validasi ide dan konten media sosial harian.',
-    defaultModel: 'fal-ai/wan-i2v',
+    desc: 'Pilihan paling ekonomis & cepat menggunakan Google Veo 3.1 Lite ($0.15).',
+    defaultModel: 'fal-ai/veo3.1/lite/image-to-video',
     badge: 'HEMAT / 5 KREDIT',
     estimatedCostCredits: 5
   },
@@ -346,6 +346,16 @@ export function buildFalPayload(modelId: string, params: FalPayloadParams): any 
       payload.end_image_url = endImageUrl;
     }
     return payload;
+  }
+
+  // 2. Google Veo 3.1 Lite / Veo on Fal
+  if (modelId.includes('veo')) {
+    return {
+      prompt: cleanPrompt,
+      image_url: imageUrl,
+      duration: params.duration ? String(params.duration) : "5",
+      aspect_ratio: params.aspectRatio || "16:9"
+    };
   }
 
   // 2. Kling family (kling-video/v2.1, kling-video/v3/pro, kling-video/o3)

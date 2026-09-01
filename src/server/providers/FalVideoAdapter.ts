@@ -17,7 +17,7 @@ export class FalVideoAdapter implements VideoGenerationProvider {
     
     try {
       // Lightweight check against fal queue endpoint
-      const res = await fetch('https://queue.fal.run/fal-ai/wan-i2v', {
+      const res = await fetch('https://queue.fal.run/fal-ai/veo3.1/lite/image-to-video', {
         method: 'POST',
         headers: {
           'Authorization': `Key ${falApiKey.trim()}`,
@@ -44,7 +44,11 @@ export class FalVideoAdapter implements VideoGenerationProvider {
     }
 
     const falConfig: any = FounderService.getFalConfig() || {};
-    const configuredModel = falConfig.model || FAL_TIER_DEFAULTS.balanced;
+    const sceneExplicitModel = (scene as any)?.videoModel || (scene as any)?.metadata?.model;
+    const userModel = (sceneExplicitModel && (sceneExplicitModel.startsWith('fal-ai/') || sceneExplicitModel.startsWith('bytedance/'))) 
+      ? sceneExplicitModel 
+      : undefined;
+    const configuredModel = userModel || falConfig.model || FAL_TIER_DEFAULTS.budget;
     const modelDef = getFalModel(configuredModel);
     const modelPath = modelDef.id;
 
@@ -62,6 +66,7 @@ export class FalVideoAdapter implements VideoGenerationProvider {
       prompt,
       imageUrl,
       duration: scene.duration || modelDef.defaultDuration,
+      aspectRatio: (scene as any).metadata?.aspectRatio || (scene as any).aspectRatio || '16:9',
       generateAudio: modelDef.supportsAudio
     });
 

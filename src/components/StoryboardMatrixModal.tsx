@@ -879,7 +879,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
       const voiceProvider = matchedVoice?.provider || (selectedNarratorVoice.startsWith('openai') ? 'openai' : selectedNarratorVoice.startsWith('fal') ? 'fal-ai' : selectedNarratorVoice === 'voice_clone' ? 'minimax_clone' : 'google');
       const resolvedVoiceName = matchedVoice?.voiceKey || matchedVoice?.name || selectedNarratorVoice;
 
-      const res = await fetch(`/api/projects/${project.id}/stitch-master`, {
+      const res = await fetch(`/api/projects/${project.id}/stitch-action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -893,12 +893,17 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
         })
       });
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || errJson.message || `Server merespons error status ${res.status}`);
+      const resText = await res.text().catch(() => '');
+      let data: any = {};
+      try {
+        if (resText) data = JSON.parse(resText);
+      } catch (parseErr) {
+        throw new Error(`Server tidak mengembalikan respons JSON valid (Status ${res.status}): ${resText.substring(0, 120)}`);
       }
 
-      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || data.message || `Server merespons error status ${res.status}`);
+      }
 
       if (data.success && data.finalVideoUrl) {
         log('🎉 SUKSES: Seluruh adegan video berhasil dijahit dan disatukan menjadi film utuh!');

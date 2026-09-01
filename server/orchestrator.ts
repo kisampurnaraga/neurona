@@ -1702,8 +1702,10 @@ export class ProductionOrchestrator {
       appendLog(project, 'BAYU', `ADEGAN ${sceneIdx + 1}: Menyiapkan overlay subtitle animasi & sinkronisasi audio narasi...`, 'INFO');
       updateTelemetry(project, 'BAYU', { status: 'ACTIVE', currentTask: `Aligning subtitles and audio for scene ${sceneIdx + 1}...`, progress: 80 });
       projectEvents.emit(`update:${id}`, project);
+      scene.metadata = scene.metadata || {};
+      scene.metadata.aspectRatio = (project as any).aspectRatio || project.affiliateConfig?.aspectRatio || (project.videoType === 'EDUCATIONAL' ? '16:9' : '9:16');
+
       if (project.videoType === 'AFFILIATE') {
-        scene.metadata = scene.metadata || {};
         if (project.affiliateConfig?.productImages?.[0] && scene.featuresProduct) {
           scene.metadata.productImage = project.affiliateConfig.productImages[0];
         }
@@ -2147,8 +2149,22 @@ export class ProductionOrchestrator {
   }
 
   static async stitchMasterVideo(projectId: string, subtitleStyle?: string, ttsVoiceConfig?: any): Promise<any> {
-    const project = projects.get(projectId);
-    if (!project) throw new Error(`Project ${projectId} tidak ditemukan`);
+    let project = projects.get(projectId);
+    if (!project) {
+      // Fallback lookup from SQLite dbProjects
+      try {
+        const row = db.select().from(dbProjects).where(eq(dbProjects.id, projectId)).get();
+        if (row && row.data) {
+          project = JSON.parse(row.data);
+          if (project) {
+            projects.set(projectId, project);
+          }
+        }
+      } catch (dbErr) {
+        console.warn(`[stitchMasterVideo] Could not load project ${projectId} from SQLite:`, dbErr);
+      }
+    }
+    if (!project) throw new Error(`Project ${projectId} tidak ditemukan di memori maupun database`);
 
     if (ttsVoiceConfig) {
       project.ttsVoiceConfig = ttsVoiceConfig;

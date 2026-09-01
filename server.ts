@@ -1010,9 +1010,10 @@ createdAt: new Date().toISOString()
     }
   });
 
-  app.post('/api/projects/:id/stitch-master', async (req, res) => {
+  app.post('/api/projects/:id/stitch-action', async (req, res) => {
     try {
-      const { subtitleStyle, ttsVoiceConfig } = req.body;
+      const body = req.body || {};
+      const { subtitleStyle, ttsVoiceConfig } = body;
       const result = await ProductionOrchestrator.stitchMasterVideo(req.params.id, subtitleStyle, ttsVoiceConfig);
       res.json({ 
          success: true, 
@@ -1020,7 +1021,8 @@ createdAt: new Date().toISOString()
          orchestrationData: typeof result === 'string' ? null : result
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      console.error('[stitch-action] Error:', e);
+      res.status(500).json({ error: e.message || 'Terjadi kesalahan saat memproses master video' });
     }
   });
 
@@ -1352,8 +1354,8 @@ createdAt: new Date().toISOString()
 
       // Scan outputs directory & public videos
       scanMediaDir(outputsDir, '/outputs');
-      const publicVideosDir = path.join(process.cwd(), 'public', 'videos');
-      scanMediaDir(publicVideosDir, '/videos');
+      // const publicVideosDir = path.join(process.cwd(), 'public', 'videos');
+      // scanMediaDir(publicVideosDir, '/videos');
 
       const allAssets = Array.from(assetMap.values()).sort((a, b) => {
         const tA = new Date(a.createdAt || 0).getTime();
@@ -1795,6 +1797,23 @@ createdAt: new Date().toISOString()
       return res.status(404).send('File video tidak ditemukan di server.');
     }
     return res.status(404).send('File gambar tidak ditemukan di server.');
+  });
+
+  // Ensure ANY unhandled /api/* route ALWAYS returns a structured JSON 404, NEVER HTML index.html
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: `API endpoint tidak ditemukan: ${req.method} ${req.originalUrl}` });
+  });
+
+  // Global Error Handler for API routes to guarantee JSON responses
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.path && req.path.startsWith('/api/')) {
+      console.error('[API Global Error Handler]:', err);
+      return res.status(err.status || 500).json({
+        error: err.message || 'Terjadi kesalahan internal pada server.',
+        status: err.status || 500
+      });
+    }
+    next(err);
   });
 
   // Vite middleware for development
