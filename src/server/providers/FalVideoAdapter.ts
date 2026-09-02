@@ -56,13 +56,13 @@ export class FalVideoAdapter implements VideoGenerationProvider {
     const rawImageUrl = scene.imageUrl || scene.assetUrl || '';
     let imageUrl = rawImageUrl;
     if (rawImageUrl) {
-      imageUrl = (await ImageGenerationService.ensurePublicFalImageUrl(rawImageUrl, falApiKey)) || resolveToDataUriOrPublic(rawImageUrl);
+      imageUrl = (await ImageGenerationService.ensurePublicFalImageUrl(rawImageUrl, falApiKey)) || await resolveToDataUriOrPublic(rawImageUrl);
     }
 
     console.log(`[FAL.AI VIDEO ADAPTER] Rendering scene using single source model: ${modelPath}`);
     if (onProgress) onProgress(`Rendering scene with ${modelDef.name}...`);
 
-    const payload = buildFalPayload(modelPath, {
+    const payload = await buildFalPayload(modelPath, {
       prompt,
       imageUrl,
       duration: scene.duration || modelDef.defaultDuration,

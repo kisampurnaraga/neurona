@@ -1010,11 +1010,26 @@ createdAt: new Date().toISOString()
     }
   });
 
-  app.post('/api/projects/:id/stitch-action', async (req, res) => {
+  app.post(['/api/projects/:id/stitch-action', '/api/projects/:id/stitch', '/api/stitch-action'], async (req, res) => {
     try {
       const body = req.body || {};
+      let projectId = req.params?.id;
+      if (!projectId || projectId === 'undefined' || projectId === 'null') {
+        projectId = body.projectId;
+      }
+      if (!projectId) {
+        // Fallback to most recent project in memory
+        const projectKeys = Array.from(projects.keys());
+        if (projectKeys.length > 0) {
+          projectId = projectKeys[projectKeys.length - 1];
+        }
+      }
+      if (!projectId) {
+        return res.status(400).json({ error: 'ID Proyek tidak valid atau tidak disertakan.' });
+      }
+
       const { subtitleStyle, ttsVoiceConfig } = body;
-      const result = await ProductionOrchestrator.stitchMasterVideo(req.params.id, subtitleStyle, ttsVoiceConfig);
+      const result = await ProductionOrchestrator.stitchMasterVideo(projectId, subtitleStyle, ttsVoiceConfig);
       res.json({ 
          success: true, 
          finalVideoUrl: typeof result === 'string' ? result : result.finalVideoUrl,
@@ -1155,10 +1170,10 @@ createdAt: new Date().toISOString()
     }
   });
 
-  app.get('/api/gallery', (req, res) => {
+  app.get('/api/gallery', verifyToken, (req: AuthenticatedRequest, res) => {
     try {
       const allProjects = Array.from(projects.values())
-        .filter(p => (p.status as string) !== 'deleted')
+        .filter(p => (p.status as string) !== 'deleted' && p.userId === req.user?.user_id)
         .sort((a, b) => {
            const tA = new Date(a.createdAt || 0).getTime();
            const tB = new Date(b.createdAt || 0).getTime();
@@ -1171,13 +1186,13 @@ createdAt: new Date().toISOString()
   });
 
   // GET all generated images & keyframe & video assets (Fal.ai, Gemini, uploaded, project frames)
-  const handleGalleryAssets = (req: express.Request, res: express.Response) => {
+  const handleGalleryAssets = async (req: any, res: express.Response) => {
     try {
       const assetMap = new Map<string, any>();
       const outputsDir = path.join(process.cwd(), 'outputs');
 
       // 1. Gather all scene keyframes, video renders, and reference assets from active & saved projects
-      for (const p of projects.values()) {
+      for (const p of Array.from(projects.values()).filter((proj: any) => proj.userId === req.user?.user_id)) {
         if (p.storyboard && Array.isArray(p.storyboard.scenes)) {
           p.storyboard.scenes.forEach((scene: any, idx: number) => {
             // Images
@@ -1191,6 +1206,7 @@ createdAt: new Date().toISOString()
                 id: `proj_${p.id}_scene_${scene.id || idx + 1}_img`,
                 type: 'image',
                 url: imgUrl,
+                filename: imgUrl.split('/').pop(),
                 thumbnailUrl: imgUrl,
                 remoteUrl: scene.remoteUrl || scene.falUrl,
                 prompt: scene.visualDirection || scene.textOverlay || `Keyframe Adegan #${idx + 1}`,
@@ -1213,6 +1229,7 @@ createdAt: new Date().toISOString()
                 id: `proj_${p.id}_scene_${scene.id || idx + 1}_vid`,
                 type: 'video',
                 url: vidUrl,
+                filename: vidUrl.split('/').pop(),
                 remoteUrl: (scene as any).remoteVideoUrl || scene.remoteUrl || scene.falUrl,
                 thumbnailUrl: scene.imageUrl || scene.assetUrl || vidUrl,
                 prompt: scene.visualDirection || `Video Render Adegan #${idx + 1}`,
@@ -1237,6 +1254,7 @@ createdAt: new Date().toISOString()
             id: `proj_${p.id}_final_vid`,
             type: 'video',
             url: p.finalVideoUrl,
+            filename: p.finalVideoUrl.split('/').pop(),
             remoteUrl: (p as any).remoteFinalVideoUrl,
             thumbnailUrl: firstSceneThumb || p.finalVideoUrl,
             prompt: `Final Video Master: ${p.title || 'Kreasi AI'}`,
@@ -1255,6 +1273,7 @@ createdAt: new Date().toISOString()
             id: `proj_${p.id}_char_ref`,
             type: 'image',
             url: p.masterCharacterImageUrl,
+            filename: p.masterCharacterImageUrl.split('/').pop(),
             thumbnailUrl: p.masterCharacterImageUrl,
             prompt: `Master Character Reference: ${p.characterProfile?.name || p.title || 'Proyek'}`,
             engine: 'reference',
@@ -1271,6 +1290,7 @@ createdAt: new Date().toISOString()
             id: `proj_${p.id}_prod_ref`,
             type: 'image',
             url: p.masterProductImageUrl,
+            filename: p.masterProductImageUrl.split('/').pop(),
             thumbnailUrl: p.masterProductImageUrl,
             prompt: `Master Product Reference: ${p.title || 'Produk'}`,
             engine: 'reference',
@@ -1352,8 +1372,53 @@ createdAt: new Date().toISOString()
         }
       };
 
-      // Scan outputs directory & public videos
-      scanMediaDir(outputsDir, '/outputs');
+      // ONLY scan floating files (outputs directory & GCS) if the user is a founder
+      // For regular users, floating assets without a project ID cannot be securely attributed to them.
+      if (req.user?.role === 'founder' || req.user?.user_id === 'founder_root_001') {
+        scanMediaDir(outputsDir, '/outputs');
+        
+        // NEW: Scan GCS Bucket if enabled
+        if (process.env.GCS_BUCKET_NAME) {
+          try {
+            const { Storage } = require('@google-cloud/storage');
+            const storage = new Storage({
+              projectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID,
+              keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS || undefined,
+            });
+            const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+            const [files] = await bucket.getFiles({ prefix: 'assets/' });
+            for (const file of files) {
+              const url = `https://storage.googleapis.com/${process.env.GCS_BUCKET_NAME}/${file.name}`;
+              if (!assetMap.has(url)) {
+                const isImg = /\.(png|jpg|jpeg|webp)$/i.test(file.name);
+                const isVid = /\.(mp4|mov|webm)$/i.test(file.name);
+                if (isImg || isVid) {
+                  let inferredSource = 'fal-ai';
+                  let inferredEngine = isVid ? 'fal-ai/video-render' : 'fal-ai/flux/schnell';
+                  let promptDesc = isVid ? 'GCS Video Asset' : 'GCS Image Asset';
+                  
+                  assetMap.set(url, {
+                    id: `gcs_${file.name}_${Date.now()}`,
+                    type: isVid ? 'video' : 'image',
+                    url: url,
+                    filename: url.split('/').pop(),
+                    thumbnailUrl: url,
+                    prompt: promptDesc,
+                    engine: inferredEngine,
+                    source: inferredSource,
+                    projectId: 'floating',
+                    projectTitle: 'Unassigned Asset',
+                    createdAt: file.metadata.timeCreated || new Date().toISOString()
+                  });
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('[handleGalleryAssets] Failed to scan GCS Bucket:', err);
+          }
+        }
+      }
+
       // const publicVideosDir = path.join(process.cwd(), 'public', 'videos');
       // scanMediaDir(publicVideosDir, '/videos');
 
@@ -1370,16 +1435,23 @@ createdAt: new Date().toISOString()
     }
   };
 
-  app.get('/api/gallery/images', handleGalleryAssets);
-  app.get('/api/gallery/assets', handleGalleryAssets);
+  app.get('/api/gallery/images', verifyToken, handleGalleryAssets);
+  app.get('/api/gallery/assets', verifyToken, handleGalleryAssets);
 
   // POST upload an asset to the gallery library
-  app.post('/api/gallery/images/upload', async (req, res) => {
+  app.post('/api/gallery/images/upload', verifyToken, async (req: any, res) => {
     try {
       const { image, filename, prompt } = req.body;
       if (!image) return res.status(400).json({ success: false, error: 'Missing image data' });
       const { saveFileLocally } = require('./server/orchestrator');
-      const localUrl = await saveFileLocally(image, filename || 'custom_gallery_asset', 'png');
+      
+      let ext = 'png';
+      if (image.startsWith('data:video/mp4')) ext = 'mp4';
+      else if (image.startsWith('data:video/webm')) ext = 'webm';
+      else if (image.startsWith('data:image/jpeg')) ext = 'jpg';
+      else if (image.startsWith('data:image/webp')) ext = 'webp';
+
+      const localUrl = await saveFileLocally(image, filename || 'custom_gallery_asset', ext);
       res.json({ success: true, url: localUrl });
     } catch (e: any) {
       res.status(500).json({ success: false, error: e.message });
@@ -1387,14 +1459,95 @@ createdAt: new Date().toISOString()
   });
 
   // DELETE a gallery asset from disk
-  app.delete('/api/gallery/images/:filename', (req, res) => {
+  app.delete('/api/gallery/images/:filename', verifyToken, async (req: any, res: express.Response) => {
     try {
       const filename = path.basename(req.params.filename);
+      const isFounder = req.user?.role === 'founder' || req.user?.user_id === 'founder_root_001';
+      
+      // Ownership Check & Database Cleanup
+      let isOwner = false;
+      let projectModified = false;
+      
+      for (const p of Array.from(projects.values())) {
+        let isProjectModified = false;
+        if ((p as any).userId === req.user?.user_id || isFounder) {
+          if (p.storyboard && Array.isArray(p.storyboard.scenes)) {
+            for (const scene of p.storyboard.scenes) {
+              const imgUrl = scene.imageUrl || scene.assetUrl || scene.remoteUrl || scene.falUrl || '';
+              const vidUrl = scene.videoUrl || '';
+              
+              if (imgUrl.includes(filename)) {
+                isOwner = true;
+                scene.imageUrl = '';
+                scene.assetUrl = '';
+                scene.remoteUrl = '';
+                scene.falUrl = '';
+                isProjectModified = true;
+              }
+              if (vidUrl.includes(filename)) {
+                isOwner = true;
+                scene.videoUrl = '';
+                (scene as any).remoteVideoUrl = '';
+                isProjectModified = true;
+              }
+            }
+          }
+          if (p.finalVideoUrl && p.finalVideoUrl.includes(filename)) {
+            isOwner = true;
+            p.finalVideoUrl = '';
+            (p as any).remoteFinalVideoUrl = '';
+            isProjectModified = true;
+          }
+        }
+        if (isProjectModified) {
+          projectModified = true;
+        }
+      }
+      
+      if (!isOwner && !isFounder) {
+        return res.status(403).json({ success: false, error: 'Access denied. You do not own this asset or the asset is not tied to your project.' });
+      }
+
+      if (projectModified) {
+        const { saveProjects } = require('./server/orchestrator');
+        saveProjects(); // This syncs the memory Map to SQLite
+      }
+
+      let deleted = false;
+
+      // 1. Delete from local /outputs/
       const filePath = path.join(process.cwd(), 'outputs', filename);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
+        deleted = true;
       }
-      res.json({ success: true });
+      
+      // 2. Delete from GCS
+      if (process.env.GCS_BUCKET_NAME) {
+        try {
+          const { Storage } = require('@google-cloud/storage');
+          const storage = new Storage({
+            projectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID,
+            keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS || undefined,
+          });
+          const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+          const file = bucket.file(`assets/${filename}`);
+          const [exists] = await file.exists();
+          if (exists) {
+            await file.delete();
+            deleted = true;
+          }
+        } catch (err) {
+          console.warn('[DELETE Asset] GCS deletion error:', err);
+        }
+      }
+
+      if (deleted) {
+        res.json({ success: true });
+      } else {
+        // If it was removed from DB but not found physically, still count as success
+        res.json({ success: projectModified, message: projectModified ? 'Removed from database, but file not found on disk.' : 'Not found.' });
+      }
     } catch (e: any) {
       res.status(500).json({ success: false, error: e.message });
     }

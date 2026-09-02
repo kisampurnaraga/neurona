@@ -15,6 +15,7 @@ import {
   FileText,
   Volume2,
   Image as ImageIcon,
+  Video,
   UserCheck,
   Palette,
   Eye,
@@ -236,10 +237,20 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [isQuickTrayOpen, setIsQuickTrayOpen] = useState<boolean>(true);
   const [galleryToast, setGalleryToast] = useState<string | null>(null);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('neuronna_auth_token') || localStorage.getItem('neuronna_token') || 'founder_token';
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    };
+  };
+
   const fetchGalleryImages = async () => {
     setIsLoadingGallery(true);
     try {
-      const res = await fetch('/api/gallery/images');
+      const res = await fetch('/api/gallery/images', {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       if (data.success && Array.isArray(data.images)) {
         setGalleryImages(data.images);
@@ -258,12 +269,12 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   }, [isOpen, project?.id]);
 
   const handleApplyImageToScene = async (sceneId: string, imageUrl: string) => {
-    if (!project) return;
+    if (!project?.id) return;
     setIsProcessingAction(`apply-img-${sceneId}`);
     try {
       const res = await fetch(`/api/projects/${project.id}/override-scene`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           sceneId,
           imageUrl: imageUrl,
@@ -286,12 +297,12 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   };
 
   const handleApplyVideoToScene = async (sceneId: string, videoUrl: string) => {
-    if (!project) return;
+    if (!project?.id) return;
     setIsProcessingAction(`apply-vid-${sceneId}`);
     try {
       const res = await fetch(`/api/projects/${project.id}/override-scene`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           sceneId,
           videoUrl: videoUrl,
@@ -320,26 +331,40 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     try {
       const reader = new FileReader();
       reader.onload = async (event) => {
-        const base64 = event.target?.result as string;
-        const res = await fetch('/api/gallery/images/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            image: base64,
-            filename: `upload_${Date.now()}`
-          })
-        });
-        const data = await res.json();
-        if (data.success) {
-          setGalleryToast('Aset gambar berhasil diunggah ke Galeri!');
-          setTimeout(() => setGalleryToast(null), 3000);
-          fetchGalleryImages();
+        try {
+          const base64 = event.target?.result as string;
+          const res = await fetch('/api/gallery/images/upload', {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+              image: base64,
+              filename: `upload_${Date.now()}`
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            setGalleryToast('Aset berhasil diunggah ke Galeri!');
+            setTimeout(() => setGalleryToast(null), 3000);
+            fetchGalleryImages();
+          } else {
+            alert(`Gagal unggah: ${data.error || 'Unknown error'}`);
+          }
+        } catch (err: any) {
+          console.error('Upload asset error:', err);
+          alert(`Gagal unggah: ${err.message}`);
+        } finally {
+          setIsLoadingGallery(false);
+          // reset input
+          e.target.value = '';
         }
+      };
+      reader.onerror = () => {
+        alert('Gagal membaca file lokal.');
         setIsLoadingGallery(false);
       };
       reader.readAsDataURL(file);
     } catch (err) {
-      console.error('Upload asset error:', err);
+      console.error('FileReader setup error:', err);
       setIsLoadingGallery(false);
     }
   };
@@ -349,7 +374,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     if (!window.confirm(`Hapus gambar '${asset.prompt || asset.filename}' dari galeri lokal?`)) return;
     try {
       await fetch(`/api/gallery/images/${encodeURIComponent(asset.filename)}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: getAuthHeaders()
       });
       setGalleryImages(prev => prev.filter(img => img.id !== asset.id && img.url !== asset.url));
       setGalleryToast('Gambar dihapus dari galeri.');
@@ -821,7 +847,10 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const allVideosCompleted = project?.scenes?.every(s => s.videoStatus === 'COMPLETED' && s.videoUrl) || false;
 
   const handleStitchVideos = async () => {
-    if (!project) return;
+    if (!project || !project.id) {
+      alert("Proyek tidak valid atau ID Proyek belum tersimpan.");
+      return;
+    }
     setIsStitching(true);
     setStitchProgress(0);
     setStitchLogs([]);
@@ -881,8 +910,9 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
       const res = await fetch(`/api/projects/${project.id}/stitch-action`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ 
+          projectId: project.id,
           subtitleStyle,
           ttsVoiceConfig: {
             provider: voiceProvider,
@@ -1025,6 +1055,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
           engine: chosenEngine,
           errorMessage: err.message
         });
+      } else {
+        alert(`Gagal generate gambar: ${err.message}`);
       }
     } finally {
       setIsProcessingAction(null);
@@ -1053,6 +1085,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
           engine: chosenEngine,
           errorMessage: err.message
         });
+      } else {
+        alert(`Gagal generate gambar: ${err.message}`);
       }
     } finally {
       setIsProcessingAction(null);
@@ -1640,15 +1674,22 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                               e.dataTransfer.effectAllowed = 'copy';
                             }}
                             className="group relative shrink-0 w-28 h-20 rounded-xl overflow-hidden border border-slate-700 hover:border-emerald-400 bg-black cursor-grab active:cursor-grabbing shadow transition hover:scale-105"
-                            title={`Tarik gambar ini ke adegan mana saja (Prompt: ${img.prompt || 'Keyframe'})`}
+                            title={`Tarik ${img.url.endsWith('.mp4') || img.url.endsWith('.webm') ? 'video' : 'gambar'} ini ke adegan mana saja`}
                           >
-                            <img
-                              src={img.thumbnailUrl || img.url}
-                              alt={img.prompt || 'Asset'}
-                              referrerPolicy="no-referrer"
-                              crossOrigin="anonymous"
-                              className="w-full h-full object-cover"
-                            />
+                            {(img.url.endsWith('.mp4') || img.url.endsWith('.webm') || img.url.endsWith('.mov')) ? (
+                              <div className="w-full h-full bg-slate-900 flex flex-col items-center justify-center text-emerald-400">
+                                <Video size={24} />
+                                <span className="text-[8px] font-mono mt-1">VIDEO</span>
+                              </div>
+                            ) : (
+                              <img
+                                src={img.thumbnailUrl || img.url}
+                                alt={img.prompt || 'Asset'}
+                                referrerPolicy="no-referrer"
+                                crossOrigin="anonymous"
+                                className="w-full h-full object-cover"
+                              />
+                            )}
                             <div className="absolute top-1 left-1 px-1 py-0.2 rounded bg-black/80 text-[7px] font-mono text-emerald-300 border border-emerald-500/30">
                               {img.source === 'fal-ai' ? 'Fal' : img.source === 'gemini' ? 'Gemini' : 'Upload'}
                             </div>
@@ -2639,12 +2680,16 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 shrink-0 w-full md:w-auto justify-end">
-                  <label className="py-2 px-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition cursor-pointer">
-                    <Upload size={14} />
-                    <span>Unggah Foto Baru</span>
+                  <label className={`py-2 px-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition cursor-pointer ${isLoadingGallery ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {isLoadingGallery ? (
+                      <RefreshCw size={14} className="animate-spin" />
+                    ) : (
+                      <Upload size={14} />
+                    )}
+                    <span>{isLoadingGallery ? 'Mengunggah...' : 'Unggah File (Foto/Video)'}</span>
                     <input
                       type="file"
-                      accept="image/*"
+                      accept="image/*,video/mp4,video/webm"
                       className="hidden"
                       onChange={handleUploadGalleryAsset}
                     />

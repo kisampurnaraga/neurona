@@ -209,7 +209,7 @@ export async function executeFalLiveTest(params: {
 
       } else {
         // VIDEO LIVE TEST
-        const payload = buildFalPayload(test.modelId, {
+        const payload = await buildFalPayload(test.modelId, {
           prompt: test.prompt,
           imageUrl: SAMPLE_TEST_IMAGE_URL,
           duration: 5,

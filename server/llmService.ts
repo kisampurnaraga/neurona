@@ -651,6 +651,8 @@ Kembalikan format JSON:
       styleMagicWords = CinematicStyleLibrary[config.style_id].magic_words;
     }
 
+    const targetSceneCount = config?.sceneCount || 4;
+
     let contextBlock = '';
     if (videoType === 'ANIMATION') {
       const anim = config || {};
@@ -723,12 +725,10 @@ ${charVisual ? `- Ciri Fisik Ekstrak dari Foto Karakter (Vision Lock): "${charVi
 1. AESTHETIC: Raw smartphone handheld aesthetic, "Shot on iPhone 15 front camera, natural warm indoor lighting, authentic UGC creator perspective".
 2. SCROLL-STOPPING HOOK: Scene 1 MUST deliver a powerful psychological hook (Problem Solver, Pain Point, FOMO).
 3. PHYSICAL PRODUCT LOCK: Scene 1 and Scene 2 MUST show the creator physically holding, unboxing, or actively applying/using the product.
-4. CALL-TO-ACTION: Scene 4 MUST end with strong urgency to click yellow basket / bio link.
+4. CALL-TO-ACTION: Scene ${targetSceneCount} MUST end with strong urgency to click yellow basket / bio link.
 `;
     }
-
-    const targetSceneCount = config?.sceneCount || 4;
-
+    
     const storyboardPrompt = `Kamu adalah 'Sinta' (Elite AI Visual Director & Storyboard Architect) & 'Openclauw' (AI Scriptwriter) untuk platform video AI Neuronna (Google Flow Protocol).
 Tugasmu adalah membuat struktur JSON Storyboard tepat ${targetSceneCount} adegan terstruktur, tersinkronisasi, dan 100% RELEVAN DENGAN TEMA, JUDUL, DAN KARAKTER YANG DITENTUKAN.
 
@@ -862,7 +862,7 @@ CRITICAL RULES FOR QA COMPLIANCE:
 
           const rawText = response.choices[0]?.message?.content || "{}";
           const parsed = JSON.parse(rawText);
-          const rawScenes = parsed.storyboard_scenes || parsed.scenes || parsed.storyboard || [];
+          const rawScenes = (parsed.storyboard_scenes || parsed.scenes || parsed.storyboard || []).slice(0, targetSceneCount);
           if (Array.isArray(rawScenes) && rawScenes.length > 0) {
             const scenes = rawScenes.map((s: any, idx: number) => ({
               scene_number: s.scene_number || idx + 1,
@@ -1038,7 +1038,7 @@ CRITICAL RULES FOR QA COMPLIANCE:
 
         const rawText = response.text || "{}";
         const parsed = JSON.parse(rawText);
-        const rawScenes = parsed.storyboard_scenes || parsed.scenes || parsed.storyboard || [];
+        const rawScenes = (parsed.storyboard_scenes || parsed.scenes || parsed.storyboard || []).slice(0, targetSceneCount);
         if (Array.isArray(rawScenes) && rawScenes.length > 0) {
           const scenes = rawScenes.map((s: any, idx: number) => ({
             scene_number: s.scene_number || idx + 1,

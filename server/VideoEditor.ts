@@ -242,15 +242,15 @@ export class VideoEditor {
 
           // 1c. Mixing per scene (Video + TTS)
           if (hasTts) {
-              await execAsync(`ffmpeg -y -i "scene_${i}.mp4" -i "tts_${i}.mp3" -filter_complex "[0:v]${scaleFilter},setsar=1[v];[1:a]apad[a]" -map "[v]" -map "[a]" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest "scene_mixed_${i}.mp4"`, { cwd: tempDir });
+              await execAsync(`ffmpeg -y -i "scene_${i}.mp4" -i "tts_${i}.mp3" -filter_complex "[0:v]${scaleFilter},setsar=1[v];[1:a]apad[a]" -map "[v]" -map "[a]" -c:v libx264 -pix_fmt yuv420p -r 30 -c:a aac -shortest "scene_mixed_${i}.mp4"`, { cwd: tempDir });
           } else {
-              await execAsync(`ffmpeg -y -i "scene_${i}.mp4" -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -filter_complex "[0:v]${scaleFilter},setsar=1[v]" -map "[v]" -map 1:a:0 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest "scene_mixed_${i}.mp4"`, { cwd: tempDir });
+              await execAsync(`ffmpeg -y -i "scene_${i}.mp4" -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -filter_complex "[0:v]${scaleFilter},setsar=1[v]" -map "[v]" -map 1:a:0 -c:v libx264 -pix_fmt yuv420p -r 30 -c:a aac -shortest "scene_mixed_${i}.mp4"`, { cwd: tempDir });
           }
           
           return { index: i, success: true, text, hasTts };
         } catch (err: any) {
-          console.error(`[VideoEditor] Gagal memproses adegan ${i+1}:`, err);
-          return { index: i, success: false, text, hasTts: false, error: err.message || String(err) };
+          console.error(`[VideoEditor] Gagal memproses adegan ${i+1}:`, err, err.stderr ? err.stderr.toString() : "");
+          return { index: i, success: false, text, hasTts: false, error: (err.stderr ? err.stderr.toString() : err.message) || String(err) };
         }
       });
 
@@ -340,7 +340,7 @@ export class VideoEditor {
       }
 
       console.log(`[VideoEditor] Menerapkan gaya teks subtitle dan Audio BGM...`);
-      const ffmpegCmd = `ffmpeg -y -i concat.mp4 -i bgm.mp3 -filter_complex "[0:v]subtitles=subs.ass[v];[1:a]volume=0.3[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]" -map "[v]" -map "[a]" -c:v libx264 -pix_fmt yuv420p -preset fast -crf 23 -c:a aac -b:a 128k -shortest "${finalVideoPath}"`;
+      const ffmpegCmd = `ffmpeg -y -i concat.mp4 -i bgm.mp3 -filter_complex "[0:v]subtitles=subs.ass[v];[1:a]volume=0.3[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]" -map "[v]" -map "[a]" -c:v libx264 -pix_fmt yuv420p -profile:v main -preset fast -crf 23 -c:a aac -b:a 128k -movflags +faststart -shortest "${finalVideoPath}"`;
       
       try {
         await execAsync(ffmpegCmd, { cwd: tempDir });
@@ -402,7 +402,7 @@ export class VideoEditor {
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });
       } catch (e) {}
-      throw err;
+      throw new Error(err.stderr ? err.stderr.toString() : err.message);
     }
   }
 }

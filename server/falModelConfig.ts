@@ -1,5 +1,19 @@
 import fs from "fs";
 import path from "path";
+import { Storage } from "@google-cloud/storage";
+
+
+let storageClient: Storage | null = null;
+function getStorageClient(): Storage {
+  if (!storageClient) {
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID;
+    storageClient = new Storage({
+      projectId: projectId || undefined,
+      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS || undefined,
+    });
+  }
+  return storageClient;
+}
 
 export type FalTier = 'budget' | 'balanced' | 'premium';
 
@@ -283,11 +297,38 @@ export function resolveLocalFilePath(filePathOrUrl?: string): string | null {
  * Synchronously converts a local image path to a base64 data URI if it's not already a public URL or data URI.
  * This guarantees Fal.ai and BytePlus APIs never receive local relative /outputs/... paths.
  */
-export function resolveToDataUriOrPublic(imageUrl?: string): string {
+export async function resolveToDataUriOrPublic(imageUrl?: string): Promise<string> {
   if (!imageUrl || typeof imageUrl !== 'string') return '';
   const trimmed = imageUrl.trim();
   if (!trimmed) return '';
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+  if (trimmed.startsWith('data:')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    if (trimmed.includes('storage.googleapis.com')) {
+      try {
+        const res = await fetch(trimmed);
+        if (res.ok) {
+          return trimmed;
+        } else if (res.status === 403 || res.status === 401 || res.status === 404) {
+          // Private bucket - download via GCS SDK
+          const urlObj = new URL(trimmed);
+          const pathParts = urlObj.pathname.split('/').filter(p => p);
+          const bucketName = pathParts[0];
+          const objectName = pathParts.slice(1).join('/');
+          if (bucketName && objectName) {
+            const bucket = getStorageClient().bucket(bucketName);
+            const file = bucket.file(objectName);
+            const [buffer] = await file.download();
+            const ext = objectName.split('.').pop()?.toLowerCase() || 'png';
+            const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+            return `data:${mime};base64,${buffer.toString('base64')}`;
+          }
+        }
+      } catch (e) {
+        console.warn(`[resolveToDataUriOrPublic] Failed to fetch/download GCS URL ${trimmed}:`, e);
+      }
+    }
     return trimmed;
   }
 
@@ -319,10 +360,10 @@ export interface FalPayloadParams {
 /**
  * Payload builder matching official schema for each valid model
  */
-export function buildFalPayload(modelId: string, params: FalPayloadParams): any {
+export async function buildFalPayload(modelId: string, params: FalPayloadParams): Promise<any> {
   const cleanPrompt = (params.prompt || 'Cinematic video scene with smooth camera movement').slice(0, 1000);
-  const imageUrl = resolveToDataUriOrPublic(params.imageUrl);
-  const endImageUrl = params.endImageUrl ? resolveToDataUriOrPublic(params.endImageUrl) : undefined;
+  const imageUrl = await resolveToDataUriOrPublic(params.imageUrl);
+  const endImageUrl = params.endImageUrl ? await resolveToDataUriOrPublic(params.endImageUrl) : undefined;
 
   // 1. ByteDance Seedance 2.0 / 2.5
   if (modelId.includes('seedance')) {
@@ -558,14 +599,15 @@ export interface FalImagePayloadParams {
 /**
  * Validates and sanitizes image URLs: ensuring array format, valid URLs, max limit of 14
  */
-export function sanitizeReferenceImageUrls(urls?: string | string[]): string[] {
+export async function sanitizeReferenceImageUrls(urls?: string | string[]): Promise<string[]> {
   if (!urls) return [];
   const rawArray = Array.isArray(urls) ? urls : [urls];
-  return rawArray
-    .filter(u => typeof u === 'string' && u.trim().length > 0)
-    .map(u => resolveToDataUriOrPublic(u.trim()))
-    .filter(u => u.length > 0)
-    .slice(0, 14); // fal limit is 14
+  const resolved = await Promise.all(
+    rawArray
+      .filter(u => typeof u === 'string' && u.trim().length > 0)
+      .map(u => resolveToDataUriOrPublic(u.trim()))
+  );
+  return resolved.filter(u => u.length > 0).slice(0, 14); // fal limit is 14
 }
 
 /**
@@ -596,7 +638,7 @@ export function buildFluxSchnellPayload(params: {
 /**
  * Specialized Payload Builder for Nano Banana 2 and Nano Banana Pro Edit
  */
-export function buildNanoBananaPayload(
+export async function buildNanoBananaPayload(
   modelId: string,
   params: {
     prompt: string;
@@ -606,12 +648,12 @@ export function buildNanoBananaPayload(
     outputFormat?: string;
     safetyTolerance?: string;
   }
-): any {
+): Promise<any> {
   const cleanPrompt = (params.prompt || '').trim();
   const cleanAspect = (params.aspectRatio || '16:9').toString();
   const cleanResolution = (params.resolution || '1K').toString();
   const cleanFormat = (params.outputFormat || 'png').toString();
-  const sanitizedUrls = sanitizeReferenceImageUrls(params.imageUrls);
+  const sanitizedUrls = await sanitizeReferenceImageUrls(params.imageUrls);
 
   // Model-specific payload structure
   if (modelId === 'fal-ai/nano-banana-pro/edit') {
@@ -649,7 +691,7 @@ export function buildNanoBananaPayload(
 /**
  * Builds standard compliant payload according to official Fal.ai schemas
  */
-export function buildFalImagePayload(modelId: string, params: FalImagePayloadParams): any {
+export async function buildFalImagePayload(modelId: string, params: FalImagePayloadParams): Promise<any> {
   // 1. FLUX SCHNELL (Pure Text-to-Image, strictly no image_urls)
   if (modelId === 'fal-ai/flux/schnell' || modelId.includes('flux')) {
     return buildFluxSchnellPayload({
@@ -660,7 +702,7 @@ export function buildFalImagePayload(modelId: string, params: FalImagePayloadPar
   }
 
   // 2. NANO BANANA MODELS (T2I & Multimodal Image-to-Image)
-  return buildNanoBananaPayload(modelId, {
+  return await buildNanoBananaPayload(modelId, {
     prompt: params.prompt,
     imageUrls: params.imageUrls,
     aspectRatio: params.aspectRatio,

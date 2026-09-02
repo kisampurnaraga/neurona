@@ -196,7 +196,7 @@ async function renderWithFalVideoEngine(
   console.log(`[FAL.AI VIDEO ENGINE] Dispatching Scene ${sceneIdx + 1} to model: ${modelPath}`);
   engineLogs.push(`[FAL.AI VIDEO ENGINE] Model: ${modelDef.name} (${modelPath})`);
 
-  const payload = buildFalPayload(modelPath, {
+  const payload = await buildFalPayload(modelPath, {
     prompt,
     imageUrl: imageUrl || '',
     duration: scene.duration || modelDef.defaultDuration,

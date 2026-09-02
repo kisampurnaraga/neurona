@@ -241,10 +241,10 @@ export class QueueService {
 
         let resolvedImageUrl = referenceImageUrl || '';
         if (referenceImageUrl) {
-          resolvedImageUrl = (await ImageGenerationService.ensurePublicFalImageUrl(referenceImageUrl, falApiKey)) || resolveToDataUriOrPublic(referenceImageUrl);
+          resolvedImageUrl = (await ImageGenerationService.ensurePublicFalImageUrl(referenceImageUrl, falApiKey)) || await resolveToDataUriOrPublic(referenceImageUrl);
         }
 
-        const falPayload = buildFalPayload(modelDef.id, {
+        const falPayload = await buildFalPayload(modelDef.id, {
           prompt: promptText,
           imageUrl: resolvedImageUrl,
           duration: durationSeconds ? String(durationSeconds) : modelDef.defaultDuration,

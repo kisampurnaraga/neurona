@@ -1137,7 +1137,7 @@ export class ImageGenerationService {
       }
     }
 
-    referenceImageUrls = sanitizeReferenceImageUrls(referenceImageUrls);
+    referenceImageUrls = await sanitizeReferenceImageUrls(referenceImageUrls);
 
     const extractAnyFalImageUrl = (json: any): string | undefined => {
       if (!json) return undefined;
@@ -1210,7 +1210,7 @@ export class ImageGenerationService {
 
         const modelPath = targetModelDef.id;
         try {
-          const payload = buildFalImagePayload(modelPath, {
+          const payload = await buildFalImagePayload(modelPath, {
             prompt: finalPrompt,
             imageUrls: (modelPath.includes('/edit') && effectiveRefImages.length > 0) ? effectiveRefImages : undefined,
             aspectRatio: cleanAspect,
@@ -1462,7 +1462,15 @@ export class ImageGenerationService {
       // Fal.ai Engine Route
       const falResult = await runFalImage();
       if (falResult) return falResult;
-      const errMsg = `[NANO_QUOTA_EXHAUSTED] Gagal generate gambar dengan model Fal.ai (${rawEngine}). Token / saldo API server pusat Fal.ai habis. Detail: ${falQuotaErrorMessage || lastFalError || 'Saldo habis (402/403)'}`;
+      
+      const realError = falQuotaErrorMessage || lastFalError || 'Unknown Error';
+      let errMsg = '';
+      if (realError.includes('402') || realError.includes('403') || realError.includes('429')) {
+         errMsg = `[NANO_QUOTA_EXHAUSTED] Gagal generate gambar dengan model Fal.ai (${rawEngine}). Token / saldo API server pusat Fal.ai habis. Detail: ${realError}`;
+      } else {
+         errMsg = `[FAL_API_ERROR] Gagal generate gambar dengan model Fal.ai (${rawEngine}). Detail: ${realError}`;
+      }
+      
       if (onLog) onLog(`[ERROR] ${errMsg}`, 'ERROR');
       throw new Error(errMsg);
     }

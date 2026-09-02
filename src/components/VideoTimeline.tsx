@@ -393,10 +393,16 @@ export default function VideoTimeline({ project, onBack, onUpdateProject }: Vide
     setStitchMessage('Menjalankan fast re-stitch & penggabungan master video...');
 
     try {
+      const token = localStorage.getItem('neuronna_auth_token') || localStorage.getItem('neuronna_token') || 'founder_token';
       const res = await fetch(`/api/projects/${project.id}/stitch-action`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          projectId: project.id
+        })
       });
       const resText = await res.text().catch(() => '');
       let data: any = {};
@@ -404,6 +410,9 @@ export default function VideoTimeline({ project, onBack, onUpdateProject }: Vide
         if (resText) data = JSON.parse(resText);
       } catch {
         throw new Error(`Server tidak mengembalikan respons JSON valid (Status ${res.status}): ${resText.substring(0, 120)}`);
+      }
+      if (!res.ok) {
+        throw new Error(data.error || data.message || `Server merespons error status ${res.status}`);
       }
       if (data.success && data.finalVideoUrl) {
         setStitchMessage('Fast re-stitch berhasil selesai!');
