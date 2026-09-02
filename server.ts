@@ -6,7 +6,7 @@ import { StitcherAgent } from './src/server/core/StitcherAgent';
 
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { ProductionOrchestrator, projectEvents, projects, loadProjects, saveProjects, startOutputsCleanupTask, getRemoteUrlForFilename, setRemoteUrlForFilename } from "./server/orchestrator";
+import { ProductionOrchestrator, projectEvents, projects, loadProjects, saveProjects, startOutputsCleanupTask, getRemoteUrlForFilename, setRemoteUrlForFilename, appendLog } from "./server/orchestrator";
 import { CreditService } from "./server/creditService";
 import { getVideoProvider } from "./src/server/providers";
 import { ConversationalIntentRouter } from "./src/server/core/IntentRouter";
@@ -18,6 +18,17 @@ import { verifyToken, requireRole, generateToken, userDatabase, AuthenticatedReq
 import videoStudioRouter from "./server/routes/videoStudio";
 import workerRouter from "./server/routes/workerRoute";
 import founderPaymentRouter from "./server/routes/founderPayment";
+
+// === INJECT FFMPEG-STATIC INTO GLOBAL PATH ===
+import ffmpegStatic from 'ffmpeg-static';
+if (ffmpegStatic) {
+  process.env.FFMPEG_PATH = ffmpegStatic;
+  const ffmpegDir = path.dirname(ffmpegStatic);
+  process.env.PATH = `${ffmpegDir}:${process.env.PATH}`;
+  console.log('[SYSTEM] ffmpeg-static globally loaded and added to PATH at:', ffmpegStatic);
+}
+// =============================================
+
 
 // Global safety handlers to prevent process crashing on background unhandled rejections
 process.on('uncaughtException', (err) => {
@@ -905,7 +916,7 @@ createdAt: new Date().toISOString()
   app.post('/api/projects/:id/approve', async (req, res) => {
     try {
       const { subtitleStyle } = req.body;
-      const project = require('./server/orchestrator').projects.get(req.params.id);
+      const project = projects.get(req.params.id);
       if (project) {
         project.subtitleStyle = subtitleStyle;
       }
@@ -1029,11 +1040,25 @@ createdAt: new Date().toISOString()
       }
 
       const { subtitleStyle, ttsVoiceConfig } = body;
-      const result = await ProductionOrchestrator.stitchMasterVideo(projectId, subtitleStyle, ttsVoiceConfig);
+      
+      // Update status immediately so client knows it's processing
+      const project = projects.get(projectId);
+      if (project) {
+        project.status = 'PROCESSING';
+        project.overallProgress = 85; // Roughly the progress before stitching
+        saveProjects();
+        projectEvents.emit(`update:${projectId}`, project);
+      }
+
+      // Execute video generation asynchronously without awaiting
+      ProductionOrchestrator.stitchMasterVideo(projectId, subtitleStyle, ttsVoiceConfig)
+        .then(() => console.log(`[Stitch] Async video generation for ${projectId} completed successfully.`))
+        .catch(err => console.error(`[Stitch] Async video generation failed for ${projectId}:`, err));
+
       res.json({ 
          success: true, 
-         finalVideoUrl: typeof result === 'string' ? result : result.finalVideoUrl,
-         orchestrationData: typeof result === 'string' ? null : result
+         status: 'PROCESSING',
+         message: 'Perakitan video master sedang berjalan di latar belakang. Silakan pantau log untuk melihat progres.'
       });
     } catch (e: any) {
       console.error('[stitch-action] Error:', e);
@@ -1380,7 +1405,7 @@ createdAt: new Date().toISOString()
         // NEW: Scan GCS Bucket if enabled
         if (process.env.GCS_BUCKET_NAME) {
           try {
-            const { Storage } = require('@google-cloud/storage');
+            const { Storage } = await import('@google-cloud/storage');
             const storage = new Storage({
               projectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID,
               keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS || undefined,
@@ -1443,7 +1468,7 @@ createdAt: new Date().toISOString()
     try {
       const { image, filename, prompt } = req.body;
       if (!image) return res.status(400).json({ success: false, error: 'Missing image data' });
-      const { saveFileLocally } = require('./server/orchestrator');
+      const { saveFileLocally } = await import('./server/orchestrator');
       
       let ext = 'png';
       if (image.startsWith('data:video/mp4')) ext = 'mp4';
@@ -1509,7 +1534,7 @@ createdAt: new Date().toISOString()
       }
 
       if (projectModified) {
-        const { saveProjects } = require('./server/orchestrator');
+        
         saveProjects(); // This syncs the memory Map to SQLite
       }
 
@@ -1525,7 +1550,7 @@ createdAt: new Date().toISOString()
       // 2. Delete from GCS
       if (process.env.GCS_BUCKET_NAME) {
         try {
-          const { Storage } = require('@google-cloud/storage');
+          const { Storage } = await import('@google-cloud/storage');
           const storage = new Storage({
             projectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID,
             keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS || undefined,
@@ -1583,9 +1608,9 @@ createdAt: new Date().toISOString()
     project.deletedAt = new Date().toISOString();
     
     // Log audit
-    const FounderService = require('./server/orchestrator').FounderService;
-    if (FounderService && typeof FounderService.appendLog === 'function') {
-      FounderService.appendLog(project, 'FOUNDER', `User soft-deleted project ${project.id} (${project.title})`, 'WARN');
+    
+    if (typeof appendLog === 'function') {
+      appendLog(project, 'FOUNDER', `User soft-deleted project ${project.id} (${project.title})`, 'WARN');
     }
 
     saveProjects();
@@ -1600,9 +1625,9 @@ createdAt: new Date().toISOString()
     project.status = 'COMPLETED'; // or previous status
     delete project.deletedAt;
     
-    const FounderService = require('./server/orchestrator').FounderService;
-    if (FounderService && typeof FounderService.appendLog === 'function') {
-      FounderService.appendLog(project, 'FOUNDER', `User restored project ${project.id} (${project.title})`, 'SUCCESS');
+    
+    if (typeof appendLog === 'function') {
+      appendLog(project, 'FOUNDER', `User restored project ${project.id} (${project.title})`, 'SUCCESS');
     }
 
     saveProjects();
@@ -1620,24 +1645,24 @@ createdAt: new Date().toISOString()
 
     // Attempt to delete local files associated with project
     try {
-      const fsSync = require('fs');
-      const path = require('path');
+      
+      
       if (project.finalVideoUrl && project.finalVideoUrl.startsWith('/outputs/')) {
          const filename = project.finalVideoUrl.replace('/outputs/', '');
          const filePath = path.join(process.cwd(), 'outputs', filename);
-         if (fsSync.existsSync(filePath)) fsSync.unlinkSync(filePath);
+         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
       }
       if (project.storyboard && project.storyboard.scenes) {
          project.storyboard.scenes.forEach((s) => {
             if (s.videoUrl && s.videoUrl.startsWith('/outputs/')) {
                const filename = s.videoUrl.replace('/outputs/', '');
                const filePath = path.join(process.cwd(), 'outputs', filename);
-               if (fsSync.existsSync(filePath)) fsSync.unlinkSync(filePath);
+               if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
             }
             if (s.imageUrl && s.imageUrl.startsWith('/outputs/')) {
                const filename = s.imageUrl.replace('/outputs/', '');
                const filePath = path.join(process.cwd(), 'outputs', filename);
-               if (fsSync.existsSync(filePath)) fsSync.unlinkSync(filePath);
+               if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
             }
          });
       }
@@ -1645,9 +1670,9 @@ createdAt: new Date().toISOString()
       console.error("Error deleting local files:", e);
     }
 
-    const FounderService = require('./server/orchestrator').FounderService;
-    if (FounderService && typeof FounderService.appendLog === 'function') {
-      FounderService.appendLog(project, 'FOUNDER', `User hard-deleted project ${project.id} (${project.title})`, 'ERROR');
+    
+    if (typeof appendLog === 'function') {
+      appendLog(project, 'FOUNDER', `User hard-deleted project ${project.id} (${project.title})`, 'ERROR');
     }
 
     projects.delete(req.params.id);

@@ -849,7 +849,7 @@ function createDefaultTelemetry(): AgentTelemetry[] {
   ];
 }
 
-function appendLog(project: ProductionProject, source: string, message: string, level: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR' | 'INTERRUPT' = 'INFO') {
+export function appendLog(project: ProductionProject, source: string, message: string, level: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR' | 'INTERRUPT' = 'INFO') {
   if (!project.logs) project.logs = [];
   const log: TerminalLog = {
     id: crypto.randomUUID(),
