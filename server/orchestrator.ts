@@ -335,12 +335,13 @@ export async function saveFileLocally(urlOrData: string, prefix: string, extensi
       fs.writeFileSync(localFilePath, fileBuffer);
       downloadedLocally = true;
       
-      // RE-ENCODE WHATSAPP COMPATIBILITY (H.264, AAC, faststart)
-      if (extension === 'mp4') {
+      // RE-ENCODE WHATSAPP COMPATIBILITY (H.264, AAC, faststart) - Skip if already encoded master/stitched video
+      const isAlreadyOptimized = filename.startsWith('final_') || filename.includes('master') || filename.includes('stitch');
+      if (extension === 'mp4' && !isAlreadyOptimized) {
         try {
           const reencodedPath = localFilePath + '.reencode.mp4';
-          console.log(`[LocalSaver] Re-encoding ${filename} for WhatsApp compatibility...`);
-          await execAsync(`ffmpeg -y -i "${localFilePath}" -c:v libx264 -profile:v main -pix_fmt yuv420p -c:a aac -movflags +faststart "${reencodedPath}"`);
+          console.log(`[LocalSaver] Re-encoding ${filename} for WhatsApp compatibility (veryfast)...`);
+          await execAsync(`ffmpeg -y -i "${localFilePath}" -c:v libx264 -profile:v main -preset veryfast -pix_fmt yuv420p -c:a aac -movflags +faststart "${reencodedPath}"`);
           if (fs.existsSync(reencodedPath) && fs.statSync(reencodedPath).size > 0) {
             fs.copyFileSync(reencodedPath, localFilePath);
             fs.unlinkSync(reencodedPath);
@@ -2104,7 +2105,15 @@ export class ProductionOrchestrator {
       
       const completedScenes = project.storyboard?.scenes?.filter(s => s.status === 'COMPLETED' && (s.videoUrl || s.assetUrl)) || [];
       if (completedScenes.length > 0) {
-        const processResult = await VideoEditor.processProject(project);
+        const onProgress = (progress: number, stepName: string, detailLog: string) => {
+          project.updatedAt = new Date().toISOString();
+          project.overallProgress = Math.max(90, Math.min(99, progress));
+          project.currentPhaseName = `${stepName} (TIARA)`;
+          appendLog(project, 'TIARA', detailLog, 'INFO');
+          saveProjects();
+          projectEvents.emit(`update:${id}`, project);
+        };
+        const processResult = await VideoEditor.processProject(project, undefined, onProgress);
         project.finalVideoUrl = typeof processResult === 'string' ? processResult : processResult.finalVideoUrl;
       }
 
@@ -2274,7 +2283,19 @@ export class ProductionOrchestrator {
     appendLog(project, 'TIMELINE', `Memulai fast re-stitch kesatuan video dari aset timeline...`, 'INFO');
     try {
       const processStyle = subtitleStyle || (project as any).subtitleStyle;
-      const processResult = await VideoEditor.processProject(project, processStyle);
+      const onProgress = (progress: number, stepName: string, detailLog: string) => {
+        const p = projects.get(projectId) || project;
+        if (p) {
+          p.status = 'PROCESSING';
+          p.updatedAt = new Date().toISOString();
+          p.overallProgress = progress;
+          p.currentPhaseName = stepName;
+          appendLog(p, 'FFMPEG', detailLog, 'INFO');
+          saveProjects();
+          projectEvents.emit(`update:${projectId}`, p);
+        }
+      };
+      const processResult = await VideoEditor.processProject(project, processStyle, onProgress);
       const finalUrl = typeof processResult === 'string' ? processResult : processResult.finalVideoUrl;
       
       const latestProject = projects.get(projectId);

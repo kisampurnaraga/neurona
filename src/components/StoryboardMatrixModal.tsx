@@ -871,10 +871,31 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
        if (!showStitchModal) {
          setShowStitchModal(true);
        }
-       if (stitchProgress === 0) {
-         setStitchProgress(95);
-         setActiveStitchStep('Menunggu proses server...');
-         logToUI('⏳ PROSES: Perakitan video master sedang berjalan di latar belakang...');
+       if (project.overallProgress && project.overallProgress > 0) {
+         setStitchProgress(project.overallProgress);
+       } else if (stitchProgress === 0) {
+         setStitchProgress(10);
+         setActiveStitchStep('Memulai render di server...');
+         logToUI('⏳ PROSES: Perakitan video master sedang diproses engine server...');
+       }
+       if (project.currentPhaseName) {
+         setActiveStitchStep(project.currentPhaseName);
+       }
+
+       // Sync real-time logs from backend
+       const backendLogs = (project.logs || (project as any).script?.logs || []).filter((l: any) => 
+         l.agent === 'FFMPEG' || l.agent === 'TIMELINE' || l.agent === 'TIARA' || l.agent === 'ORCHESTRATOR'
+       );
+       if (backendLogs.length > 0) {
+         const formatted = backendLogs.map((l: any) => {
+           const time = l.timestamp ? new Date(l.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+           return time ? `[${time}] ${l.message}` : l.message;
+         });
+         setStitchLogs(prev => {
+           const existing = new Set(prev);
+           const toAdd = formatted.filter((item: string) => !existing.has(item));
+           return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+         });
        }
     }
     
@@ -912,7 +933,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
          setIsStitching(false);
        }
     }
-  }, [project?.status, project?.finalVideoUrl, showStitchModal, stitchProgress]);
+  }, [project?.status, project?.finalVideoUrl, project?.overallProgress, project?.currentPhaseName, project?.logs, showStitchModal, stitchProgress]);
 
   const handleStitchVideos = async () => {
     if (!project || !project.id) {
@@ -939,38 +960,20 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     };
 
     try {
-      log('🔍 ORKESTRATOR: Menganalisis alur cerita dan data scene storyboard...');
-      setStitchProgress(10);
-      await new Promise(r => setTimeout(r, 1200));
-
-      log(`🎬 VIDEO CLUSTER: Menghubungkan ke server penyimpanan GCR untuk mengumpulkan file mentah video (${scenes.length} adegan)...`);
-      setStitchProgress(25);
-      neuronaVoice.speak("Sistem orkestrator sedang mengunduh file adegan visual dari server penyimpanan awan");
-      await new Promise(r => setTimeout(r, 1500));
-
-      log('🎙️ AUDIO ENGINE: Menyelaraskan rekaman suara voiceover narasi AI dengan durasi visual adegan...');
-      setStitchProgress(45);
-      await new Promise(r => setTimeout(r, 1200));
-
-      log('🎵 MIXER: Menyisipkan latar suara musik instrumen pilihan dengan efek audio ducking otomatis (-12dB)...');
-      setStitchProgress(60);
-      neuronaVoice.speak("Melakukan mixing audio voiceover dan melodi musik latar belakang");
-      await new Promise(r => setTimeout(r, 1400));
-
-      log('✍️ SUBTITLE ENGINE: Mengompilasi format subtitle .SRT dengan penempatan teks tengah simetris...');
-      setStitchProgress(75);
-      await new Promise(r => setTimeout(r, 1100));
-
-      log('⚡ FFMPEG COOPERATIVE: Menjalankan eksekusi parallel rendering dan konkatensi video...');
-      setStitchProgress(90);
-      neuronaVoice.speak("Melakukan render final serta sinkronisasi penataan teks subtitle");
-      await new Promise(r => setTimeout(r, 1600));
+      log('🔍 ORKESTRATOR: Menganalisis alur cerita dan memvalidasi file adegan storyboard...');
+      setStitchProgress(5);
+      setActiveStitchStep('Memvalidasi aset adegan...');
 
       // Validasi adegan sebelum request
       const missingVideos = scenes.filter((s, idx) => !s.videoUrl && !s.assetUrl);
       if (missingVideos.length > 0) {
         throw new Error(`Ada ${missingVideos.length} adegan yang belum memiliki video. Pastikan seluruh adegan telah di-render sebelum menggabungkan video.`);
       }
+
+      log(`🎬 VIDEO CLUSTER: Mengirim instruksi render master (${scenes.length} adegan) ke backend FFmpeg engine...`);
+      setStitchProgress(10);
+      setActiveStitchStep('Menghubungi engine render...');
+      neuronaVoice.speak("Sistem orkestrator sedang memulai proses perakitan video master di server");
 
       const matchedVoice = NARRATOR_VOICES.find(v => v.id === selectedNarratorVoice);
       const voiceProvider = matchedVoice?.provider || (selectedNarratorVoice.startsWith('openai') ? 'openai' : selectedNarratorVoice.startsWith('fal') ? 'fal-ai' : selectedNarratorVoice === 'voice_clone' ? 'minimax_clone' : 'google');
@@ -1007,9 +1010,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
       if (data.success) {
         if (data.status === 'PROCESSING') {
-          log('⏳ PROSES: ' + (data.message || 'Perakitan video master sedang berjalan di latar belakang...'));
-          setStitchProgress(90);
-          setActiveStitchStep('Menyusun adegan di server...');
+          log('⏳ PROSES: ' + (data.message || 'Perakitan video master sedang diproses oleh engine server...'));
+          setActiveStitchStep('Memproses di server...');
           isAsyncProcessing = true;
           // We rely on useEffect to handle completion
         } else if (data.finalVideoUrl) {
@@ -4148,12 +4150,19 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                      {stitchLogs.length === 0 ? (
                        <div className="text-[10px] text-slate-600 font-mono italic">Menunggu log sistem...</div>
                      ) : (
-                       stitchLogs.map((log, i) => (
-                         <div key={i} className="text-[10px] text-slate-400 font-mono flex items-start gap-2">
-                           <span className="text-slate-600 shrink-0">[{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}]</span>
-                           <span>{log}</span>
-                         </div>
-                       ))
+                       stitchLogs.map((log, i) => {
+                         const match = log.match(/^\[(\d{2}:\d{2}(?::\d{2})?)\]\s*(.*)$/);
+                         const logTime = match ? match[1] : null;
+                         const logContent = match ? match[2] : log;
+                         return (
+                           <div key={i} className="text-[10px] text-slate-400 font-mono flex items-start gap-2">
+                             {logTime && (
+                               <span className="text-slate-600 shrink-0">[{logTime}]</span>
+                             )}
+                             <span className="break-all">{logContent}</span>
+                           </div>
+                         );
+                       })
                      )}
                    </div>
                 </details>

@@ -2022,8 +2022,7 @@ createdAt: new Date().toISOString()
   });
 
   // Vite middleware for development
-  const isProd = process.env.NODE_ENV === 'production' || fs.existsSync(path.join(process.cwd(), 'dist', 'index.html'));
-  if (!isProd) {
+  if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
