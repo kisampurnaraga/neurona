@@ -741,8 +741,8 @@ export function startStaleJobSweeper() {
     for (const [id, project] of projects.entries()) {
       if (project.status === 'PROCESSING') {
         const lastUpdate = project.updatedAt ? new Date(project.updatedAt).getTime() : 0;
-        // 5 minutes timeout for stitching/processing
-        if (now - lastUpdate > 5 * 60 * 1000) {
+        // 15 minutes timeout for stitching/processing
+        if (now - lastUpdate > 15 * 60 * 1000) {
           project.status = 'FAILED';
           project.error = 'Proses timeout atau terputus karena server restart.';
           if (!project.agentStatus) project.agentStatus = {};
@@ -789,6 +789,12 @@ export function loadProjects() {
             }
             (parsed as any).showcaseEligible = row.showcaseEligible === true || (row.showcaseEligible as any) === 1 || Boolean((parsed as any).showcaseEligible);
             (parsed as any).showcaseOrder = typeof row.showcaseOrder === 'number' ? row.showcaseOrder : (parsed as any).showcaseOrder ?? null;
+            if (["STORYBOARDING", "PRODUCING", "ASSEMBLING", "AUDIO", "EDITING", "QA", "PROCESSING"].includes(parsed.status)) {
+              parsed.status = "FAILED";
+              parsed.error = "Proses terputus karena server restart.";
+              appendLog(parsed, "SYSTEM", "Server restart detected during active processing. Marked as FAILED.", "ERROR");
+            }
+
             projects.set(row.id, parsed);
           } catch(e) {}
         }

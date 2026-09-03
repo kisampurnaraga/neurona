@@ -49,6 +49,15 @@ async function startServer() {
   const PORT = 3000;
 
   // CORS & Preflight headers for all /api requests
+app.get("/api/test-db", async (req, res) => {
+  try {
+    const { db } = await import("./src/db/index.ts");
+    res.json({ success: true, dbType: typeof db });
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
   app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');

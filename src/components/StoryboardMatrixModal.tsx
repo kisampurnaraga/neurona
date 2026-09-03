@@ -3675,7 +3675,26 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
           <div className="flex-1 flex flex-col items-center justify-center relative p-6">
              {/* Central Hub Status */}
              <div className="max-w-xl w-full flex flex-col items-center">
-                {stitchProgress === 100 && finalVideoUrl ? (
+                {activeStitchStep === "Gagal" || project.status === "FAILED" ? (
+                   <div className="flex flex-col items-center justify-center w-full min-h-[400px] animate-in zoom-in-95 duration-500 py-10 px-4">
+                      <div className="w-20 h-20 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center mb-6">
+                        <AlertCircle size={40} className="text-rose-500" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-white mb-3 text-center">Penggabungan Video Gagal</h2>
+                      <div className="bg-rose-950/40 border border-rose-500/30 rounded-xl p-4 max-w-lg mb-8">
+                        <p className="text-rose-300 text-sm text-center">
+                          {project.error || "Terjadi kesalahan pada tahap produksi atau server terputus. Silakan tutup jendela ini dan coba lagi dari awal."}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowStitchModal(false)}
+                        className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition shadow-lg border border-slate-700 cursor-pointer"
+                      >
+                        Kembali ke Storyboard
+                      </button>
+                   </div>
+
+                ) : stitchProgress === 100 && finalVideoUrl ? (
                    <div className="flex flex-col items-center w-full animate-in zoom-in-95 duration-500">
                       <div className={`w-full max-w-xs ${getProjectAspectRatioClass(project)} rounded-2xl overflow-hidden border-2 border-emerald-500/50 shadow-[0_0_40px_rgba(16,185,129,0.2)] mb-6`}>
                         <video src={finalVideoUrl} controls autoPlay loop playsInline className="w-full h-full object-contain bg-black" />

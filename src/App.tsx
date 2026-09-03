@@ -892,11 +892,12 @@ export default function App() {
     connectSSE();
 
     // Fallback polling every 2.5 seconds to ensure UI is never stuck if SSE connection drops
+    let notFoundCount = 0;
     pollInterval = setInterval(async () => {
       try {
         const res = await fetch(`/api/projects/${projectId}`);
         if (res.ok) {
-          const update = await res.json().catch(() => null);
+          notFoundCount = 0; const update = await res.json().catch(() => null);
           if (update) {
             setIsDraftingNewProject(false);
             setProject(prev => {
@@ -907,10 +908,13 @@ export default function App() {
             });
           }
         } else if (res.status === 404) {
+          notFoundCount++;
+          if (notFoundCount >= 3) {
           console.warn(`[Auto-Clean] Stale projectId ${projectId} not found on backend. Resetting.`);
           setProjectId(null);
           setProject(null);
           localStorage.removeItem('neurona_current_project_id');
+          }
         }
       } catch (err) {
         // ignore background poll errors
