@@ -146,7 +146,10 @@ export class VideoEditor {
       console.log(`[VideoEditor] Memulai pengunduhan dan persiapan aset paralel untuk ${scenes.length} adegan...`);
       
       const scenePromises = scenes.map(async (scene, i) => {
-        const url = (scene.videoUrl || scene.assetUrl) as string;
+        const url = (scene.falUrl || scene.remoteVideoUrl || scene.videoUrl) as string;
+        if (!url) {
+           throw new Error(`Video untuk adegan ${i + 1} belum dirender atau belum selesai.`);
+        }
         const localPath = path.join(tempDir, `scene_${i}.mp4`);
         const localTtsPath = path.join(tempDir, `tts_${i}.mp3`);
         const localMixedPath = path.join(tempDir, `scene_mixed_${i}.mp4`);

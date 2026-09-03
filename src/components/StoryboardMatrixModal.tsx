@@ -424,6 +424,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     const [isStitching, setIsStitching] = useState(false);
   const [clientConfig, setClientConfig] = useState({ qaMinScoreThreshold: 70, qaAutoFixThreshold: 80 });
 
+
+
   useEffect(() => {
     fetch('/api/config/client')
       .then(r => r.json())
@@ -504,6 +506,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   };
 
   const [stitchProgress, setStitchProgress] = useState<number>(0);
+
+
   const [stitchLogs, setStitchLogs] = useState<string[]>([]);
   const [activeStitchStep, setActiveStitchStep] = useState<string>('');
   const [showStitchModal, setShowStitchModal] = useState<boolean>(false);
@@ -846,6 +850,70 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
   const allVideosCompleted = project?.scenes?.every(s => s.videoStatus === 'COMPLETED' && s.videoUrl) || false;
 
+    // Monitor project updates from SSE for async stitching
+  useEffect(() => {
+    if (!project) return;
+
+    const logToUI = (msg: string) => {
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setStitchLogs(prev => [...prev, `[${timeStr}] ${msg}`]);
+      setChatHistory(prev => [
+        ...prev,
+        {
+          sender: 'agent',
+          message: msg,
+          timestamp: timeStr
+        }
+      ]);
+    };
+    
+    if (project.status === 'PROCESSING') {
+       if (!showStitchModal) {
+         setShowStitchModal(true);
+       }
+       if (stitchProgress === 0) {
+         setStitchProgress(95);
+         setActiveStitchStep('Menunggu proses server...');
+         logToUI('⏳ PROSES: Perakitan video master sedang berjalan di latar belakang...');
+       }
+    }
+    
+    if (showStitchModal && project.status === 'FAILED' && stitchProgress > 0) {
+       logToUI(`❌ GAGAL PENGGABUNGAN: ${project.error || 'Proses terputus.'}`);
+       setStitchProgress(0);
+       setActiveStitchStep('Gagal');
+       setFinalVideoUrl(null);
+       neuronaVoice.speak(`Gagal menggabungkan video.`);
+       setIsStitching(false);
+    }
+    
+    if (showStitchModal && project.status === 'COMPLETED') {
+       const logs = project.logs || (project as any).script?.logs || [];
+       const lastLog = logs.length > 0 ? logs[logs.length - 1] : null;
+       const isFailed = lastLog && lastLog.level === 'ERROR' && lastLog.message.includes('Gagal menjahit');
+       
+       if (isFailed && stitchProgress > 0) {
+         logToUI(`❌ GAGAL PENGGABUNGAN: ${lastLog.message}`);
+         setStitchProgress(0);
+         setActiveStitchStep('Gagal');
+         setFinalVideoUrl(null);
+         neuronaVoice.speak(`Gagal menggabungkan video.`);
+       } else if (!isFailed && project.finalVideoUrl && stitchProgress < 100) {
+         setStitchProgress(100);
+         setActiveStitchStep('Selesai');
+         setFinalVideoUrl(project.finalVideoUrl);
+         logToUI('🎉 SUKSES: Seluruh adegan video berhasil dijahit dan disatukan menjadi film utuh!');
+         neuronaVoice.speak("Selamat! Proses penggabungan video telah berhasil diselesaikan secara utuh");
+         setIsStitching(false);
+       } else if (!isFailed && !project.finalVideoUrl && stitchProgress > 0 && stitchProgress < 100) {
+         setStitchProgress(100);
+         setActiveStitchStep('Selesai');
+         logToUI('Proses backend selesai, namun URL video master belum tersedia.');
+         setIsStitching(false);
+       }
+    }
+  }, [project?.status, project?.finalVideoUrl, showStitchModal, stitchProgress]);
+
   const handleStitchVideos = async () => {
     if (!project || !project.id) {
       alert("Proyek tidak valid atau ID Proyek belum tersimpan.");
@@ -935,14 +1003,30 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
         throw new Error(data.error || data.message || `Server merespons error status ${res.status}`);
       }
 
-      if (data.success && data.finalVideoUrl) {
-        log('🎉 SUKSES: Seluruh adegan video berhasil dijahit dan disatukan menjadi film utuh!');
-        setStitchProgress(100);
-        setActiveStitchStep('Selesai');
-        neuronaVoice.speak("Selamat! Proses penggabungan video telah berhasil diselesaikan secara utuh");
-        setFinalVideoUrl(data.finalVideoUrl);
+      let isAsyncProcessing = false;
+
+      if (data.success) {
+        if (data.status === 'PROCESSING') {
+          log('⏳ PROSES: ' + (data.message || 'Perakitan video master sedang berjalan di latar belakang...'));
+          setStitchProgress(90);
+          setActiveStitchStep('Menyusun adegan di server...');
+          isAsyncProcessing = true;
+          // We rely on useEffect to handle completion
+        } else if (data.finalVideoUrl) {
+          log('🎉 SUKSES: Seluruh adegan video berhasil dijahit dan disatukan menjadi film utuh!');
+          setStitchProgress(100);
+          setActiveStitchStep('Selesai');
+          neuronaVoice.speak("Selamat! Proses penggabungan video telah berhasil diselesaikan secara utuh");
+          setFinalVideoUrl(data.finalVideoUrl);
+        } else {
+          throw new Error('Gagal menghasilkan master video final.');
+        }
       } else {
         throw new Error(data.error || data.message || 'Gagal menghasilkan master video final.');
+      }
+      
+      if (!isAsyncProcessing) {
+        setIsStitching(false);
       }
     } catch (e: any) {
       console.error('[Stitch Error]', e);
@@ -952,11 +1036,9 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
       setActiveStitchStep('Gagal');
       setFinalVideoUrl(null);
       neuronaVoice.speak(`Gagal menggabungkan video: ${errMsg}`);
-    } finally {
       setIsStitching(false);
     }
   };
-
 
   if (!isOpen || !project) return null;
 
@@ -3114,10 +3196,10 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     }
                     setShowStitchStylePopup(true);
                   }}
-                  disabled={isStitching}
+                  disabled={isStitching || project?.status === 'PROCESSING'}
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 hover:from-emerald-400 hover:to-cyan-500 text-white font-bold text-xs shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
-                  {isStitching ? <Loader2 size={13} className="animate-spin" /> : <Film size={13} />}
+                  {isStitching || project?.status === 'PROCESSING' ? <Loader2 size={13} className="animate-spin" /> : <Film size={13} />}
                   <span>Gabungkan Video (Orkestrasi AI)</span>
                 </button>
                 {finalVideoUrl && (

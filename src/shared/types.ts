@@ -1,4 +1,4 @@
-export type ProductionState = 'DRAFT' | 'BRIEFING' | 'STORYBOARDING' | 'AWAITING_APPROVAL' | 'PRODUCING' | 'ASSEMBLING' | 'AUDIO' | 'EDITING' | 'QA' | 'COMPLETED' | 'FAILED' | 'deleted';
+export type ProductionState = 'DRAFT' | 'BRIEFING' | 'STORYBOARDING' | 'AWAITING_APPROVAL' | 'PRODUCING' | 'ASSEMBLING' | 'AUDIO' | 'EDITING' | 'QA' | 'COMPLETED' | 'FAILED' | 'deleted' | 'PROCESSING';
 
 export type ProviderStatus = 'NOT_CONFIGURED' | 'READY' | 'DEGRADED' | 'UNAVAILABLE' | 'AUTH_ERROR' | 'QUOTA_EXCEEDED' | 'TIMEOUT' | 'ERROR';
 

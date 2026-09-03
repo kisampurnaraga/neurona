@@ -295,8 +295,38 @@ export async function saveFileLocally(urlOrData: string, prefix: string, extensi
         fileBuffer = Buffer.from(matches[2], 'base64');
       }
     } else if (urlOrData.startsWith('http://') || urlOrData.startsWith('https://')) {
-      console.log(`[LocalSaver] Downloading external asset with retries from ${urlOrData} ...`);
-      const response = await fetchWithRetry(urlOrData);
+      let downloadUrl = urlOrData;
+      const fetchHeaders: any = {};
+      
+      // Inject Google API Key if it's a Google Generative AI File URI
+      if (downloadUrl.includes('generativelanguage.googleapis.com')) {
+         const apiKey = process.env.VEO_API_KEY || process.env.GEMINI_API_KEY || '';
+         if (apiKey && !downloadUrl.includes('key=')) {
+             fetchHeaders['x-goog-api-key'] = apiKey;
+             console.log(`[LocalSaver] Injecting API Key for Google Generative AI asset download.`);
+         }
+      }
+
+      console.log(`[LocalSaver] Downloading external asset with retries from ${downloadUrl} ...`);
+      
+      // We must pass headers to fetchWithRetry! Wait, fetchWithRetry doesn't support headers.
+      // Let's do a custom fetch here with retries.
+      let response = null;
+      for (let i = 0; i < 3; i++) {
+        try {
+          response = await fetch(downloadUrl, { headers: fetchHeaders });
+          if (response.ok) break;
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        } catch (err) {
+          if (i === 2) throw err;
+          await new Promise(r => setTimeout(r, 1000 * Math.pow(2, i)));
+        }
+      }
+      
+      if (!response || !response.ok) {
+         throw new Error(`Failed to download external asset after 3 retries: ${downloadUrl}`);
+      }
+      
       const arrayBuffer = await response.arrayBuffer();
       fileBuffer = Buffer.from(arrayBuffer);
     }
@@ -324,6 +354,7 @@ export async function saveFileLocally(urlOrData: string, prefix: string, extensi
     }
   } catch (err: any) {
     console.error(`[LocalSaver] Failed to download or process file locally:`, err);
+    throw err; // MUST THROW so Orchestrator knows the download failed!
   }
 
   // === CLOUD RUN PRODUCTION HARDENING (DIRECT STREAMING TO GCS) ===
@@ -663,6 +694,7 @@ export function ensureStoryboardExists(project: ProductionProject): void {
 }
 
 export function saveProjects() {
+
   // Sync map to SQLite
   (async () => {
     try {
@@ -699,7 +731,34 @@ export function saveProjects() {
   })();
 }
 
+let sweeperStarted = false;
+export function startStaleJobSweeper() {
+  if (sweeperStarted) return;
+  sweeperStarted = true;
+  setInterval(() => {
+    let changed = false;
+    const now = Date.now();
+    for (const [id, project] of projects.entries()) {
+      if (project.status === 'PROCESSING') {
+        const lastUpdate = project.updatedAt ? new Date(project.updatedAt).getTime() : 0;
+        // 5 minutes timeout for stitching/processing
+        if (now - lastUpdate > 5 * 60 * 1000) {
+          project.status = 'FAILED';
+          project.error = 'Proses timeout atau terputus karena server restart.';
+          if (!project.agentStatus) project.agentStatus = {};
+          project.agentStatus['Stitcher'] = 'FAILED';
+          changed = true;
+          projectEvents.emit(`update:${id}`, project);
+          console.warn(`[Stale Job Sweeper] Auto-failed stale project ${id}`);
+        }
+      }
+    }
+    if (changed) saveProjects();
+  }, 30 * 1000);
+}
+
 export function loadProjects() {
+  startStaleJobSweeper();
   (async () => {
     try {
       await db.insert(dbUsers).values({
@@ -850,6 +909,7 @@ function createDefaultTelemetry(): AgentTelemetry[] {
 }
 
 export function appendLog(project: ProductionProject, source: string, message: string, level: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR' | 'INTERRUPT' = 'INFO') {
+  project.updatedAt = new Date().toISOString();
   if (!project.logs) project.logs = [];
   const log: TerminalLog = {
     id: crypto.randomUUID(),
@@ -1737,21 +1797,41 @@ export class ProductionOrchestrator {
           scene.falUrl = generatedUrl;
         }
       }
-      scene.videoStatus = 'COMPLETED';
-      scene.status = 'COMPLETED';
-
-      // Keep project.scenes in sync if present
-      if (Array.isArray((project as any).scenes) && (project as any).scenes[sceneIdx]) {
-        (project as any).scenes[sceneIdx].videoUrl = localVideoUrl;
-        (project as any).scenes[sceneIdx].remoteVideoUrl = (scene as any).remoteVideoUrl;
-        (project as any).scenes[sceneIdx].remoteUrl = scene.remoteUrl;
-        (project as any).scenes[sceneIdx].falUrl = scene.falUrl;
-        (project as any).scenes[sceneIdx].videoStatus = 'COMPLETED';
-        (project as any).scenes[sceneIdx].status = 'COMPLETED';
+      // RACE CONDITION FIX: Fetch latest project state from memory before saving
+      // so we don't overwrite if the user saved via frontend during the long video render.
+      const latestProject = projects.get(id);
+      if (latestProject && latestProject.storyboard && latestProject.storyboard.scenes && latestProject.storyboard.scenes[sceneIdx]) {
+          const latestScene = latestProject.storyboard.scenes[sceneIdx];
+          latestScene.videoUrl = localVideoUrl;
+          latestScene.remoteUrl = scene.remoteUrl;
+          (latestScene as any).remoteVideoUrl = (scene as any).remoteVideoUrl;
+          latestScene.falUrl = scene.falUrl;
+          latestScene.videoStatus = 'COMPLETED';
+          latestScene.status = 'COMPLETED';
+          
+          if (Array.isArray((latestProject as any).scenes) && (latestProject as any).scenes[sceneIdx]) {
+            (latestProject as any).scenes[sceneIdx].videoUrl = localVideoUrl;
+            (latestProject as any).scenes[sceneIdx].remoteVideoUrl = (scene as any).remoteVideoUrl;
+            (latestProject as any).scenes[sceneIdx].remoteUrl = scene.remoteUrl;
+            (latestProject as any).scenes[sceneIdx].falUrl = scene.falUrl;
+            (latestProject as any).scenes[sceneIdx].videoStatus = 'COMPLETED';
+            (latestProject as any).scenes[sceneIdx].status = 'COMPLETED';
+          }
+          
+          // Re-assign project pointer to emit the correct state
+          Object.assign(project, latestProject);
+      } else {
+          scene.videoStatus = 'COMPLETED';
+          scene.status = 'COMPLETED';
+          if (Array.isArray((project as any).scenes) && (project as any).scenes[sceneIdx]) {
+            (project as any).scenes[sceneIdx].videoUrl = localVideoUrl;
+            (project as any).scenes[sceneIdx].remoteVideoUrl = (scene as any).remoteVideoUrl;
+            (project as any).scenes[sceneIdx].remoteUrl = scene.remoteUrl;
+            (project as any).scenes[sceneIdx].falUrl = scene.falUrl;
+            (project as any).scenes[sceneIdx].videoStatus = 'COMPLETED';
+            (project as any).scenes[sceneIdx].status = 'COMPLETED';
+          }
       }
-
-      // DO NOT overwrite project.finalVideoUrl with single scene video.
-      // project.finalVideoUrl is strictly reserved for full stitched video result.
 
       saveProjects();
 
@@ -1759,8 +1839,15 @@ export class ProductionOrchestrator {
       updateTelemetry(project, 'GATOTKACA', { status: 'ONLINE', currentTask: `Scene ${sceneIdx + 1} ready`, progress: 100 });
       projectEvents.emit(`update:${id}`, project);
     } catch (e: any) {
-      scene.videoStatus = 'FAILED';
-      scene.status = 'FAILED';
+      const latestProject = projects.get(id);
+      if (latestProject && latestProject.storyboard && latestProject.storyboard.scenes && latestProject.storyboard.scenes[sceneIdx]) {
+          latestProject.storyboard.scenes[sceneIdx].videoStatus = 'FAILED';
+          latestProject.storyboard.scenes[sceneIdx].status = 'FAILED';
+          Object.assign(project, latestProject);
+      } else {
+          scene.videoStatus = 'FAILED';
+          scene.status = 'FAILED';
+      }
       appendLog(project, 'ERROR', `Gagal render video adegan ${sceneIdx + 1}: ${e.message}`, 'ERROR');
       saveProjects();
       projectEvents.emit(`update:${id}`, project);
@@ -2184,14 +2271,20 @@ export class ProductionOrchestrator {
       const processResult = await VideoEditor.processProject(project, processStyle);
       const finalUrl = typeof processResult === 'string' ? processResult : processResult.finalVideoUrl;
       
-      project.finalVideoUrl = finalUrl;
-      project.status = 'COMPLETED';
-      project.overallProgress = 100;
-      
-      // Store the orchestration result for the client if needed
-      (project as any).orchestrationResult = typeof processResult === 'string' ? null : processResult;
-      
-      // Logging the structured orchestration result automatically
+      const latestProject = projects.get(projectId);
+      if (latestProject) {
+        latestProject.finalVideoUrl = finalUrl;
+        latestProject.status = 'COMPLETED';
+        latestProject.overallProgress = 100;
+        (latestProject as any).orchestrationResult = typeof processResult === 'string' ? null : processResult;
+        Object.assign(project, latestProject);
+      } else {
+        project.finalVideoUrl = finalUrl;
+        project.status = 'COMPLETED';
+        project.overallProgress = 100;
+        (project as any).orchestrationResult = typeof processResult === 'string' ? null : processResult;
+      }
+
       if (processResult && typeof processResult === 'object' && processResult.finalExportConfirmationLogs) {
          processResult.finalExportConfirmationLogs.forEach((logMsg: string) => {
             appendLog(project, 'ORCHESTRATOR', logMsg, 'SUCCESS');
@@ -2202,8 +2295,16 @@ export class ProductionOrchestrator {
       projectEvents.emit(`update:${projectId}`, project);
       return processResult;
     } catch (e: any) {
+      const latestProject = projects.get(projectId);
+      if (latestProject) {
+        latestProject.status = 'FAILED';
+        latestProject.error = e.message;
+        Object.assign(project, latestProject);
+      } else {
+        project.status = 'FAILED';
+        project.error = e.message;
+      }
       appendLog(project, 'ORCHESTRATOR', `Gagal menjahit video: ${e.message}`, 'ERROR');
-      project.status = 'COMPLETED'; // Prevent it from being stuck in PROCESSING forever
       saveProjects();
       projectEvents.emit(`update:${projectId}`, project);
       throw e;

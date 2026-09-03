@@ -213,6 +213,12 @@ export default function VideoTimeline({ project, onBack, onUpdateProject }: Vide
 
   // Ingest scenes from project state automatically
   useEffect(() => {
+    if (project) {
+      if (project.status === 'COMPLETED' || project.status === 'FAILED') {
+         setIsStitching(false);
+         if (project.status === 'COMPLETED') setStitchMessage('Fast re-stitch berhasil selesai!');
+      }
+    }
     if (project?.storyboard?.scenes && project.storyboard.scenes.length > 0) {
       setScenes(project.storyboard.scenes);
     } else {
@@ -414,24 +420,28 @@ export default function VideoTimeline({ project, onBack, onUpdateProject }: Vide
       if (!res.ok) {
         throw new Error(data.error || data.message || `Server merespons error status ${res.status}`);
       }
-      if (data.success && data.finalVideoUrl) {
-        setStitchMessage('Fast re-stitch berhasil selesai!');
-        setHermesMessage('Selesai! Master video telah diperbarui dengan frame override tanpa harus re-render ulang dari awal.');
-        if (project && onUpdateProject) {
-          onUpdateProject({
-            ...project,
-            finalVideoUrl: data.finalVideoUrl,
-            status: 'COMPLETED'
-          });
+      if (data.success) {
+        if (data.status === 'PROCESSING') {
+          setStitchMessage(data.message || 'Fast re-stitch berjalan di latar belakang...');
+          // Let SSE update it
+        } else if (data.finalVideoUrl) {
+          setStitchMessage('Fast re-stitch berhasil selesai!');
+          setHermesMessage('Selesai! Master video telah diperbarui dengan frame override tanpa harus re-render ulang dari awal.');
+          if (project && onUpdateProject) {
+            onUpdateProject({
+              ...project,
+              finalVideoUrl: data.finalVideoUrl,
+              status: 'COMPLETED'
+            });
+          }
         }
       } else {
         setStitchMessage(`Gagal menggabungkan video: ${data.error || 'Format video tidak kompatibel'}`);
+        setIsStitching(false);
       }
     } catch (e: any) {
       setStitchMessage(`Gagal re-stitch: ${e.message || 'Kesalahan jaringan'}`);
-    } finally {
       setIsStitching(false);
-      setTimeout(() => setStitchMessage(null), 4000);
     }
   };
 

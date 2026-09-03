@@ -1045,6 +1045,7 @@ createdAt: new Date().toISOString()
       const project = projects.get(projectId);
       if (project) {
         project.status = 'PROCESSING';
+        project.updatedAt = new Date().toISOString();
         project.overallProgress = 85; // Roughly the progress before stitching
         saveProjects();
         projectEvents.emit(`update:${projectId}`, project);
@@ -1794,8 +1795,25 @@ createdAt: new Date().toISOString()
     });
   });
 
-  app.get('/api/projects/:id', (req, res) => {
-     const project = projects.get(req.params.id);
+  app.get('/api/projects/:id', async (req, res) => {
+     let project = projects.get(req.params.id);
+     if (!project) {
+        // Fallback to SQLite
+        try {
+          const { db } = await import('./src/db/index.ts');
+          const { projects: dbProjects } = await import('./src/db/schema.ts');
+          const { eq } = await import('drizzle-orm');
+          const row = db.select().from(dbProjects).where(eq(dbProjects.id, req.params.id)).get();
+          if (row && row.data) {
+             project = JSON.parse(row.data);
+             if (project) {
+               projects.set(req.params.id, project);
+             }
+          }
+        } catch (e) {
+          console.warn('[GET Project] SQLite fallback error:', e);
+        }
+     }
      if (!project) return res.status(404).json({error: "Not found"});
      checkAndValidateProjectVideo(project);
      res.json(project);
@@ -1995,7 +2013,8 @@ createdAt: new Date().toISOString()
   });
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  const isProd = process.env.NODE_ENV === 'production' || fs.existsSync(path.join(process.cwd(), 'dist', 'index.html'));
+  if (!isProd) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
