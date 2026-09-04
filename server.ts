@@ -48,15 +48,20 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Immediate health check route for container & proxy readiness
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok" });
+  });
+
   // CORS & Preflight headers for all /api requests
-app.get("/api/test-db", async (req, res) => {
-  try {
-    const { db } = await import("./src/db/index.ts");
-    res.json({ success: true, dbType: typeof db });
-  } catch (e) {
-    res.json({ success: false, error: e.message });
-  }
-});
+  app.get("/api/test-db", async (req, res) => {
+    try {
+      const { db } = await import("./src/db/index.ts");
+      res.json({ success: true, dbType: typeof db });
+    } catch (e) {
+      res.json({ success: false, error: e.message });
+    }
+  });
 
   app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
@@ -120,10 +125,6 @@ app.get("/api/test-db", async (req, res) => {
       console.error(e);
       res.status(500).json({ error: e.message });
     }
-  });
-
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
   });
 
   // Mount Google Cloud Veo Studio & Cloud Tasks Worker routes
@@ -2029,10 +2030,24 @@ createdAt: new Date().toISOString()
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = fs.existsSync(path.join(process.cwd(), 'dist', 'index.html'))
+      ? path.join(process.cwd(), 'dist')
+      : (typeof __dirname !== 'undefined' && fs.existsSync(path.join(__dirname, 'index.html'))
+          ? __dirname
+          : path.join(process.cwd(), 'dist'));
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      const indexPath = path.join(distPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        const fallback = path.join(process.cwd(), 'dist', 'index.html');
+        if (fs.existsSync(fallback)) {
+          res.sendFile(fallback);
+        } else {
+          res.status(200).send('<!doctype html><html lang="en"><head><title>NEURONA</title></head><body><div id="root"></div></body></html>');
+        }
+      }
     });
   }
 
@@ -2041,4 +2056,7 @@ createdAt: new Date().toISOString()
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('[CRITICAL] Failed to start server:', err);
+  process.exit(1);
+});

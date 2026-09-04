@@ -1,0 +1,2 @@
+file 'outputs/test_bench/scene_mixed_0.mp4'
+file 'outputs/test_bench/scene_mixed_0.mp4'
