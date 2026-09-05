@@ -97,7 +97,19 @@ export class TTSService {
           geminiVoice = 'Kore';
         }
 
-        const ai = new GoogleGenAI({ apiKey: geminiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+        const isOAuth = geminiKey.startsWith('ya29.') || geminiKey.startsWith('AQ.');
+        let ai: GoogleGenAI;
+        if (isOAuth) {
+          const tempKey = process.env.GEMINI_API_KEY;
+          delete process.env.GEMINI_API_KEY;
+          ai = new GoogleGenAI({ 
+            apiKey: undefined, 
+            httpOptions: { headers: { 'User-Agent': 'aistudio-build', 'Authorization': `Bearer ${geminiKey}` } } 
+          });
+          if (tempKey) process.env.GEMINI_API_KEY = tempKey;
+        } else {
+          ai = new GoogleGenAI({ apiKey: geminiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+        }
 
         const promptText = isMale
           ? `Bicaralah dengan intonasi pria yang ramah, jelas, natural, dan berwibawa dalam Bahasa Indonesia: "${text}"`

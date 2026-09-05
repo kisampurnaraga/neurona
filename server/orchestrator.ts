@@ -27,6 +27,7 @@ import { FalVideoAdapter } from "../src/server/providers/FalVideoAdapter";
 import { BytePlusAdapter } from "../src/server/providers/BytePlusAdapter";
 import { getSampleVideoForScene } from "../src/server/providers/VideoProvider";
 import { FounderService } from "../src/server/fcc/FounderService";
+import { resolveSceneSubtitle, isPlaceholderSubtitle } from "./utils/subtitleUtils";
 
 export async function renderSceneVideoWithFallback(
   project: ProductionProject,
@@ -163,6 +164,22 @@ export function cleanupOutputsDirectory(): void {
   
   try {
     const files = fs.readdirSync(outputsDir);
+
+    // Clean up temporary stitching directories older than 15 minutes
+    const FIFTEEN_MINUTES = 15 * 60 * 1000;
+    files.forEach(file => {
+      if (file.startsWith('tmp_')) {
+        const dirPath = path.join(outputsDir, file);
+        try {
+          const stats = fs.statSync(dirPath);
+          if (stats.isDirectory() && (NOW - stats.mtimeMs > FIFTEEN_MINUTES)) {
+            fs.rmSync(dirPath, { recursive: true, force: true });
+            console.log(`[CleanupTask] Deleted orphaned temp directory: ${file}`);
+          }
+        } catch (e) {}
+      }
+    });
+
     const fileInfos = files
       .map(file => {
         const filePath = path.join(outputsDir, file);
@@ -699,10 +716,38 @@ export function saveProjects() {
   // Sync map to SQLite
   (async () => {
     try {
+      const outputsDir = path.join(process.cwd(), 'outputs');
+      if (!fs.existsSync(outputsDir)) {
+        fs.mkdirSync(outputsDir, { recursive: true });
+      }
       for (const [id, project] of projects.entries()) {
         const userId = (project as any).userId || 'default';
         const showcaseEligible = (project as any).showcaseEligible ? true : false;
         const showcaseOrder = typeof (project as any).showcaseOrder === 'number' ? (project as any).showcaseOrder : null;
+        // Ensure any base64 data in storyboard scenes is extracted to disk rather than ballooning SQLite
+        const scenes = (project as any).storyboard?.scenes;
+        if (Array.isArray(scenes)) {
+          for (let i = 0; i < scenes.length; i++) {
+            const sc = scenes[i];
+            if (sc.videoUrl && sc.videoUrl.startsWith('data:video/')) {
+              try {
+                const fname = `scene_${id.substring(0, 8)}_${i}.mp4`;
+                const fpath = path.join(outputsDir, fname);
+                const b64 = sc.videoUrl.split(';base64,').pop();
+                if (b64) {
+                  fs.writeFileSync(fpath, Buffer.from(b64, 'base64'));
+                  sc.videoUrl = `/api/outputs/${fname}`;
+                  if (sc.assetUrl && sc.assetUrl.startsWith('data:video/')) {
+                    sc.assetUrl = sc.videoUrl;
+                  }
+                }
+              } catch (e) {}
+            }
+          }
+        }
+
+        const projectJson = JSON.stringify(project);
+
         await db.insert(dbProjects).values({
           id,
           userId: userId,
@@ -712,7 +757,7 @@ export function saveProjects() {
           finalVideoUrl: project.finalVideoUrl || null,
           showcaseEligible,
           showcaseOrder,
-          data: JSON.stringify(project)
+          data: projectJson
         }).onConflictDoUpdate({
           target: dbProjects.id,
           set: {
@@ -722,7 +767,7 @@ export function saveProjects() {
             finalVideoUrl: project.finalVideoUrl || null,
             showcaseEligible,
             showcaseOrder,
-            data: JSON.stringify(project)
+            data: projectJson
           }
         }).catch(err => console.error("DB Save Error (Project " + id + "):", err));
       }
@@ -813,6 +858,17 @@ loadProjects();
 function getGenAI(): GoogleGenAI | null {
   const apiKey = keyRotator.getNextGeminiKey();
   if (apiKey) {
+    const isOAuth = apiKey.startsWith('ya29.') || apiKey.startsWith('AQ.');
+    if (isOAuth) {
+      const tempKey = process.env.GEMINI_API_KEY;
+      delete process.env.GEMINI_API_KEY;
+      const ai = new GoogleGenAI({ 
+        apiKey: undefined, 
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build', 'Authorization': `Bearer ${apiKey}` } } 
+      });
+      if (tempKey) process.env.GEMINI_API_KEY = tempKey;
+      return ai;
+    }
     return new GoogleGenAI({ apiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
   }
   return null;
@@ -1339,12 +1395,13 @@ export class ProductionOrchestrator {
              s.visualDirection = qaResult.correctedVisualPrompt || s.visualDirection;
           }
 
+          const sceneSub = resolveSceneSubtitle(s, idx);
           return {
             id: crypto.randomUUID(),
             duration: durStr,
             visualDirection: s.visualDirection || s.visual_direction || "Adegan promosi",
-            textOverlay: s.textOverlay || s.text_overlay || '',
-            subtitle: s.textOverlay || s.text_overlay || '',
+            textOverlay: sceneSub,
+            subtitle: sceneSub,
             voiceOver: s.voiceOver || s.voiceover_script || '',
             promptTextToImage: lockedT2IPrompt,
             promptImageToVideo: lockedI2VPrompt,
@@ -2114,7 +2171,11 @@ export class ProductionOrchestrator {
           projectEvents.emit(`update:${id}`, project);
         };
         const processResult = await VideoEditor.processProject(project, undefined, onProgress);
-        project.finalVideoUrl = typeof processResult === 'string' ? processResult : processResult.finalVideoUrl;
+        const finalUrl = typeof processResult === 'string' ? processResult : (processResult.url || processResult.finalVideoUrl);
+        if (!finalUrl) {
+          throw new Error("Proses video selesai tetapi URL master video tidak ditemukan (hasil kosong).");
+        }
+        project.finalVideoUrl = finalUrl;
       }
 
       project.status = 'COMPLETED';
@@ -2147,14 +2208,39 @@ export class ProductionOrchestrator {
       project.storyboard = { scenes: [] };
     }
 
+    // Process base64 uploads
+    if (updates.imageUrl && updates.imageUrl.startsWith('data:')) {
+      let ext = 'png';
+      if (updates.imageUrl.startsWith('data:image/jpeg')) ext = 'jpg';
+      else if (updates.imageUrl.startsWith('data:image/webp')) ext = 'webp';
+      updates.imageUrl = await saveFileLocally(updates.imageUrl, `scene_${sceneId}_img`, ext);
+      if (updates.assetUrl && updates.assetUrl.startsWith('data:')) updates.assetUrl = updates.imageUrl;
+    }
+    
+    if (updates.videoUrl && updates.videoUrl.startsWith('data:')) {
+      let ext = 'mp4';
+      if (updates.videoUrl.startsWith('data:video/webm')) ext = 'webm';
+      updates.videoUrl = await saveFileLocally(updates.videoUrl, `scene_${sceneId}_vid`, ext);
+      if (updates.assetUrl && updates.assetUrl.startsWith('data:')) updates.assetUrl = updates.videoUrl;
+    }
+
     const sceneIdx = project.storyboard.scenes.findIndex(s => String(s.id) === String(sceneId));
     if (sceneIdx >= 0) {
       const existing = project.storyboard.scenes[sceneIdx];
+      if (updates.subtitle && (!updates.textOverlay || isPlaceholderSubtitle(updates.textOverlay))) {
+        updates.textOverlay = updates.subtitle;
+      } else if (updates.textOverlay && (!updates.subtitle || isPlaceholderSubtitle(updates.subtitle))) {
+        updates.subtitle = updates.textOverlay;
+      }
       project.storyboard.scenes[sceneIdx] = {
         ...existing,
-        ...updates,
-        status: 'COMPLETED'
+        ...updates
       };
+      
+      // If videoUrl was explicitly provided and videoStatus is COMPLETED, we can assume the scene is COMPLETED
+      if (updates.videoUrl && updates.videoStatus === 'COMPLETED') {
+         project.storyboard.scenes[sceneIdx].status = 'COMPLETED';
+      }
     } else {
       project.storyboard.scenes.push({
         id: sceneId,
@@ -2163,7 +2249,7 @@ export class ProductionOrchestrator {
         textOverlay: updates.textOverlay || "",
         voiceOver: updates.voiceOver || "",
         subtitle: updates.subtitle || "",
-        status: 'COMPLETED',
+        status: updates.status || (updates.videoUrl ? 'COMPLETED' : 'PENDING'),
         imageUrl: updates.imageUrl,
         videoUrl: updates.videoUrl,
         assetUrl: updates.assetUrl,
@@ -2283,20 +2369,36 @@ export class ProductionOrchestrator {
     appendLog(project, 'TIMELINE', `Memulai fast re-stitch kesatuan video dari aset timeline...`, 'INFO');
     try {
       const processStyle = subtitleStyle || (project as any).subtitleStyle;
+      let lastProgressTick = 0;
+      let lastLoggedPct = -1;
       const onProgress = (progress: number, stepName: string, detailLog: string) => {
         const p = projects.get(projectId) || project;
         if (p) {
+          const now = Date.now();
           p.status = 'PROCESSING';
           p.updatedAt = new Date().toISOString();
           p.overallProgress = progress;
           p.currentPhaseName = stepName;
-          appendLog(p, 'FFMPEG', detailLog, 'INFO');
-          saveProjects();
-          projectEvents.emit(`update:${projectId}`, p);
+          
+          const pctChanged = progress !== lastLoggedPct;
+          const timeElapsed = now - lastProgressTick >= 500;
+          
+          if (pctChanged || timeElapsed || progress >= 100) {
+            lastLoggedPct = progress;
+            lastProgressTick = now;
+            appendLog(p, 'FFMPEG', detailLog, 'INFO');
+            projectEvents.emit(`update:${projectId}`, p);
+            if (timeElapsed || progress >= 100) {
+              saveProjects();
+            }
+          }
         }
       };
       const processResult = await VideoEditor.processProject(project, processStyle, onProgress);
-      const finalUrl = typeof processResult === 'string' ? processResult : processResult.finalVideoUrl;
+      const finalUrl = typeof processResult === 'string' ? processResult : (processResult.url || processResult.finalVideoUrl);
+      if (!finalUrl) {
+         throw new Error("Proses video selesai tetapi URL master video tidak ditemukan (hasil kosong).");
+      }
       
       const latestProject = projects.get(projectId);
       if (latestProject) {

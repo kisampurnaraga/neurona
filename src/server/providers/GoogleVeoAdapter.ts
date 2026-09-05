@@ -49,7 +49,19 @@ export class GoogleVeoAdapter implements VideoGenerationProvider {
     console.log(`[GOOGLE VEO ADAPTER] Rendering scene using model: ${targetVeoModel}`);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: apiKey.trim(), httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+      const isOAuth = apiKey.trim().startsWith('ya29.') || apiKey.trim().startsWith('AQ.');
+      let ai: GoogleGenAI;
+      if (isOAuth) {
+        const tempKey = process.env.GEMINI_API_KEY;
+        delete process.env.GEMINI_API_KEY;
+        ai = new GoogleGenAI({ 
+          apiKey: undefined, 
+          httpOptions: { headers: { 'User-Agent': 'aistudio-build', 'Authorization': `Bearer ${apiKey.trim()}` } } 
+        });
+        if (tempKey) process.env.GEMINI_API_KEY = tempKey;
+      } else {
+        ai = new GoogleGenAI({ apiKey: apiKey.trim(), httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+      }
       
       const operation = await ai.models.generateVideos({
         model: targetVeoModel,

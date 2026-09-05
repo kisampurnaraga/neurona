@@ -48,6 +48,7 @@ import {
 } from 'lucide-react';
 import type { ProductionProject, Scene } from '../shared/types';
 import { getProjectAspectRatioClass } from '../utils/aspectRatio';
+import { resolveSceneSubtitle } from '../utils/subtitleUtils';
 
 interface VideoTimelineProps {
   project?: ProductionProject | null;
@@ -407,7 +408,13 @@ export default function VideoTimeline({ project, onBack, onUpdateProject }: Vide
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          projectId: project.id
+          projectId: project.id,
+          scenes: scenes.map((s, idx) => ({
+            id: s.id,
+            subtitle: resolveSceneSubtitle(s, idx),
+            textOverlay: resolveSceneSubtitle(s, idx),
+            voiceOver: s.voiceOver
+          }))
         })
       });
       const resText = await res.text().catch(() => '');

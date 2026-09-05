@@ -6,6 +6,7 @@ import { FounderService } from "../src/server/fcc/FounderService";
 import { CinematicStyleLibrary } from "./StyleLibrary";
 import { keyRotator } from "./keyRotator";
 import { resolveLocalFilePath } from "./falModelConfig";
+import { resolveSceneSubtitle, isPlaceholderSubtitle } from "./utils/subtitleUtils";
 
 export function stripBase64FromText(text: string | undefined | null): string {
   if (!text) return '';
@@ -34,6 +35,17 @@ export function getOpenAIClient(): OpenAI | null {
 export function getGenAI(): GoogleGenAI | null {
   const key = keyRotator.getNextGeminiKey();
   if (!key) return null;
+  const isOAuth = key.startsWith('ya29.') || key.startsWith('AQ.');
+  if (isOAuth) {
+    const tempKey = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ 
+      apiKey: undefined, 
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build', 'Authorization': `Bearer ${key}` } } 
+    });
+    if (tempKey) process.env.GEMINI_API_KEY = tempKey;
+    return ai;
+  }
   return new GoogleGenAI({ apiKey: key, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
 }
 
@@ -799,7 +811,7 @@ Kembalikan JSON dengan struktur baku:
       "promptImageToVideo": "[Insert Camera Movement: pan/zoom/tracking]. Character identity locked: ... Setting locked: ... Visual Scene: ...",
       "promptTextToImage": "[Insert Detailed Image Prompt Matching Visual Style]",
       "voiceover_script": "Naskah narasi suara adegan...",
-      "text_overlay": "TEKS HOOK DI LAYAR",
+      "text_overlay": "Teks hook atau subtitle singkat per adegan (misal: Kisah Dimulai...)",
       "featuresProduct": true,
       "backgroundLock": "locked",
       "visualStyle": "${videoType === 'AFFILIATE' ? 'ugc' : 'studio'}",
@@ -809,6 +821,7 @@ Kembalikan JSON dengan struktur baku:
 }
 
 ATURAN LOGIKA SCENE-BY-SCENE (CRITICAL):
+- "text_overlay" (STRING): WAJIB berupa teks subtitle/hook singkat (2-5 kata) dalam Bahasa Indonesia yang relevan, dinamis, dan spesifik untuk adegan ini (misal: "Kisah Epik Dimulai!", "Semangat Juang Membara!", "Kemenangan Dalam Genggaman!"). DILARANG KERAS menggunakan teks placeholder seperti "TEKS HOOK DI LAYAR", "Text overlay here", atau teks statis yang diulang!
 - "visualStyle" (STRING): WAJIB "ugc" jika Affiliate, WAJIB "studio" jika bukan Affiliate.
 - "featuresProduct" (BOOLEAN): Bernilai true HANYA jika adegan ini secara visual memegang, mengoleskan, memakai, atau menyorot produk fisik. Bernilai false jika adegan ini murni menceritakan masalah, keluhan emosional (pain point), menggunakan "sepatu biasa/produk lain", atau hook sebelum produk SOLUSI diperkenalkan.
 - "backgroundLock" (STRING: "locked" | "free"): Bernilai "locked" jika adegan bertempat di ruangan/setting fisik yang sama dengan adegan sebelumnya demi kontinuitas. Bernilai "free" jika adegan berganti lokasi/suasana baru.
@@ -864,23 +877,27 @@ CRITICAL RULES FOR QA COMPLIANCE:
           const parsed = JSON.parse(rawText);
           const rawScenes = (parsed.storyboard_scenes || parsed.scenes || parsed.storyboard || []).slice(0, targetSceneCount);
           if (Array.isArray(rawScenes) && rawScenes.length > 0) {
-            const scenes = rawScenes.map((s: any, idx: number) => ({
-              scene_number: s.scene_number || idx + 1,
-              duration: s.duration || '3s',
-              visualDirection: s.visual_direction || s.visualDirection || '',
-              visual_direction: s.visual_direction || s.visualDirection || '',
-              textOverlay: s.text_overlay || s.textOverlay || '',
-              text_overlay: s.text_overlay || s.textOverlay || '',
-              voiceOver: s.voiceover_script || s.voiceOver || '',
-              voiceover_script: s.voiceover_script || s.voiceOver || '',
-              promptTextToImage: s.promptTextToImage || s.promptImageToVideo || '',
-              promptImageToVideo: s.promptImageToVideo || s.promptTextToImage || '',
-              visualStyle: s.visualStyle,
-              featuresProduct: s.featuresProduct !== undefined ? Boolean(s.featuresProduct) : (s.features_product !== undefined ? Boolean(s.features_product) : true),
-              backgroundLock: (s.backgroundLock === 'free' || s.background_lock === 'free') ? 'free' : 'locked',
-              location: s.location || '',
-              styleKeywords: s.styleKeywords || []
-            }));
+            const scenes = rawScenes.map((s: any, idx: number) => {
+              const subText = resolveSceneSubtitle(s, idx);
+              return {
+                scene_number: s.scene_number || idx + 1,
+                duration: s.duration || '3s',
+                visualDirection: s.visual_direction || s.visualDirection || '',
+                visual_direction: s.visual_direction || s.visualDirection || '',
+                textOverlay: subText,
+                text_overlay: subText,
+                subtitle: subText,
+                voiceOver: s.voiceover_script || s.voiceOver || '',
+                voiceover_script: s.voiceover_script || s.voiceOver || '',
+                promptTextToImage: s.promptTextToImage || s.promptImageToVideo || '',
+                promptImageToVideo: s.promptImageToVideo || s.promptTextToImage || '',
+                visualStyle: s.visualStyle,
+                featuresProduct: s.featuresProduct !== undefined ? Boolean(s.featuresProduct) : (s.features_product !== undefined ? Boolean(s.features_product) : true),
+                backgroundLock: (s.backgroundLock === 'free' || s.background_lock === 'free') ? 'free' : 'locked',
+                location: s.location || '',
+                styleKeywords: s.styleKeywords || []
+              };
+            });
             const marketingCopy = {
               caption: parsed.social_media_kit?.caption || parsed.marketingCopy?.caption || '',
               hashtags: parsed.social_media_kit?.hashtags || parsed.marketingCopy?.hashtags || [],
@@ -1040,24 +1057,28 @@ CRITICAL RULES FOR QA COMPLIANCE:
         const parsed = JSON.parse(rawText);
         const rawScenes = (parsed.storyboard_scenes || parsed.scenes || parsed.storyboard || []).slice(0, targetSceneCount);
         if (Array.isArray(rawScenes) && rawScenes.length > 0) {
-          const scenes = rawScenes.map((s: any, idx: number) => ({
-            scene_number: s.scene_number || idx + 1,
-            duration: s.duration || '3s',
-            visualDirection: s.visual_direction || s.visualDirection || '',
-            visual_direction: s.visual_direction || s.visualDirection || '',
-            textOverlay: s.text_overlay || s.textOverlay || '',
-            text_overlay: s.text_overlay || s.textOverlay || '',
-            voiceOver: s.voiceover_script || s.voiceOver || '',
-            voiceover_script: s.voiceover_script || s.voiceOver || '',
-            promptTextToImage: s.promptTextToImage || s.promptImageToVideo || '',
-            promptImageToVideo: s.promptImageToVideo || s.promptTextToImage || '',
+          const scenes = rawScenes.map((s: any, idx: number) => {
+            const subText = resolveSceneSubtitle(s, idx);
+            return {
+              scene_number: s.scene_number || idx + 1,
+              duration: s.duration || '3s',
+              visualDirection: s.visual_direction || s.visualDirection || '',
+              visual_direction: s.visual_direction || s.visualDirection || '',
+              textOverlay: subText,
+              text_overlay: subText,
+              subtitle: subText,
+              voiceOver: s.voiceover_script || s.voiceOver || '',
+              voiceover_script: s.voiceover_script || s.voiceOver || '',
+              promptTextToImage: s.promptTextToImage || s.promptImageToVideo || '',
+              promptImageToVideo: s.promptImageToVideo || s.promptTextToImage || '',
               visualStyle: s.visualStyle,
               
-            featuresProduct: s.featuresProduct !== undefined ? Boolean(s.featuresProduct) : (s.features_product !== undefined ? Boolean(s.features_product) : true),
-            backgroundLock: (s.backgroundLock === 'free' || s.background_lock === 'free') ? 'free' : 'locked',
-            location: s.location || '',
-            styleKeywords: s.styleKeywords || []
-          }));
+              featuresProduct: s.featuresProduct !== undefined ? Boolean(s.featuresProduct) : (s.features_product !== undefined ? Boolean(s.features_product) : true),
+              backgroundLock: (s.backgroundLock === 'free' || s.background_lock === 'free') ? 'free' : 'locked',
+              location: s.location || '',
+              styleKeywords: s.styleKeywords || []
+            };
+          });
           const marketingCopy = {
             caption: parsed.social_media_kit?.caption || parsed.marketingCopy?.caption || '',
             hashtags: parsed.social_media_kit?.hashtags || parsed.marketingCopy?.hashtags || [],
@@ -1135,24 +1156,28 @@ CRITICAL RULES FOR QA COMPLIANCE:
               const parsed = JSON.parse(rawText);
               const rawScenes = parsed.scenes || parsed.storyboard_scenes || parsed.storyboard || [];
               if (Array.isArray(rawScenes) && rawScenes.length > 0) {
-                const scenes = rawScenes.map((s: any, idx: number) => ({
-                  scene_number: s.scene_number || idx + 1,
-                  duration: s.duration || '3s',
-                  visualDirection: s.visualDirection || s.visual_direction || '',
-                  visual_direction: s.visualDirection || s.visual_direction || '',
-                  textOverlay: s.textOverlay || s.text_overlay || '',
-                  text_overlay: s.textOverlay || s.text_overlay || '',
-                  voiceOver: s.voiceOver || s.voiceover_script || '',
-                  voiceover_script: s.voiceOver || s.voiceover_script || '',
-                  promptTextToImage: s.promptTextToImage || s.promptImageToVideo || '',
-                  promptImageToVideo: s.promptImageToVideo || s.promptTextToImage || '',
-              visualStyle: s.visualStyle,
-              
-                  featuresProduct: s.featuresProduct !== undefined ? Boolean(s.featuresProduct) : (s.features_product !== undefined ? Boolean(s.features_product) : true),
-                  backgroundLock: (s.backgroundLock === 'free' || s.background_lock === 'free') ? 'free' : 'locked',
-                  location: s.location || '',
-                  styleKeywords: s.styleKeywords || []
-                }));
+                const scenes = rawScenes.map((s: any, idx: number) => {
+                  const subText = resolveSceneSubtitle(s, idx);
+                  return {
+                    scene_number: s.scene_number || idx + 1,
+                    duration: s.duration || '3s',
+                    visualDirection: s.visualDirection || s.visual_direction || '',
+                    visual_direction: s.visualDirection || s.visual_direction || '',
+                    textOverlay: subText,
+                    text_overlay: subText,
+                    subtitle: subText,
+                    voiceOver: s.voiceOver || s.voiceover_script || '',
+                    voiceover_script: s.voiceOver || s.voiceover_script || '',
+                    promptTextToImage: s.promptTextToImage || s.promptImageToVideo || '',
+                    promptImageToVideo: s.promptImageToVideo || s.promptTextToImage || '',
+                    visualStyle: s.visualStyle,
+                    
+                    featuresProduct: s.featuresProduct !== undefined ? Boolean(s.featuresProduct) : (s.features_product !== undefined ? Boolean(s.features_product) : true),
+                    backgroundLock: (s.backgroundLock === 'free' || s.background_lock === 'free') ? 'free' : 'locked',
+                    location: s.location || '',
+                    styleKeywords: s.styleKeywords || []
+                  };
+                });
                 const marketingCopy = {
                   caption: parsed.social_media_kit?.caption || parsed.marketingCopy?.caption || '',
                   hashtags: parsed.social_media_kit?.hashtags || parsed.marketingCopy?.hashtags || [],

@@ -1,4 +1,5 @@
 import { StitcherAgent } from '../core/StitcherAgent.js';
+import { resolveSceneSubtitle } from '../../../server/utils/subtitleUtils.js';
 import { ProductionProject, ProductionState, AgentRun, AgentType, Storyboard } from '../../types/production.js';
 import { eventBus, ProductionEvents } from '../core/EventBus.js';
 import { randomUUID } from 'crypto';
@@ -220,9 +221,9 @@ export class ProductionOrchestrator {
       const completedScenes = project.storyboard.scenes.filter(s => s.status === 'COMPLETED' && (s.videoUrl || s.assetUrl));
       if (completedScenes.length > 0) {
         try {
-          const stitchInput = completedScenes.map(s => ({
+          const stitchInput = completedScenes.map((s, idx) => ({
             url: s.videoUrl || s.assetUrl || '',
-            text: s.voiceOver || s.dialogue || ''
+            text: resolveSceneSubtitle(s, idx)
           }));
           project.finalVideoUrl = await StitcherAgent.stitchVideos(stitchInput, project.brandLogoUrl, project.extraVideoUrl);
         } catch (e) {

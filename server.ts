@@ -1,8 +1,11 @@
-process.env.SQL_HOST = '/app/cloudsql/correctorv1:asia-southeast1:ai-studio-5be7e72c';
 import { NeuronaChatService } from './server/neuronaChatService';
+import http from "http";
 import express from "express";
 import fs from "fs";
 import { StitcherAgent } from './src/server/core/StitcherAgent';
+import { db } from './src/db/index';
+import { projects as dbProjects } from './src/db/schema';
+import { eq } from 'drizzle-orm';
 
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -14,6 +17,7 @@ import { FounderService } from "./src/server/fcc/FounderService";
 import { keyRotator } from "./server/keyRotator";
 import { cleanApiKeyString } from "./server/utils/credentialValidator";
 import { TTSService, SUPPORTED_VOICE_PRESETS } from "./server/services/ttsService";
+import { isPlaceholderSubtitle } from "./server/utils/subtitleUtils";
 import { verifyToken, requireRole, generateToken, userDatabase, AuthenticatedRequest, UserSession } from "./server/middleware/auth";
 import videoStudioRouter from "./server/routes/videoStudio";
 import workerRouter from "./server/routes/workerRoute";
@@ -31,8 +35,12 @@ if (ffmpegStatic) {
 
 
 // Global safety handlers to prevent process crashing on background unhandled rejections
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', (err: any) => {
   console.error('[UNCAUGHT EXCEPTION]', err);
+  if (err && err.code === 'EADDRINUSE') {
+    console.error('[UNCAUGHT EXCEPTION] Fatal EADDRINUSE detected. Exiting process so supervisor can recover.');
+    process.exit(1);
+  }
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[UNHANDLED REJECTION]', reason);
@@ -56,9 +64,8 @@ async function startServer() {
   // CORS & Preflight headers for all /api requests
   app.get("/api/test-db", async (req, res) => {
     try {
-      const { db } = await import("./src/db/index.ts");
       res.json({ success: true, dbType: typeof db });
-    } catch (e) {
+    } catch (e: any) {
       res.json({ success: false, error: e.message });
     }
   });
@@ -74,8 +81,8 @@ async function startServer() {
   });
   
   // Increase payload limit to support base64 product images / attachments
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+  app.use(express.json({ limit: '200mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '200mb' }));
 
   // API routes FIRST
   
@@ -1049,11 +1056,33 @@ createdAt: new Date().toISOString()
         return res.status(400).json({ error: 'ID Proyek tidak valid atau tidak disertakan.' });
       }
 
-      const { subtitleStyle, ttsVoiceConfig } = body;
+      const { subtitleStyle, ttsVoiceConfig, scenes } = body;
       
       // Update status immediately so client knows it's processing
       const project = projects.get(projectId);
       if (project) {
+        if (Array.isArray(scenes) && scenes.length > 0 && project.storyboard?.scenes) {
+          scenes.forEach((sc: any, idx: number) => {
+            const existing = project.storyboard.scenes[idx] || project.storyboard.scenes.find((s: any) => String(s.id) === String(sc.id));
+            if (existing) {
+              if (typeof sc.subtitle === 'string' && sc.subtitle.trim().length > 0 && !isPlaceholderSubtitle(sc.subtitle)) {
+                existing.subtitle = sc.subtitle.trim();
+                if (!existing.textOverlay || isPlaceholderSubtitle(existing.textOverlay)) {
+                  existing.textOverlay = existing.subtitle;
+                }
+              }
+              if (typeof sc.textOverlay === 'string' && sc.textOverlay.trim().length > 0 && !isPlaceholderSubtitle(sc.textOverlay)) {
+                existing.textOverlay = sc.textOverlay.trim();
+                if (!existing.subtitle || isPlaceholderSubtitle(existing.subtitle)) {
+                  existing.subtitle = existing.textOverlay;
+                }
+              }
+              if (typeof sc.voiceOver === 'string' && sc.voiceOver.trim().length > 0 && !isPlaceholderSubtitle(sc.voiceOver)) {
+                existing.voiceOver = sc.voiceOver.trim();
+              }
+            }
+          });
+        }
         project.status = 'PROCESSING';
         project.updatedAt = new Date().toISOString();
         project.overallProgress = 85; // Roughly the progress before stitching
@@ -1449,8 +1478,10 @@ createdAt: new Date().toISOString()
                 }
               }
             }
-          } catch (err) {
-            console.warn('[handleGalleryAssets] Failed to scan GCS Bucket:', err);
+          } catch (err: any) {
+            if (!err.message?.includes('storage.objects.list access')) {
+              console.warn('[handleGalleryAssets] Failed to scan GCS Bucket:', err);
+            }
           }
         }
       }
@@ -1810,9 +1841,6 @@ createdAt: new Date().toISOString()
      if (!project) {
         // Fallback to SQLite
         try {
-          const { db } = await import('./src/db/index.ts');
-          const { projects: dbProjects } = await import('./src/db/schema.ts');
-          const { eq } = await import('drizzle-orm');
           const row = db.select().from(dbProjects).where(eq(dbProjects.id, req.params.id)).get();
           if (row && row.data) {
              project = JSON.parse(row.data);
@@ -2024,11 +2052,23 @@ createdAt: new Date().toISOString()
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
+    const isHmrDisabled = process.env.DISABLE_HMR === 'true';
+    const vitePromise = createViteServer({
+      server: {
+        middlewareMode: true,
+        ...(isHmrDisabled ? { hmr: false, ws: false } : {}),
+      },
       appType: "spa",
     });
-    app.use(vite.middlewares);
+
+    app.use(async (req, res, next) => {
+      try {
+        const vite = await vitePromise;
+        vite.middlewares(req, res, next);
+      } catch (err) {
+        next(err);
+      }
+    });
   } else {
     const distPath = fs.existsSync(path.join(process.cwd(), 'dist', 'index.html'))
       ? path.join(process.cwd(), 'dist')
@@ -2051,9 +2091,82 @@ createdAt: new Date().toISOString()
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  const ALT_PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : null;
+
+  let activeServer: http.Server | null = null;
+  let listeningAttempts = 0;
+  const MAX_ATTEMPTS = 15;
+  const RETRY_DELAY_MS = 500;
+
+  function tryListen() {
+    listeningAttempts++;
+    const srv = http.createServer(app);
+    activeServer = srv;
+
+    srv.on("listening", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+
+    srv.on("error", (err: any) => {
+      if (err && err.code === "EADDRINUSE") {
+        if (listeningAttempts < MAX_ATTEMPTS) {
+          console.warn(`[PORT RECOVERY] Port ${PORT} busy. Retrying in ${RETRY_DELAY_MS}ms (attempt ${listeningAttempts}/${MAX_ATTEMPTS})...`);
+          setTimeout(() => {
+            tryListen();
+          }, RETRY_DELAY_MS);
+        } else {
+          console.error(`[PORT FATAL] Port ${PORT} busy after ${MAX_ATTEMPTS} attempts.`);
+          process.exit(1);
+        }
+      } else {
+        console.error("[SERVER FATAL ERROR]", err);
+        process.exit(1);
+      }
+    });
+
+    srv.listen(PORT, "0.0.0.0");
+  }
+
+  // Also bind to Cloud Run's external PORT if provided and distinct from 3000
+  let altServer: http.Server | null = null;
+  if (ALT_PORT && ALT_PORT !== PORT) {
+    try {
+      altServer = http.createServer(app);
+      altServer.on("listening", () => {
+        console.log(`Cloud Run ingress listener active on port ${ALT_PORT}`);
+      });
+      altServer.on("error", (err: any) => {
+        if (err && err.code === "EADDRINUSE") {
+          console.log(`[INFO] Port ${ALT_PORT} is already bound by reverse proxy; proxying traffic to ${PORT}.`);
+        } else {
+          console.warn(`[WARN] Secondary listener on port ${ALT_PORT}:`, err?.message || err);
+        }
+      });
+      altServer.listen(ALT_PORT, "0.0.0.0");
+    } catch (e: any) {
+      console.warn(`[WARN] Could not initialize secondary listener on port ${ALT_PORT}:`, e?.message || e);
+    }
+  }
+
+  const cleanupAndExit = (signal: string) => {
+    console.log(`[SYSTEM] ${signal} received. Closing server gracefully...`);
+    if (activeServer) {
+      activeServer.close(() => {
+        console.log(`[SYSTEM] Closed server on port ${PORT}.`);
+      });
+    }
+    if (altServer) {
+      altServer.close();
+    }
+    setTimeout(() => {
+      process.exit(0);
+    }, 1000).unref();
+  };
+
+  process.on("SIGTERM", () => cleanupAndExit("SIGTERM"));
+  process.on("SIGINT", () => cleanupAndExit("SIGINT"));
+
+  tryListen();
 }
 
 startServer().catch((err) => {

@@ -457,7 +457,19 @@ class ApiKeyRotatorService {
         throw new Error("Token API habis atau tidak ada API Key Gemini yang aktif. Silakan isi GEMINI_API_KEY di Founder Control Center.");
       }
 
-      const ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+      const isOAuth = apiKey.startsWith('ya29.') || apiKey.startsWith('AQ.');
+      let ai: GoogleGenAI;
+      if (isOAuth) {
+        const tempKey = process.env.GEMINI_API_KEY;
+        delete process.env.GEMINI_API_KEY;
+        ai = new GoogleGenAI({ 
+          apiKey: undefined, 
+          httpOptions: { headers: { 'User-Agent': 'aistudio-build', 'Authorization': `Bearer ${apiKey}` } } 
+        });
+        if (tempKey) process.env.GEMINI_API_KEY = tempKey;
+      } else {
+        ai = new GoogleGenAI({ apiKey, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
+      }
 
       try {
         const result = await operation(ai, apiKey);

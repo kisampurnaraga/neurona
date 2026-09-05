@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import https from 'https';
 import http from 'http';
 import ffmpegStatic from 'ffmpeg-static';
+import { isPlaceholderSubtitle } from '../../../server/utils/subtitleUtils';
 
 // Initialize with static binary to ensure filters are available
 if (ffmpegStatic) {
@@ -40,7 +41,7 @@ export class StitcherAgent {
 
   private static async burnSubtitle(inputPath: string, text: string, outputPath: string, tmpDir: string, index: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      if (!text || text.trim() === '') {
+      if (!text || text.trim() === '' || isPlaceholderSubtitle(text)) {
         fs.copyFileSync(inputPath, outputPath);
         return resolve();
       }

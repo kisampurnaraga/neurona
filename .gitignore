@@ -5,3 +5,8 @@ coverage/
 *.log
 .env*
 !.env.example
+outputs/tmp_*
+outputs/*.tmp
+outputs/*.reencode.mp4
+outputs/sqlite.db-wal
+outputs/sqlite.db-shm

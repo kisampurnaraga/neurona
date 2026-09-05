@@ -4,6 +4,7 @@ import * as path from 'path';
 import { ProductionProject } from '../src/shared/types';
 import * as https from 'https';
 import { TTSService } from './ttsService';
+import { resolveSceneSubtitle, resolveSceneVoiceover, isPlaceholderSubtitle } from './utils/subtitleUtils';
 
 function formatAssTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -68,9 +69,29 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 function runFfmpegWithProgress(args: string[], onProgressUpdate: (frame: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn('ffmpeg', args);
+    const child = spawn('ffmpeg', ['-nostdin', ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
     let stderrOut = '';
-    
+    let isDone = false;
+
+    const timeout = setTimeout(() => {
+      if (!isDone) {
+        isDone = true;
+        child.kill('SIGKILL');
+        reject(new Error('FFmpeg process timed out after 90 seconds'));
+      }
+    }, 90000);
+
+    const finish = (err?: Error) => {
+      if (isDone) return;
+      isDone = true;
+      clearTimeout(timeout);
+      if (err) reject(err);
+      else resolve();
+    };
+
+    let lastProgressTime = 0;
+    let lastReportedFrame = -1;
+
     child.stdout.on('data', (data: Buffer) => {
       const lines = data.toString().split('\n');
       for (const line of lines) {
@@ -78,21 +99,33 @@ function runFfmpegWithProgress(args: string[], onProgressUpdate: (frame: number)
           const frameStr = line.split('=')[1].trim();
           const frame = parseInt(frameStr, 10);
           if (!isNaN(frame)) {
-            onProgressUpdate(frame);
+            const now = Date.now();
+            if (frame >= lastReportedFrame + 10 || now - lastProgressTime >= 400) {
+              lastReportedFrame = frame;
+              lastProgressTime = now;
+              onProgressUpdate(frame);
+            }
           }
         }
       }
     });
-    
+
     child.stderr.on('data', (data: Buffer) => {
-      stderrOut += data.toString();
+      if (stderrOut.length < 50000) {
+        stderrOut += data.toString();
+      }
     });
-    
+
     child.on('close', (code: number) => {
-      if (code === 0) resolve();
-      else reject(new Error(`FFmpeg exited with code ${code}:\n${stderrOut}`));
+      if (code === 0) finish();
+      else finish(new Error(`FFmpeg exited with code ${code}:\n${stderrOut.slice(-1000)}`));
     });
-    child.on('error', (err: Error) => reject(err));
+
+    child.on('exit', (code: number) => {
+      if (code === 0) finish();
+    });
+
+    child.on('error', (err: Error) => finish(err));
   });
 }
 
@@ -203,7 +236,8 @@ export class VideoEditor {
         const localPath = path.join(tempDir, `scene_${i}.mp4`);
         const localTtsPath = path.join(tempDir, `tts_${i}.mp3`);
         const localMixedPath = path.join(tempDir, `scene_mixed_${i}.mp4`);
-        const text = scene.subtitle || scene.textOverlay || scene.voiceOver || '';
+        const subtitleText = resolveSceneSubtitle(scene, i);
+        const voiceText = resolveSceneVoiceover(scene, i) || subtitleText;
         let hasTts = false;
 
         try {
@@ -243,8 +277,8 @@ export class VideoEditor {
              }
           }
 
-          // 1b. Synthesize Narration TTS
-          if (text) {
+          // 1b. Synthesize Narration TTS using true voiceover text
+          if (voiceText && !isPlaceholderSubtitle(voiceText)) {
              onProgress?.(
                 Math.round(baseProgress + 2), 
                 `Memproses adegan ${i + 1}/${scenes.length}...`, 
@@ -253,7 +287,7 @@ export class VideoEditor {
              try {
                  const voiceId = project.ttsVoiceConfig?.voiceName || project.ttsVoiceConfig?.voiceId || (project.ttsVoiceConfig as any)?.id || 'openai-female-nova';
                  const provider = project.ttsVoiceConfig?.provider || (voiceId.startsWith('openai') ? 'openai' : voiceId.startsWith('fal') ? 'fal-ai' : 'google');
-                 const buffer = await TTSService.generateTTS(provider, text, {
+                 const buffer = await TTSService.generateTTS(provider, voiceText, {
                    ...project.ttsVoiceConfig,
                    voiceName: voiceId,
                    voiceGender: project.ttsVoiceConfig?.voiceGender || (voiceId.includes('male') ? 'male' : 'female')
@@ -267,13 +301,13 @@ export class VideoEditor {
              }
           }
 
-          // 1c. Create ASS subtitle for this scene ONLY
+          // 1c. Create ASS subtitle for this scene ONLY (filtered against placeholders)
           const assPath = path.join(tempDir, `subs_${i}.ass`);
           let assContent = getAssHeader(subtitleStyle || 'Bold Pop', targetW, targetH);
-          if (text) {
+          if (subtitleText && !isPlaceholderSubtitle(subtitleText)) {
              const assStart = formatAssTime(0.2);
              const assEnd = formatAssTime(SCENE_DURATION - 0.2);
-             assContent += `Dialogue: 0,${assStart},${assEnd},Default,,0,0,0,,{\\fscx120\\fscy120\\t(0,200,\\fscx100\\fscy100)}${text}\n`;
+             assContent += `Dialogue: 0,${assStart},${assEnd},Default,,0,0,0,,{\\fscx120\\fscy120\\t(0,200,\\fscx100\\fscy100)}${subtitleText}\n`;
           }
           fs.writeFileSync(assPath, assContent.replace(/\n/g, '\r\n')); // ensure CRLF for ffmpeg
 
@@ -308,10 +342,10 @@ export class VideoEditor {
              );
           });
           
-          sceneResults.push({ index: i, success: true, text, hasTts });
+          sceneResults.push({ index: i, success: true, text: subtitleText, hasTts });
         } catch (err: any) {
           console.error(`[VideoEditor] Gagal memproses adegan ${i+1}:`, err);
-          sceneResults.push({ index: i, success: false, text, hasTts: false, error: err.message || String(err) });
+          sceneResults.push({ index: i, success: false, text: subtitleText, hasTts: false, error: err.message || String(err) });
         }
       }
 
@@ -332,7 +366,8 @@ export class VideoEditor {
       sceneResults.sort((a, b) => a.index - b.index);
       for (const res of sceneResults) {
         if (!res.success) continue; 
-        listContent += `file 'scene_mixed_${res.index}.mp4'\n`;
+        const sceneMixedAbsPath = path.join(tempDir, `scene_mixed_${res.index}.mp4`);
+        listContent += `file '${sceneMixedAbsPath.replace(/'/g, "'\\''")}'\n`;
       }
       
       const listFilePath = path.join(tempDir, 'list.txt');

@@ -51,13 +51,15 @@ import {
   AlertTriangle,
   CheckCircle,
   RefreshCw, Trash2,
-  Search, Filter, FolderHeart, Library, Images, ArrowDownToLine
+  Search, Filter, FolderHeart, Library, Images, ArrowDownToLine,
+  Edit2
 } from 'lucide-react';
 import type { ProductionProject, Scene } from '../shared/types';
 import { neuronaVoice, AVAILABLE_VOICES, VoiceOption } from '../utils/speechSynthesis';
 import { getProjectAspectRatioClass } from '../utils/aspectRatio';
 import { NanoQuotaAlertModal } from './NanoQuotaAlertModal';
 import { getAccessToken, googleSignIn } from '../utils/googleAuth';
+import { resolveSceneSubtitle, isPlaceholderSubtitle } from '../utils/subtitleUtils';
 
 interface StoryboardMatrixModalProps {
   isOpen: boolean;
@@ -236,6 +238,35 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [pickerSceneTarget, setPickerSceneTarget] = useState<Scene | null>(null);
   const [isQuickTrayOpen, setIsQuickTrayOpen] = useState<boolean>(true);
   const [galleryToast, setGalleryToast] = useState<string | null>(null);
+  const [editingSubtitleSceneId, setEditingSubtitleSceneId] = useState<string | null>(null);
+  const [tempSubtitleValue, setTempSubtitleValue] = useState<string>('');
+  const [localSubtitleOverrides, setLocalSubtitleOverrides] = useState<Record<string, string>>({});
+
+  const handleUpdateSceneSubtitle = async (sceneId: string, newSubtitle: string) => {
+    if (!project?.id) return;
+    const cleanSub = newSubtitle.trim();
+    setLocalSubtitleOverrides(prev => ({ ...prev, [String(sceneId)]: cleanSub }));
+    if (project.storyboard?.scenes) {
+      const found = project.storyboard.scenes.find(s => String(s.id) === String(sceneId));
+      if (found) {
+        found.subtitle = cleanSub;
+        found.textOverlay = cleanSub;
+      }
+    }
+    try {
+      await fetch(`/api/projects/${project.id}/override-scene`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          sceneId,
+          subtitle: cleanSub,
+          textOverlay: cleanSub
+        })
+      });
+    } catch (err) {
+      console.error('Failed to update scene subtitle:', err);
+    }
+  };
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('neuronna_auth_token') || localStorage.getItem('neuronna_token') || 'founder_token';
@@ -990,7 +1021,17 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
             voiceId: selectedNarratorVoice === 'voice_clone' ? clonedVoiceId : selectedNarratorVoice,
             voiceName: resolvedVoiceName,
             clonedVoiceId: clonedVoiceId
-          }
+          },
+          scenes: scenes.map((s, idx) => {
+            const effectiveSub = localSubtitleOverrides[String(s.id)] ?? s.subtitle;
+            const resolvedSub = resolveSceneSubtitle({ ...s, subtitle: effectiveSub }, idx);
+            return {
+              id: s.id,
+              subtitle: resolvedSub,
+              textOverlay: resolvedSub,
+              voiceOver: s.voiceOver
+            };
+          })
         })
       });
 
@@ -2570,9 +2611,57 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                   <span>Subtitle Layar</span>
                                 </span>
                               </div>
-                              <div className="p-2 rounded-xl bg-amber-950/20 border border-amber-500/20 text-amber-200 font-sans text-[11px] min-h-[38px] flex items-center">
-                                {scene.subtitle || scene.textOverlay || <span className="text-slate-500 italic">Tanpa subtitle</span>}
-                              </div>
+                              {editingSubtitleSceneId === String(scene.id) ? (
+                                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-amber-950/40 border border-amber-500/50">
+                                  <input 
+                                    type="text" 
+                                    className="flex-1 bg-slate-900 border border-amber-500/30 rounded px-2 py-1 text-amber-200 text-[11px] focus:outline-none focus:border-amber-400"
+                                    value={tempSubtitleValue}
+                                    onChange={(e) => setTempSubtitleValue(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleUpdateSceneSubtitle(scene.id, tempSubtitleValue);
+                                        setEditingSubtitleSceneId(null);
+                                      } else if (e.key === 'Escape') {
+                                        setEditingSubtitleSceneId(null);
+                                      }
+                                    }}
+                                    autoFocus
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      handleUpdateSceneSubtitle(scene.id, tempSubtitleValue);
+                                      setEditingSubtitleSceneId(null);
+                                    }}
+                                    className="p-1 rounded bg-amber-500 text-slate-950 hover:bg-amber-400 cursor-pointer"
+                                    title="Simpan Subtitle"
+                                  >
+                                    <Check size={12} />
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingSubtitleSceneId(null)}
+                                    className="p-1 rounded bg-slate-800 text-slate-400 hover:text-slate-200 cursor-pointer"
+                                    title="Batal"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div 
+                                  onClick={() => {
+                                    const effectiveSub = localSubtitleOverrides[String(scene.id)] ?? scene.subtitle;
+                                    setEditingSubtitleSceneId(String(scene.id));
+                                    setTempSubtitleValue(resolveSceneSubtitle({ ...scene, subtitle: effectiveSub }, idx));
+                                  }}
+                                  className="p-2 rounded-xl bg-amber-950/20 hover:bg-amber-950/40 border border-amber-500/20 hover:border-amber-500/40 text-amber-200 font-sans text-[11px] min-h-[38px] flex items-center justify-between group cursor-pointer transition"
+                                  title="Klik untuk mengubah teks subtitle adegan ini"
+                                >
+                                  <span className="truncate pr-1">
+                                    {resolveSceneSubtitle({ ...scene, subtitle: localSubtitleOverrides[String(scene.id)] ?? scene.subtitle }, idx)}
+                                  </span>
+                                  <Edit2 size={11} className="shrink-0 text-amber-400/60 group-hover:text-amber-300 transition" />
+                                </div>
+                              )}
                             </div>
 
                             {/* Voiceover */}
@@ -4025,7 +4114,8 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                     </div>
                                     <div className="flex items-center gap-2.5 overflow-x-auto custom-scrollbar pb-1.5 pt-0.5 px-0.5">
                                       {scenes.map((sc, idx) => {
-                                        const subText = sc.subtitle || sc.voiceOver || sc.textOverlay || sc.dialogue || `Scene ${idx + 1}`;
+                                        const effectiveSub = localSubtitleOverrides[String(sc.id)] ?? sc.subtitle;
+                                        const subText = resolveSceneSubtitle({ ...sc, subtitle: effectiveSub }, idx);
                                         const isSubProcessed = stitchProgress >= 50;
                                         const isThisSubActive = idx <= activeIndex && stitchProgress >= 50;
 
@@ -4115,21 +4205,21 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
                           {/* Task Checklist */}
                           <div className="space-y-2">
-                            <div className={`p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors duration-500 ${stitchProgress >= 25 ? "bg-emerald-950/40 border-emerald-500/30" : stitchProgress > 0 ? "bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]" : "bg-slate-900/50 border-slate-800"}`}>
-                              {stitchProgress >= 25 ? <CheckCircle2 className="text-emerald-400 w-4 h-4 shrink-0" /> : stitchProgress > 0 ? <Loader2 className="text-purple-400 w-4 h-4 animate-spin shrink-0" /> : <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />}
-                              <span className={`text-xs font-semibold truncate ${stitchProgress >= 25 ? "text-emerald-100" : stitchProgress > 0 ? "text-purple-100" : "text-slate-500"}`}>🎬 Menggabungkan {scenes.length} scene video</span>
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors duration-500 ${stitchProgress >= 75 ? "bg-emerald-950/40 border-emerald-500/30" : stitchProgress > 0 ? "bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]" : "bg-slate-900/50 border-slate-800"}`}>
+                              {stitchProgress >= 75 ? <CheckCircle2 className="text-emerald-400 w-4 h-4 shrink-0" /> : stitchProgress > 0 ? <Loader2 className="text-purple-400 w-4 h-4 animate-spin shrink-0" /> : <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />}
+                              <span className={`text-xs font-semibold truncate ${stitchProgress >= 75 ? "text-emerald-100" : stitchProgress > 0 ? "text-purple-100" : "text-slate-500"}`}>🎬 Normalisasi & Subtitle {scenes.length} Adegan (Gaya: {subtitleStyle})</span>
                             </div>
-                            <div className={`p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors duration-500 ${stitchProgress >= 50 ? "bg-emerald-950/40 border-emerald-500/30" : stitchProgress >= 25 ? "bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]" : "bg-slate-900/50 border-slate-800"}`}>
-                              {stitchProgress >= 50 ? <CheckCircle2 className="text-emerald-400 w-4 h-4 shrink-0" /> : stitchProgress >= 25 ? <Loader2 className="text-purple-400 w-4 h-4 animate-spin shrink-0" /> : <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />}
-                              <span className={`text-xs font-semibold truncate ${stitchProgress >= 50 ? "text-emerald-100" : stitchProgress >= 25 ? "text-purple-100" : "text-slate-500"}`}>🎵 Menyelaraskan audio & BGM</span>
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors duration-500 ${stitchProgress >= 85 ? "bg-emerald-950/40 border-emerald-500/30" : stitchProgress >= 75 ? "bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]" : "bg-slate-900/50 border-slate-800"}`}>
+                              {stitchProgress >= 85 ? <CheckCircle2 className="text-emerald-400 w-4 h-4 shrink-0" /> : stitchProgress >= 75 ? <Loader2 className="text-purple-400 w-4 h-4 animate-spin shrink-0" /> : <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />}
+                              <span className={`text-xs font-semibold truncate ${stitchProgress >= 85 ? "text-emerald-100" : stitchProgress >= 75 ? "text-purple-100" : "text-slate-500"}`}>🎵 Menyelaraskan Audio Narasi & Musik BGM</span>
                             </div>
-                            <div className={`p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors duration-500 ${stitchProgress >= 80 ? "bg-emerald-950/40 border-emerald-500/30" : stitchProgress >= 50 ? "bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]" : "bg-slate-900/50 border-slate-800"}`}>
-                              {stitchProgress >= 80 ? <CheckCircle2 className="text-emerald-400 w-4 h-4 shrink-0" /> : stitchProgress >= 50 ? <Loader2 className="text-purple-400 w-4 h-4 animate-spin shrink-0" /> : <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />}
-                              <span className={`text-xs font-semibold truncate ${stitchProgress >= 80 ? "text-emerald-100" : stitchProgress >= 50 ? "text-purple-100" : "text-slate-500"}`}>✍️ Menyusun subtitle (Gaya: {subtitleStyle})</span>
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors duration-500 ${stitchProgress >= 95 ? "bg-emerald-950/40 border-emerald-500/30" : stitchProgress >= 85 ? "bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]" : "bg-slate-900/50 border-slate-800"}`}>
+                              {stitchProgress >= 95 ? <CheckCircle2 className="text-emerald-400 w-4 h-4 shrink-0" /> : stitchProgress >= 85 ? <Loader2 className="text-purple-400 w-4 h-4 animate-spin shrink-0" /> : <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />}
+                              <span className={`text-xs font-semibold truncate ${stitchProgress >= 95 ? "text-emerald-100" : stitchProgress >= 85 ? "text-purple-100" : "text-slate-500"}`}>⚡ Stitch Cepat Seluruh Adegan (-c copy)</span>
                             </div>
-                            <div className={`p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors duration-500 ${stitchProgress >= 100 ? "bg-emerald-950/40 border-emerald-500/30" : stitchProgress >= 80 ? "bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]" : "bg-slate-900/50 border-slate-800"}`}>
-                              {stitchProgress >= 100 ? <CheckCircle2 className="text-emerald-400 w-4 h-4 shrink-0" /> : stitchProgress >= 80 ? <Loader2 className="text-purple-400 w-4 h-4 animate-spin shrink-0" /> : <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />}
-                              <span className={`text-xs font-semibold truncate ${stitchProgress >= 100 ? "text-emerald-100" : stitchProgress >= 80 ? "text-purple-100" : "text-slate-500"}`}>📦 Finalisasi ekspor MP4</span>
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2.5 transition-colors duration-500 ${stitchProgress >= 100 ? "bg-emerald-950/40 border-emerald-500/30" : stitchProgress >= 95 ? "bg-purple-950/40 border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.15)]" : "bg-slate-900/50 border-slate-800"}`}>
+                              {stitchProgress >= 100 ? <CheckCircle2 className="text-emerald-400 w-4 h-4 shrink-0" /> : stitchProgress >= 95 ? <Loader2 className="text-purple-400 w-4 h-4 animate-spin shrink-0" /> : <div className="w-4 h-4 rounded-full border border-slate-700 shrink-0" />}
+                              <span className={`text-xs font-semibold truncate ${stitchProgress >= 100 ? "text-emerald-100" : stitchProgress >= 95 ? "text-purple-100" : "text-slate-500"}`}>📦 Finalisasi & Validasi Master MP4</span>
                             </div>
                           </div>
                         </div>
