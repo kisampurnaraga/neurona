@@ -225,7 +225,12 @@ export class ProductionOrchestrator {
             url: s.videoUrl || s.assetUrl || '',
             text: resolveSceneSubtitle(s, idx)
           }));
-          project.finalVideoUrl = await StitcherAgent.stitchVideos(stitchInput, project.brandLogoUrl, project.extraVideoUrl);
+          project.finalVideoUrl = await StitcherAgent.stitchVideos(
+            stitchInput, 
+            project.brandLogoUrl, 
+            project.extraVideoUrl,
+            (project as any).subtitleStyle || 'Bold Pop'
+          );
         } catch (e) {
           console.error("Stitch failed:", e);
           project.finalVideoUrl = undefined;

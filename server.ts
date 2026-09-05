@@ -18,6 +18,7 @@ import { keyRotator } from "./server/keyRotator";
 import { cleanApiKeyString } from "./server/utils/credentialValidator";
 import { TTSService, SUPPORTED_VOICE_PRESETS } from "./server/services/ttsService";
 import { isPlaceholderSubtitle } from "./server/utils/subtitleUtils";
+import { GCSStreamService } from "./server/services/gcsStreamService";
 import { verifyToken, requireRole, generateToken, userDatabase, AuthenticatedRequest, UserSession } from "./server/middleware/auth";
 import videoStudioRouter from "./server/routes/videoStudio";
 import workerRouter from "./server/routes/workerRoute";
@@ -1442,8 +1443,8 @@ createdAt: new Date().toISOString()
       if (req.user?.role === 'founder' || req.user?.user_id === 'founder_root_001') {
         scanMediaDir(outputsDir, '/outputs');
         
-        // NEW: Scan GCS Bucket if enabled
-        if (process.env.GCS_BUCKET_NAME) {
+        // NEW: Scan GCS Bucket if enabled and accessible
+        if (process.env.GCS_BUCKET_NAME && GCSStreamService.isAvailable()) {
           try {
             const { Storage } = await import('@google-cloud/storage');
             const storage = new Storage({
@@ -1590,7 +1591,7 @@ createdAt: new Date().toISOString()
       }
       
       // 2. Delete from GCS
-      if (process.env.GCS_BUCKET_NAME) {
+      if (process.env.GCS_BUCKET_NAME && GCSStreamService.isAvailable()) {
         try {
           const { Storage } = await import('@google-cloud/storage');
           const storage = new Storage({

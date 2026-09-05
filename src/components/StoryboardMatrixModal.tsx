@@ -3478,9 +3478,9 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[
-                  { style: 'Bold Pop', desc: 'Teks kuning tebal, populer untuk Affiliate & Shorts', border: 'border-amber-500/40' },
-                  { style: 'Clean Minimal', desc: 'Teks putih bersih minimalis ala film bioskop', border: 'border-slate-500/40' },
-                  { style: 'Neon Glow', desc: 'Teks bersinar stroke magenta-cyan futuristik', border: 'border-purple-500/40' }
+                  { style: 'Bold Pop', desc: 'Teks kuning tebal TikTok/Shorts dengan stroke hitam pekat & drop shadow', border: 'border-amber-500/40' },
+                  { style: 'Clean Minimal', desc: 'Teks putih bersih minimalis dengan kotak latar semi-transparan', border: 'border-slate-500/40' },
+                  { style: 'Neon Glow', desc: 'Teks bersinar multi-layer cyberpunk aura magenta-cyan', border: 'border-purple-500/40' }
                 ].map((item) => (
                   <button
                     key={item.style}

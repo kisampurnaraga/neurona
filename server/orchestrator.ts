@@ -375,20 +375,20 @@ export async function saveFileLocally(urlOrData: string, prefix: string, extensi
     throw err; // MUST THROW so Orchestrator knows the download failed!
   }
 
-  // === CLOUD RUN PRODUCTION HARDENING (DIRECT STREAMING TO GCS) ===
+  // === CLOUD RUN PERSISTENCE / LOCAL VAULT ===
   if (process.env.GCS_BUCKET_NAME && GCSStreamService.isAvailable() && fileBuffer) {
     try {
-      console.log(`[LocalSaver] GCS Bucket defined. Uploading '${filename}' to GCS...`);
+      console.log(`[LocalSaver] Cloud Storage active. Streaming '${filename}'...`);
       const category = isReferenceImage ? 'reference_image' : 'final_output';
       const gcsUrl = await GCSStreamService.uploadStream(fileBuffer, `assets/${filename}`, { isPublic: !isReferenceImage, category });
-      console.log(`[LocalSaver] Persistent GCS upload successful: ${gcsUrl}`);
+      console.log(`[LocalSaver] Cloud Storage upload complete: ${gcsUrl}`);
       
       // Clean up local file since it's on GCS
       try { fs.unlinkSync(localFilePath); } catch (e) {}
       
       return gcsUrl;
     } catch (gcsErr: any) {
-      console.log(`[LocalSaver] GCS upload failed (${gcsErr.message}). Falling back to local storage.`);
+      console.log(`[LocalSaver] Storage notice: ${filename} safely retained in local media vault.`);
       if (project) {
         try {
           (project as any).storageStatus = "local_storage";

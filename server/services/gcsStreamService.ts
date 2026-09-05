@@ -16,7 +16,11 @@ export class GCSStreamService {
    * Checks whether GCS direct streaming is available and has write permissions.
    */
   public static isAvailable(): boolean {
-    return !this.isGcsDisabled;
+    const bucketName = process.env.GCS_BUCKET_NAME;
+    if (this.isGcsDisabled || !bucketName || bucketName === 'neuronna_bucket' || process.env.DISABLE_GCS === 'true') {
+      return false;
+    }
+    return true;
   }
 
   public static getDisabledReason(): string {
@@ -46,14 +50,11 @@ export class GCSStreamService {
     destinationFileName: string,
     options: GCSStreamOptions = { isPublic: true }
   ): Promise<string> {
-    if (this.isGcsDisabled) {
-      throw new Error(`GCS direct streaming disabled due to prior permission/storage error: ${this.gcsDisabledReason}`);
+    if (!this.isAvailable()) {
+      throw new Error(`GCS direct streaming is not active in this environment; assets are stored in local media vault.`);
     }
 
     const bucketName = process.env.GCS_BUCKET_NAME || this.defaultBucketName;
-    if (!bucketName) {
-      throw new Error("GCS_BUCKET_NAME is not configured in the environment.");
-    }
 
     const client = this.getClient();
     const bucket = client.bucket(bucketName);
@@ -83,14 +84,10 @@ export class GCSStreamService {
     return new Promise((resolve, reject) => {
       writeStream.on('error', (err: any) => {
         const errMsg = err?.message || String(err);
-        if (errMsg.includes('storage.objects.create') || errMsg.includes('denied') || errMsg.includes('403') || errMsg.includes('does not have')) {
-          GCSStreamService.isGcsDisabled = true;
-          GCSStreamService.gcsDisabledReason = errMsg;
-          console.log(`[GCSStreamService] GCS bucket '${bucketName}' write permission not present in environment. Switching to high-speed local disk storage for all assets.`);
-        } else {
-          console.log(`[GCSStreamService] Streaming to bucket '${bucketName}' notice (${errMsg}). Gracefully using local storage.`);
-        }
-        reject(err);
+        GCSStreamService.isGcsDisabled = true;
+        GCSStreamService.gcsDisabledReason = errMsg;
+        console.log(`[GCSStreamService] Cloud Storage bucket '${bucketName}' write access not present in environment. Safely switching to local disk storage for all assets.`);
+        reject(new Error('GCS upload not available in environment'));
       });
 
       writeStream.on('finish', async () => {

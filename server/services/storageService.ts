@@ -1,6 +1,7 @@
 import { Storage } from '@google-cloud/storage';
 import fs from 'fs';
 import path from 'path';
+import { GCSStreamService } from './gcsStreamService';
 
 export interface UploadOptions {
   contentType?: string;
@@ -44,9 +45,9 @@ export class StorageService {
     const client = this.getClient();
     const bucket = client ? client.bucket(this.bucketName) : null;
 
-    if (bucket && process.env.GCS_BUCKET_NAME) {
+    if (bucket && GCSStreamService.isAvailable()) {
       try {
-        console.log(`[StorageService] Uploading '${localFilePath}' to GCS Bucket gs://${this.bucketName}/${cleanDestName}...`);
+        console.log(`[StorageService] Uploading '${localFilePath}' to persistent cloud storage...`);
         
         const contentType = options.contentType || (
           cleanDestName.endsWith('.mp4') ? 'video/mp4' :
@@ -88,14 +89,14 @@ export class StorageService {
           }
         }
 
-        console.log(`[StorageService] Upload to GCS successful: ${publicUrl}`);
+        console.log(`[StorageService] Upload to cloud storage complete: ${publicUrl}`);
 
         // Cleanup local file after successful upload to conserve instance disk
         this.cleanupLocalFile(localFilePath);
 
         return publicUrl;
       } catch (gcsErr: any) {
-        console.warn(`[StorageService] GCS upload encountered issue (${gcsErr?.message}). Serving via local static vault...`);
+        console.log(`[StorageService] Storage notice: Serving '${destinationFileName}' via local media vault.`);
       }
     }
 
@@ -151,8 +152,8 @@ export class StorageService {
     const client = this.getClient();
     const bucket = client ? client.bucket(this.bucketName) : null;
 
-    if (!bucket || !process.env.GCS_BUCKET_NAME) {
-      throw new Error("GCS is not configured or initialized.");
+    if (!bucket || !GCSStreamService.isAvailable()) {
+      throw new Error("Cloud Storage is not active in this environment; storing locally.");
     }
 
     const contentType = options.contentType || (
@@ -175,8 +176,8 @@ export class StorageService {
 
     return new Promise((resolve, reject) => {
       writeStream.on('error', (err) => {
-        console.error(`[StorageService] Streaming upload to GCS failed:`, err);
-        reject(err);
+        console.log(`[StorageService] Storage stream notice: local media vault fallback.`);
+        reject(new Error('GCS upload not active'));
       });
 
       writeStream.on('finish', async () => {

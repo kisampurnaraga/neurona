@@ -10,9 +10,9 @@ export const CaptionStyleSelectorModal: React.FC<CaptionStyleSelectorModalProps>
   const [selectedStyle, setSelectedStyle] = useState<string>('Bold Pop');
 
   const styles = [
-    { id: 'Bold Pop', name: 'Bold Pop', desc: 'Teks tebal bergaya TikTok dengan warna kuning mencolok.', icon: Sparkles },
-    { id: 'Clean Minimal', name: 'Clean Minimal', desc: 'Sederhana dan elegan, font ramping dengan latar semi-transparan.', icon: LayoutTemplate },
-    { id: 'Neon Glow', name: 'Neon Glow', desc: 'Teks bercahaya neon ala Cyberpunk, cocok untuk visual gelap.', icon: Type }
+    { id: 'Bold Pop', name: 'Bold Pop', desc: 'Teks tebal kuning TikTok/Shorts dengan stroke hitam pekat & drop shadow.', icon: Sparkles },
+    { id: 'Clean Minimal', name: 'Clean Minimal', desc: 'Sederhana dan elegan, teks putih bersih dengan kotak latar semi-transparan.', icon: LayoutTemplate },
+    { id: 'Neon Glow', name: 'Neon Glow', desc: 'Teks bercahaya neon cyberpunk dengan multi-layer aura magenta-cyan.', icon: Type }
   ];
 
   return (

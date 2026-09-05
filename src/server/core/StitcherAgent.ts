@@ -6,6 +6,7 @@ import https from 'https';
 import http from 'http';
 import ffmpegStatic from 'ffmpeg-static';
 import { isPlaceholderSubtitle } from '../../../server/utils/subtitleUtils';
+import { buildAssSubtitleContent } from '../../../server/services/subtitleStyles';
 
 // Initialize with static binary to ensure filters are available
 if (ffmpegStatic) {
@@ -39,25 +40,22 @@ export class StitcherAgent {
     });
   }
 
-  private static async burnSubtitle(inputPath: string, text: string, outputPath: string, tmpDir: string, index: number): Promise<void> {
+  private static async burnSubtitle(inputPath: string, text: string, outputPath: string, tmpDir: string, index: number, subtitleStyle?: string): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!text || text.trim() === '' || isPlaceholderSubtitle(text)) {
         fs.copyFileSync(inputPath, outputPath);
         return resolve();
       }
 
-      const srtPath = path.join(tmpDir, `sub_${index}.srt`);
-      // Assigning a long duration (60s) ensures it stays on screen for the whole short clip
-      const srtContent = `1\n00:00:00,000 --> 00:01:00,000\n${text.trim()}\n`;
-      fs.writeFileSync(srtPath, srtContent);
+      const assPath = path.join(tmpDir, `sub_${index}.ass`);
+      // Generate rich ASS script tailored to the chosen preset (Bold Pop, Clean Minimal, Neon Glow)
+      const assContent = buildAssSubtitleContent(text.trim(), subtitleStyle || 'Bold Pop', 60, 720, 1280);
+      fs.writeFileSync(assPath, assContent.replace(/\n/g, '\r\n'));
 
-      // Yellow color (00FFFF in BGR), black outline (000000), 22 font size, 3px outline, bold Arial
-      const style = "Fontsize=22,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,Alignment=2,MarginV=25,FontName=Arial,Bold=1";
-      
-      console.log(`[StitcherAgent] Burning subtitle for scene ${index}...`);
+      console.log(`[StitcherAgent] Burning subtitle for scene ${index} using preset '${subtitleStyle || 'Bold Pop'}'...`);
       
       ffmpeg(inputPath)
-        .videoFilters(`subtitles='${srtPath}':force_style='${style}'`)
+        .videoFilters(`subtitles='${assPath.replace(/\\/g, '\\\\')}'`)
         .outputOptions(['-c:v libx264', '-c:a copy'])
         .on('end', () => resolve())
         .on('error', (err) => {
@@ -70,7 +68,7 @@ export class StitcherAgent {
     });
   }
 
-  static async stitchVideos(scenes: StitchScene[], brandLogoUrl?: string, extraVideoUrl?: string): Promise<string> {
+  static async stitchVideos(scenes: StitchScene[], brandLogoUrl?: string, extraVideoUrl?: string, subtitleStyle?: string): Promise<string> {
     return new Promise(async (resolve, reject) => {
       try {
         if (!scenes || scenes.length === 0) {
@@ -105,7 +103,7 @@ export class StitcherAgent {
           const localBurnedPath = path.join(tmpDir, `burned_${i}.mp4`);
           
           await this.downloadFile(scenes[i].url, localRawPath);
-          await this.burnSubtitle(localRawPath, scenes[i].text, localBurnedPath, tmpDir, i);
+          await this.burnSubtitle(localRawPath, scenes[i].text, localBurnedPath, tmpDir, i, subtitleStyle);
           burnedPaths.push(localBurnedPath);
         }
 

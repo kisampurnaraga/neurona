@@ -5,67 +5,7 @@ import { ProductionProject } from '../src/shared/types';
 import * as https from 'https';
 import { TTSService } from './ttsService';
 import { resolveSceneSubtitle, resolveSceneVoiceover, isPlaceholderSubtitle } from './utils/subtitleUtils';
-
-function formatAssTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const cs = Math.floor((seconds % 1) * 100);
-  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
-}
-
-function getAssHeader(style: string, targetW: number, targetH: number) {
-  let fontName = 'Arial';
-  let primaryColor = '&H00FFFFFF';
-  let outlineColor = '&H00000000';
-  let shadowColor = '&H00000000';
-  let outline = '3';
-  let shadow = '0';
-  let baseFontSize = 24;
-  let bold = '-1'; 
-  
-  if (style === 'Bold Pop') {
-    fontName = 'Arial Black';
-    primaryColor = '&H0000FFFF'; 
-    outlineColor = '&H00000000'; 
-    outline = '4';
-    shadow = '2';
-    baseFontSize = 48;
-  } else if (style === 'Clean Minimal') {
-    fontName = 'Helvetica';
-    primaryColor = '&H00FFFFFF'; 
-    outlineColor = '&H00444444'; 
-    outline = '1';
-    shadow = '0';
-    baseFontSize = 36;
-    bold = '0'; 
-  } else if (style === 'Neon Glow') {
-    fontName = 'Courier New';
-    primaryColor = '&H00FFFFFF'; 
-    outlineColor = '&H00FF00FF'; 
-    outline = '3';
-    shadow = '5';
-    shadowColor = '&H00FF00FF';
-    baseFontSize = 42;
-  }
-
-  let fontSize = Math.floor(baseFontSize * (targetH / 720)).toString();
-  let marginV = Math.floor(targetH * 0.15);
-
-  return `[Script Info]
-ScriptType: v4.00+
-PlayResX: ${targetW}
-PlayResY: ${targetH}
-WrapStyle: 1
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontName},${fontSize},${primaryColor},&H000000FF,${outlineColor},${shadowColor},${bold},0,0,0,100,100,0,0,1,${outline},${shadow},2,20,20,${marginV},1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-`;
-}
+import { getAssHeader, getAssDialogueEvents, formatAssTime } from './services/subtitleStyles';
 
 function runFfmpegWithProgress(args: string[], onProgressUpdate: (frame: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -305,9 +245,7 @@ export class VideoEditor {
           const assPath = path.join(tempDir, `subs_${i}.ass`);
           let assContent = getAssHeader(subtitleStyle || 'Bold Pop', targetW, targetH);
           if (subtitleText && !isPlaceholderSubtitle(subtitleText)) {
-             const assStart = formatAssTime(0.2);
-             const assEnd = formatAssTime(SCENE_DURATION - 0.2);
-             assContent += `Dialogue: 0,${assStart},${assEnd},Default,,0,0,0,,{\\fscx120\\fscy120\\t(0,200,\\fscx100\\fscy100)}${subtitleText}\n`;
+             assContent += getAssDialogueEvents(subtitleText, subtitleStyle || 'Bold Pop', 0.2, SCENE_DURATION - 0.2);
           }
           fs.writeFileSync(assPath, assContent.replace(/\n/g, '\r\n')); // ensure CRLF for ffmpeg
 
