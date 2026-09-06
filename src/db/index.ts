@@ -19,6 +19,8 @@ function initTables(sqliteInstance: InstanceType<typeof Database>) {
       name TEXT,
       phone_wa TEXT,
       password_plain TEXT,
+      password_hash TEXT,
+      token_version INTEGER DEFAULT 0,
       role TEXT DEFAULT 'user',
       credits INTEGER DEFAULT 0,
       status_aktif INTEGER DEFAULT 0,
@@ -64,6 +66,15 @@ function initTables(sqliteInstance: InstanceType<typeof Database>) {
 
   // Ensure columns exist on older database instances
   try {
+    const userCols = sqliteInstance.pragma('table_info(users)') as Array<{ name: string }>;
+    const userColNames = userCols.map(c => c.name);
+    if (!userColNames.includes('password_hash')) {
+      sqliteInstance.exec('ALTER TABLE users ADD COLUMN password_hash TEXT;');
+    }
+    if (!userColNames.includes('token_version')) {
+      sqliteInstance.exec('ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0;');
+    }
+
     const cols = sqliteInstance.pragma('table_info(projects)') as Array<{ name: string }>;
     const colNames = cols.map(c => c.name);
     if (!colNames.includes('showcase_eligible')) {
@@ -73,7 +84,7 @@ function initTables(sqliteInstance: InstanceType<typeof Database>) {
       sqliteInstance.exec('ALTER TABLE projects ADD COLUMN showcase_order INTEGER;');
     }
   } catch (e) {
-    console.warn('[SQLite Migration Warning] Could not verify showcase columns on projects table:', e);
+    console.warn('[SQLite Migration Warning] Could not verify columns on tables:', e);
   }
 }
 

@@ -1,10 +1,19 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { db } from '../../src/db/index';
 import { users } from '../../src/db/schema';
 import { eq, or } from 'drizzle-orm';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'neuronna-super-secret-key-2026';
+// Ensure cryptographically strong JWT secret (from env or runtime-generated secure random)
+const JWT_SECRET: string = process.env.JWT_SECRET || (() => {
+  if (!(globalThis as any).__EPHEMERAL_JWT_SECRET__) {
+    (globalThis as any).__EPHEMERAL_JWT_SECRET__ = crypto.randomBytes(32).toString('hex');
+    console.log('[SECURITY] Ephemeral cryptographically random JWT_SECRET initialized for session validation.');
+  }
+  return (globalThis as any).__EPHEMERAL_JWT_SECRET__;
+})();
 
 export interface UserSession {
   user_id: string;
@@ -15,7 +24,7 @@ export interface UserSession {
   status_aktif: boolean;
   package_tier?: string;
   phone_wa?: string;
-  password_plain?: string;
+  token_version?: number;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -23,30 +32,27 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export const generateToken = (payload: any): string => {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' }); // 7 Hari
+  const sanitizedPayload: UserSession = {
+    user_id: payload.user_id || payload.uid,
+    email: payload.email,
+    name: payload.name || '',
+    role: payload.role || 'user',
+    credits: typeof payload.credits === 'number' ? payload.credits : 0,
+    status_aktif: payload.status_aktif !== undefined ? !!payload.status_aktif : (payload.statusAktif !== undefined ? !!payload.statusAktif : true),
+    package_tier: payload.package_tier || payload.packageTier || 'early_bird_lifetime',
+    phone_wa: payload.phone_wa || payload.phoneWa || '',
+    token_version: payload.token_version ?? payload.tokenVersion ?? 0
+  };
+  return jwt.sign(sanitizedPayload, JWT_SECRET, { expiresIn: '7d' });
 };
 
 export const parseAndVerifyToken = (token: string): UserSession | null => {
   try {
-    if (
-      token === 'founder_token' || 
-      token === 'founder' || 
-      token === 'ia12aS87!' || 
-      token === 'NEURONNA_FOUNDER_MASTER_2025' || 
-      token === 'founder2026' || 
-      token === 'neuronna2026'
-    ) {
-      return {
-        user_id: 'founder_root_001',
-        email: 'ia.asep12@gmail.com',
-        name: 'Master Architect',
-        role: 'founder',
-        credits: 999999,
-        status_aktif: true,
-        package_tier: 'founder'
-      };
-    }
+    if (!token || typeof token !== 'string') return null;
     const decoded = jwt.verify(token, JWT_SECRET) as UserSession;
+    if (!decoded || (!decoded.user_id && !(decoded as any).uid)) {
+      return null;
+    }
     return decoded;
   } catch (err) {
     return null;
@@ -57,22 +63,22 @@ export async function verifyToken(req: AuthenticatedRequest, res: Response, next
   let token = '';
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.split(' ')[1];
+    token = authHeader.split(' ')[1]?.trim();
   } else if (req.headers['x-auth-token']) {
-    token = req.headers['x-auth-token'] as string;
-  } else if (req.headers['x-custom-api-key']) {
-    token = req.headers['x-custom-api-key'] as string;
-  } else if (req.query?.token) {
-    token = req.query.token as string;
+    token = (req.headers['x-auth-token'] as string)?.trim();
   }
 
-  // Fallback to founder token if not explicitly provided in local app context
+  // Reject unauthenticated requests immediately (No hardcoded fallback bypass)
   if (!token) {
-    token = 'founder_token';
+    res.status(401).json({
+      error: 'UNAUTHORIZED',
+      message: 'Akses ditolak. Token otentikasi diperlukan. Silakan login terlebih dahulu.'
+    });
+    return;
   }
 
   const session = parseAndVerifyToken(token);
-  if (!session || (!session.user_id && !(session as any).uid)) {
+  if (!session) {
     res.status(401).json({
       error: 'INVALID_TOKEN',
       message: 'Sesi login tidak valid atau telah kedaluwarsa. Silakan lakukan otentikasi ulang.'
@@ -82,44 +88,51 @@ export async function verifyToken(req: AuthenticatedRequest, res: Response, next
 
   const targetUid = session.user_id || (session as any).uid;
 
-  // If founder token bypass
-  if (session.role === 'founder' || targetUid === 'founder_root_001') {
-    let founderInDb = await userDatabase.getUser('founder_root_001') || await userDatabase.getUserByEmail('ia.asep12@gmail.com');
-    if (!founderInDb) {
-      await userDatabase.setUser('founder_root_001', {
-        uid: 'founder_root_001',
-        email: 'ia.asep12@gmail.com',
-        name: 'Master Architect',
-        role: 'founder',
-        credits: 999999,
-        statusAktif: true,
-        packageTier: 'founder',
-        phoneWa: '081234567890',
-        passwordPlain: 'ia12aS87!',
-        createdAt: new Date().toISOString()
-      });
-    }
-    req.user = {
-      user_id: 'founder_root_001',
-      email: 'ia.asep12@gmail.com',
-      name: 'Master Architect',
-      role: 'founder',
-      credits: 999999,
-      status_aktif: true,
-      package_tier: 'founder',
-      phone_wa: '081234567890',
-      password_plain: 'ia12aS87!'
-    };
-    return next();
-  }
-
   try {
-    // Fetch from SQLite
+    // Fetch latest user data from DB
     const dbUsers = await db.select().from(users).where(eq(users.uid, targetUid)).limit(1);
     const userInDb = dbUsers[0];
 
     if (!userInDb) {
+      // If valid founder session token from founder-login but not yet in DB, provision founder record
+      if (session.role === 'founder' || targetUid === 'founder_root_001') {
+        const founderObj = {
+          uid: 'founder_root_001',
+          email: session.email || 'ia.asep12@gmail.com',
+          name: session.name || 'Master Architect',
+          role: 'founder',
+          credits: 999999,
+          statusAktif: true,
+          packageTier: 'founder',
+          phoneWa: session.phone_wa || '081234567890',
+          createdAt: new Date().toISOString()
+        };
+        await userDatabase.setUser('founder_root_001', founderObj);
+        req.user = {
+          user_id: 'founder_root_001',
+          email: founderObj.email,
+          name: founderObj.name,
+          role: 'founder',
+          credits: 999999,
+          status_aktif: true,
+          package_tier: 'founder',
+          phone_wa: founderObj.phoneWa,
+          token_version: 0
+        };
+        return next();
+      }
+
       res.status(404).json({ error: 'USER_NOT_FOUND', message: 'Akun tidak ditemukan di sistem.' });
+      return;
+    }
+
+    console.log(`[AUTH CHECK] targetUid: ${targetUid}, DB Version: ${userInDb.tokenVersion}, Session Version: ${session.token_version}`);
+    if (userInDb.tokenVersion !== undefined && userInDb.tokenVersion !== null && session.token_version !== undefined && userInDb.tokenVersion > session.token_version) {
+      console.log(`[AUTH] Session expired. DB Version: ${userInDb.tokenVersion}, Session Version: ${session.token_version}`);
+      res.status(401).json({
+        error: 'SESSION_EXPIRED',
+        message: 'Password telah diubah atau sesi dihentikan (force re-login). Silakan login kembali.'
+      });
       return;
     }
 
@@ -134,6 +147,7 @@ export async function verifyToken(req: AuthenticatedRequest, res: Response, next
       return;
     }
 
+    // Attach sanitized session without credentials
     req.user = {
       user_id: userInDb.uid,
       email: userInDb.email,
@@ -143,11 +157,11 @@ export async function verifyToken(req: AuthenticatedRequest, res: Response, next
       status_aktif: userInDb.statusAktif || false,
       package_tier: userInDb.packageTier || '',
       phone_wa: userInDb.phoneWa || '',
-      password_plain: userInDb.passwordPlain || ''
+      token_version: userInDb.tokenVersion || 0
     };
     next();
   } catch (error) {
-    console.error('Error verifying user in DB:', error);
+    console.error('[Auth Middleware Error]:', error);
     res.status(500).json({ error: 'INTERNAL_ERROR', message: 'Gagal memverifikasi pengguna.' });
   }
 }
@@ -188,7 +202,8 @@ export function requireCredits(costPerAction: number = 15) {
       res.status(402).json({
         error: 'INSUFFICIENT_CREDITS',
         message: `Kredit render tidak mencukupi. Diperlukan ${costPerAction} kredit, sisa kredit Anda saat ini: ${req.user.credits}. Silakan top up via WhatsApp.`,
-        required_credits: costPerAction,        current_credits: req.user.credits
+        required_credits: costPerAction,
+        current_credits: req.user.credits
       });
       return;
     }
@@ -196,7 +211,7 @@ export function requireCredits(costPerAction: number = 15) {
   };
 }
 
-// User Database operations using PostgreSQL (Drizzle)
+// User Database operations using SQLite (Drizzle) with Bcrypt Hashing
 export const userDatabase = {
   getUser: async (userId: string) => {
     const res = await db.select().from(users).where(or(eq(users.uid, userId), eq(users.email, userId.toLowerCase()))).limit(1);
@@ -208,20 +223,51 @@ export const userDatabase = {
     return res[0] || null;
   },
   getAllUsers: async () => {
-    return await db.select().from(users);
+    const all = await db.select().from(users);
+    // Sanitize user list: remove plaintext passwords and password hashes from returned records
+    return all.map(u => ({
+      uid: u.uid,
+      id: u.uid,
+      email: u.email,
+      name: u.name,
+      phoneWa: u.phoneWa,
+      phone_wa: u.phoneWa,
+      role: u.role,
+      credits: u.credits,
+      statusAktif: u.statusAktif,
+      status_aktif: u.statusAktif,
+      packageTier: u.packageTier,
+      package_tier: u.packageTier,
+      createdAt: u.createdAt,
+      hasPassword: !!(u.passwordHash || u.passwordPlain)
+    }));
   },
   setUser: async (userId: string, data: any) => {
+    const rawPass = data.password ?? data.passwordPlain ?? data.password_plain;
+    let passwordHashToStore = data.passwordHash ?? data.password_hash;
+
+    if (rawPass && typeof rawPass === 'string' && rawPass.trim().length > 0) {
+      if (rawPass.startsWith('$2a$') || rawPass.startsWith('$2b$')) {
+        passwordHashToStore = rawPass;
+      } else {
+        passwordHashToStore = bcrypt.hashSync(rawPass.trim(), 10);
+      }
+    }
+
     const insertObj: any = {
       uid: userId,
       email: (data.email || '').trim().toLowerCase(),
       name: data.name ?? data.nama ?? '',
       phoneWa: data.phoneWa ?? data.phone_wa ?? data.phone ?? '',
-      passwordPlain: data.passwordPlain ?? data.password_plain ?? data.password ?? '',
+      passwordPlain: null, // Wipe plaintext passwords
+      passwordHash: passwordHashToStore || null,
+      tokenVersion: data.tokenVersion ?? data.token_version ?? 0,
       role: data.role || 'user',
       credits: typeof data.credits === 'number' ? data.credits : 0,
       statusAktif: data.statusAktif !== undefined ? !!data.statusAktif : (data.status_aktif !== undefined ? !!data.status_aktif : false),
       packageTier: data.packageTier ?? data.package_tier ?? 'early_bird_lifetime',
     };
+
     if (data.createdAt || data.created_at) {
       insertObj.createdAt = new Date(data.createdAt || data.created_at).toISOString();
     } else {
@@ -233,12 +279,48 @@ export const userDatabase = {
       set: insertObj
     });
   },
+  verifyPassword: async (user: any, plainPassword: string): Promise<boolean> => {
+    if (!user || !plainPassword) return false;
+    const cleanPass = plainPassword.trim();
+
+    // 1. If modern bcrypt hash exists
+    if (user.passwordHash) {
+      try {
+        return bcrypt.compareSync(cleanPass, user.passwordHash);
+      } catch (err) {
+        console.error('[Bcrypt Compare Error]:', err);
+        return false;
+      }
+    }
+
+    // 2. Legacy Plaintext Migration: verify once, hash with bcrypt, wipe plaintext
+    if (user.passwordPlain && user.passwordPlain === cleanPass) {
+      try {
+        const newHash = bcrypt.hashSync(cleanPass, 10);
+        await db.update(users).set({
+          passwordHash: newHash,
+          passwordPlain: null
+        }).where(eq(users.uid, user.uid));
+        console.log(`[SECURITY] Auto-migrated legacy plaintext password to bcrypt hash for user: ${user.email}`);
+        return true;
+      } catch (migrationErr) {
+        console.error('[Legacy Password Migration Error]:', migrationErr);
+        return true;
+      }
+    }
+
+    return false;
+  },
   deleteUser: async (userId: string) => {
     const res = await db.delete(users).where(or(eq(users.uid, userId), eq(users.email, userId.toLowerCase()))).returning();
     return res.length > 0;
   },
   resetPassword: async (userId: string, newPasswordPlain: string) => {
-    const res = await db.update(users).set({ passwordPlain: newPasswordPlain }).where(or(eq(users.uid, userId), eq(users.email, userId.toLowerCase()))).returning();
+    const hash = bcrypt.hashSync(newPasswordPlain.trim(), 10);
+    const res = await db.update(users).set({ 
+      passwordHash: hash,
+      passwordPlain: null 
+    }).where(or(eq(users.uid, userId), eq(users.email, userId.toLowerCase()))).returning();
     return res[0] || null;
   },
   adjustCredits: async (userId: string, deltaOrExact: number, isDelta: boolean = true) => {

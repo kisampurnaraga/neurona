@@ -1210,14 +1210,127 @@ CRITICAL RULES FOR QA COMPLIANCE:
       }
     }
 
-    // Procedural Fallback
+    // Procedural Fallback Generator (Zero-Failure Guarantee)
+    onLog?.('SINTA', `Mengaktifkan Procedural Storyboard Engine untuk menyusun adegan sinematik...`, 'INFO');
+    const cleanBrief = brief || (config?.title ? config.title : 'Petualangan Sinematik');
+    const isAnimation = videoType === 'ANIMATION';
+    const isEdu = videoType === 'EDUCATIONAL';
+    const charName = isAnimation 
+      ? (config?.characterDescription?.match(/bernama\s+([A-Za-z0-9_]+)/i)?.[1] || 'Karakter Utama')
+      : isEdu ? 'Edukator Ahli' : 'Kreator';
+
+    const proceduralCharacter = {
+      name: charName,
+      gender: "MALE",
+      ageGroup: "Young Adult",
+      outfit: isAnimation ? "Pakaian petualang khas dengan detail futuristik" : "Pakaian kasual modern profesional",
+      facialFeatures: "Mata ekspresif, raut wajah tegas dan bersahabat",
+      hairStyle: "Gaya rambut rapi terstruktur",
+      styleSeed: 8849201,
+      consistencyAnchorPrompt: `[Consistent Character: ${charName}, ${isAnimation ? 'Pixar 3D stylized' : 'Cinematic commercial look'}, atmospheric lighting]`
+    };
+
+    const proceduralScenes = [
+      {
+        scene_number: 1,
+        duration: "4s",
+        visual_direction: `Adegan pembuka: Pengenalan latar megah dan ${charName} memulai kisahnya.`,
+        visualDirection: `Adegan pembuka: Pengenalan latar megah dan ${charName} memulai kisahnya.`,
+        text_overlay: "Awal Sebuah Kisah",
+        textOverlay: "Awal Sebuah Kisah",
+        subtitle: "Awal Sebuah Kisah",
+        voiceOver: `Di sudut dunia tersembunyi, sebuah perjalanan luar biasa dimulai.`,
+        voiceover_script: `Di sudut dunia tersembunyi, sebuah perjalanan luar biasa dimulai.`,
+        promptTextToImage: `Cinematic establishing hero shot of ${charName}, ${cleanBrief}, atmospheric depth of field, volumetric rim lighting, 8k resolution`,
+        promptImageToVideo: `Slow cinematic push-in camera movement, character identity locked: ${charName}, volumetric soft lighting, dynamic parallax`,
+        visualStyle: isAnimation ? "studio" : (videoType === 'AFFILIATE' ? "ugc" : "studio"),
+        featuresProduct: videoType === 'AFFILIATE',
+        backgroundLock: "free",
+        location: "Setting utama cerita",
+        styleKeywords: ["cinematic", "establishing shot", "dramatic lighting"]
+      },
+      {
+        scene_number: 2,
+        duration: "4s",
+        visual_direction: `${charName} mengeksplorasi lingkungan sekitar dan menemukan sesuatu yang menarik.`,
+        visualDirection: `${charName} mengeksplorasi lingkungan sekitar dan menemukan sesuatu yang menarik.`,
+        text_overlay: "Menemukan Keajaiban",
+        textOverlay: "Menemukan Keajaiban",
+        subtitle: "Menemukan Keajaiban",
+        voiceOver: `Setiap langkah membawa misteri baru yang tak terduga.`,
+        voiceover_script: `Setiap langkah membawa misteri baru yang tak terduga.`,
+        promptTextToImage: `Medium dynamic shot of ${charName} interacting with surroundings, ${cleanBrief}, high detail, vibrant ambient reflections`,
+        promptImageToVideo: `Smooth lateral tracking shot following ${charName}, fluid movement, dynamic particles, cinematic lens flare`,
+        visualStyle: isAnimation ? "studio" : (videoType === 'AFFILIATE' ? "ugc" : "studio"),
+        featuresProduct: videoType === 'AFFILIATE',
+        backgroundLock: "locked",
+        location: "Lingkungan eksplorasi",
+        styleKeywords: ["tracking shot", "vibrant", "emotional depth"]
+      },
+      {
+        scene_number: 3,
+        duration: "4s",
+        visual_direction: `Momen fokus mendalam: sorotan tajam pada ekspresi dan detail utama adegan.`,
+        visualDirection: `Momen fokus mendalam: sorotan tajam pada ekspresi dan detail utama adegan.`,
+        text_overlay: "Momen Penentuan",
+        textOverlay: "Momen Penentuan",
+        subtitle: "Momen Penentuan",
+        voiceOver: `Keberanian dan fokus menyatu dalam momen krusial ini.`,
+        voiceover_script: `Keberanian dan fokus menyatu dalam momen krusial ini.`,
+        promptTextToImage: `Dramatic close-up shot of ${charName}'s expressive eyes and face, glowing ambient reflections, hyper-detailed texture`,
+        promptImageToVideo: `Subtle slow-motion zoom-in on face, intense reflection in eyes, shallow depth of field, dramatic key light`,
+        visualStyle: isAnimation ? "studio" : (videoType === 'AFFILIATE' ? "ugc" : "studio"),
+        featuresProduct: videoType === 'AFFILIATE',
+        backgroundLock: "locked",
+        location: "Titik fokus adegan",
+        styleKeywords: ["close up", "dramatic lighting", "intense expression"]
+      },
+      {
+        scene_number: 4,
+        duration: "4s",
+        visual_direction: `Klimaks dan penutup epik: aksi penuh energi dan pesan penutup yang membekas.`,
+        visualDirection: `Klimaks dan penutup epik: aksi penuh energi dan pesan penutup yang membekas.`,
+        text_overlay: "Kemenangan Sejati",
+        textOverlay: "Kemenangan Sejati",
+        subtitle: "Kemenangan Sejati",
+        voiceOver: `Sebuah karya hebat lahir dari dedikasi tanpa batas.`,
+        voiceover_script: `Sebuah karya hebat lahir dari dedikasi tanpa batas.`,
+        promptTextToImage: `Epic wide panoramic climax shot of ${charName} reaching the goal, golden hour lighting, cinematic masterpiece`,
+        promptImageToVideo: `Sweeping orbital camera rotation around ${charName}, epic cinematic scale, golden cinematic rays, smooth resolution`,
+        visualStyle: isAnimation ? "studio" : (videoType === 'AFFILIATE' ? "ugc" : "studio"),
+        featuresProduct: videoType === 'AFFILIATE',
+        backgroundLock: "free",
+        location: "Puncak adegan",
+        styleKeywords: ["epic wide", "orbital camera", "golden hour", "resolution"]
+      }
+    ];
+
+    const fallbackMarketing = {
+      caption: `${cleanBrief} - Visualisasi cerdas generasi AI terbaru.`,
+      hashtags: ["#neurona", "#aianimation", "#visualstorytelling", "#creative"],
+      tiktok_caption: `Keren banget! ${cleanBrief} #fyp #viral`,
+      instagram_caption: `Visualisasi cinematic: ${cleanBrief} ✨ #reels #aiart`,
+      youtube_caption: `${cleanBrief} | Short Cinematic AI Video`,
+      hashtags_tiktok: ["#fyp", "#viral", "#aiart"],
+      hashtags_instagram: ["#reels", "#explore", "#cinematic"],
+      hashtags_youtube: ["#shorts", "#animation", "#ai"]
+    };
+
     return {
       data: {
-        scenes: [],
-        characterProfile: undefined
+        project_meta: {
+          format: videoType === 'AFFILIATE' ? '9:16 Portrait' : '16:9 Landscape',
+          duration: '16s',
+          video_style: styleMagicWords || 'Cinematic 3D Animation'
+        },
+        social_media_kit: fallbackMarketing,
+        storyboard_scenes: proceduralScenes,
+        scenes: proceduralScenes,
+        characterProfile: proceduralCharacter,
+        marketingCopy: fallbackMarketing
       },
-      rawText: "",
-      modelUsed: "Procedural Engine",
+      rawText: JSON.stringify(proceduralScenes),
+      modelUsed: "Neurona Procedural Storyboard Engine",
       provider: 'procedural'
     };
   }

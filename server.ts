@@ -1,8 +1,8 @@
+import "dotenv/config";
 import { NeuronaChatService } from './server/neuronaChatService';
 import http from "http";
 import express from "express";
 import fs from "fs";
-import { StitcherAgent } from './src/server/core/StitcherAgent';
 import { db } from './src/db/index';
 import { projects as dbProjects } from './src/db/schema';
 import { eq } from 'drizzle-orm';
@@ -87,29 +87,6 @@ async function startServer() {
 
   // API routes FIRST
   
-  app.post('/api/stitch', async (req, res) => {
-    try {
-      const { projectId, scenes, subtitleStyle } = req.body;
-      if (projectId) {
-          const project = projects.get(projectId);
-          if (!project) return res.status(404).json({ error: 'Project not found.' });
-          
-          console.log(`[Stitcher API] Processing full project merge for project ${projectId} with style ${subtitleStyle || 'Bold Pop'}...`);
-          const orchestrationResult = await (await import('./server/VideoEditor')).VideoEditor.processProject(project, subtitleStyle);
-          res.json({ success: true, result: orchestrationResult, url: orchestrationResult.finalVideoUrl || orchestrationResult });
-      } else {
-          if (!scenes || !Array.isArray(scenes)) {
-            return res.status(400).json({ error: 'scenes array is required.' });
-          }
-          console.log(`[Stitcher API] Received request to stitch ${scenes.length} videos via basic Stitcher`);
-          const finalUrl = await StitcherAgent.stitchVideos(scenes);
-          res.json({ success: true, url: finalUrl });
-      }
-    } catch (e: any) {
-      console.error(e);
-      res.status(500).json({ error: e.message });
-    }
-  });
 
   
   
@@ -177,12 +154,12 @@ async function startServer() {
         });
       }
 
-      // Update existing pending user info & password
+      // Update existing pending user info & password with secure hash
       const updatedData = {
         uid: existing.uid,
         email: cleanEmail,
         name: cleanName,
-        passwordPlain: cleanPass,
+        password: cleanPass,
         phoneWa: cleanPhone || existing.phoneWa || '',
         statusAktif: false
       };
@@ -190,7 +167,14 @@ async function startServer() {
 
       return res.json({
         success: true,
-        user: { ...existing, ...updatedData },
+        user: {
+          user_id: existing.uid,
+          email: cleanEmail,
+          name: cleanName,
+          role: existing.role || 'user',
+          status_aktif: false,
+          phone_wa: cleanPhone || existing.phoneWa || ''
+        },
         paymentConfig: FounderService.getPaymentConfig(),
         message: 'Data pendaftaran berhasil diperbarui. Silakan selesaikan pembayaran dan kirim konfirmasi ke WhatsApp.'
       });
@@ -206,8 +190,7 @@ async function startServer() {
       credits: 0, // Will be set to 150 upon activation by founder
       statusAktif: false,
       status_aktif: false,
-      passwordPlain: cleanPass,
-      password_plain: cleanPass,
+      password: cleanPass,
       phoneWa: cleanPhone,
       phone_wa: cleanPhone,
       packageTier: 'early_bird_lifetime',
@@ -219,7 +202,16 @@ async function startServer() {
 
     res.json({
       success: true,
-      user: newUser,
+      user: {
+        user_id: userId,
+        email: cleanEmail,
+        name: cleanName,
+        role: 'user',
+        credits: 0,
+        status_aktif: false,
+        package_tier: 'early_bird_lifetime',
+        phone_wa: cleanPhone
+      },
       paymentConfig: FounderService.getPaymentConfig(),
       message: 'Pendaftaran akun berhasil! Silakan lakukan transfer dan konfirmasi via WhatsApp.'
     });
@@ -235,38 +227,7 @@ async function startServer() {
     const cleanEmail = String(email).trim().toLowerCase();
     const cleanPass = String(password).trim();
 
-    // Check if founder credentials
-    const founderMasterKey = process.env.FOUNDER_ACCESS_KEY || 'NEURONNA_FOUNDER_MASTER_2025';
-    if (
-      (cleanEmail === 'ia.asep12@gmail.com' || cleanEmail === 'founder@neuronna.ai' || cleanEmail === 'founder') &&
-      (cleanPass === 'ia12aS87!' || cleanPass === founderMasterKey || cleanPass === 'NEURONNA_FOUNDER_MASTER_2025' || cleanPass === 'founder2026' || cleanPass === 'founder')
-    ) {
-      let founderUser = await userDatabase.getUserByEmail('ia.asep12@gmail.com') || await userDatabase.getUser('founder_root_001');
-      if (!founderUser) {
-        founderUser = {
-          uid: 'founder_root_001',
-email: 'ia.asep12@gmail.com',
-name: 'Master Architect',
-role: 'founder',
-credits: 999999,
-statusAktif: true,
-packageTier: 'founder',
-phoneWa: '081234567890',
-passwordPlain: 'ia12aS87!',
-createdAt: new Date().toISOString()
-        };
-        await userDatabase.setUser('founder_root_001', founderUser);
-      }
-      const token = generateToken(founderUser);
-      return res.json({
-        success: true,
-        token,
-        user: founderUser,
-        message: 'Login Founder Berhasil. Selamat datang Master Architect.'
-      });
-    }
-
-    const user = await userDatabase.getUserByEmail(cleanEmail);
+    let user = await userDatabase.getUserByEmail(cleanEmail);
     if (!user) {
       return res.status(404).json({
         error: 'USER_NOT_FOUND',
@@ -274,8 +235,9 @@ createdAt: new Date().toISOString()
       });
     }
 
-    // Verify Password / PIN
-    if (user.passwordPlain && user.passwordPlain !== cleanPass) {
+    // Verify Password / PIN using Bcrypt
+    const isPasswordValid = await userDatabase.verifyPassword(user, cleanPass);
+    if (!isPasswordValid) {
       return res.status(401).json({
         error: 'INVALID_CREDENTIALS',
         message: 'Password yang Anda masukkan salah. Periksa kembali password saat pendaftaran.'
@@ -283,7 +245,7 @@ createdAt: new Date().toISOString()
     }
 
     // Check if active
-    if (!user.statusAktif) {
+    if (!user.statusAktif && user.role !== 'founder') {
       const waNumber = FounderService.getPaymentConfig().whatsappNumber.replace(/[^0-9]/g, '') || '6281234567890';
       return res.status(403).json({
         error: 'ACCOUNT_INACTIVE',
@@ -298,30 +260,86 @@ createdAt: new Date().toISOString()
     res.json({
       success: true,
       token,
-      user,
+      user: {
+        user_id: user.uid,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        credits: user.credits,
+        status_aktif: user.statusAktif,
+        package_tier: user.packageTier,
+        phone_wa: user.phoneWa
+      },
       message: `Selamat datang kembali, ${user.name}!`
     });
   });
 
   // Founder Direct Login Gate Endpoint
   app.post('/api/auth/founder-login', async (req, res) => {
-    const { key, email } = req.body || {};
-    const founderMasterKey = process.env.FOUNDER_ACCESS_KEY || 'NEURONNA_FOUNDER_MASTER_2025';
+    const { key } = req.body || {};
+    const founderMasterKey = process.env.FOUNDER_ACCESS_KEY;
     const cleanKey = String(key || '').trim();
     
-    if (
-      cleanKey === founderMasterKey || 
-      cleanKey === 'NEURONNA_FOUNDER_MASTER_2025' || 
-      cleanKey === 'ia12aS87!' || 
-      cleanKey === 'founder2026' || cleanKey === 'founder' || 
-      cleanKey === 'neuronna2026'
-    ) {
-      const founderUser = await userDatabase.getUserByEmail('ia.asep12@gmail.com') || await userDatabase.getUser('founder_root_001');
+    let founderUser: any;
+    try {
+      founderUser = await userDatabase.getUserByEmail('ia.asep12@gmail.com') || await userDatabase.getUser('founder_root_001');
+    } catch (err) {
+      console.error('[DB Error] Gagal memuat user saat login:', err);
+      return res.status(500).json({ error: 'DB_ERROR', message: 'Terjadi kesalahan sistem pada database. Coba lagi.' });
+    }
+    
+    let isDbMatch = false;
+    let allowFallback = false;
+    
+    if (founderUser) {
+      isDbMatch = await userDatabase.verifyPassword(founderUser, cleanKey);
+      
+      // Auto-migrate jika akun Founder ada, tapi belum memiliki password hash sama sekali
+      // (misal, akun dibuat versi sebelumnya yang belum support hash)
+      if (!isDbMatch && (!founderUser.passwordHash || founderUser.passwordHash === null)) {
+        allowFallback = true;
+      }
+    } else {
+      // HANYA memicu fallback ke FOUNDER_ACCESS_KEY jika tabel DB benar-benar kosong 
+      // (user founder belum pernah dibuat / file SQLite wipe total).
+      // Jika terjadi error koneksi DB, proses akan terhenti di block catch di atas.
+      allowFallback = true;
+    }
+
+    if (isDbMatch || (allowFallback && founderMasterKey && cleanKey === founderMasterKey)) {
+      if (!founderUser) {
+        founderUser = {
+          uid: 'founder_root_001',
+          email: 'ia.asep12@gmail.com',
+          name: 'Master Architect',
+          role: 'founder',
+          credits: 999999,
+          statusAktif: true,
+          packageTier: 'founder',
+          phoneWa: '081234567890',
+          createdAt: new Date().toISOString()
+        };
+      }
+      
+      // Auto-migrate: update password di database jika tadi menggunakan fallback
+      if (!isDbMatch && allowFallback) {
+        founderUser.password = cleanKey; // Memicu hashing bcrypt di dalam setUser
+        await userDatabase.setUser(founderUser.uid, founderUser);
+      }
+
       const token = generateToken(founderUser);
       return res.json({
         success: true,
         token,
-        user: founderUser,
+        user: {
+          user_id: founderUser.uid,
+          email: founderUser.email,
+          name: founderUser.name,
+          role: 'founder',
+          credits: founderUser.credits,
+          status_aktif: true,
+          package_tier: 'founder'
+        },
         message: 'Akses Founder Terverifikasi. Selamat Datang Founder.'
       });
     }
@@ -332,21 +350,62 @@ createdAt: new Date().toISOString()
     });
   });
 
+  // Founder Change Password Endpoint
+  app.post('/api/auth/founder/change-password', verifyToken, requireRole(['founder']), async (req: AuthenticatedRequest, res) => {
+    const { oldPassword, newPassword } = req.body || {};
+    
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ error: 'MISSING_DATA', message: 'Password lama dan baru harus diisi.' });
+    }
+    
+    const hasUpperCase = /[A-Z]/.test(newPassword);
+    const hasLowerCase = /[a-z]/.test(newPassword);
+    const hasNumbers = /\d/.test(newPassword);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(newPassword);
+    
+    if (newPassword.length < 12 || !hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
+      return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Password harus min. 12 karakter dan mengandung huruf besar, huruf kecil, angka, dan simbol.' });
+    }
+
+    const targetUid = req.user!.user_id;
+    const userInDb = await userDatabase.getUser(targetUid);
+    
+    if (!userInDb) {
+      return res.status(404).json({ error: 'USER_NOT_FOUND', message: 'Akun Founder tidak ditemukan.' });
+    }
+
+    const cleanOld = String(oldPassword).trim();
+    const cleanNew = String(newPassword).trim();
+    
+    // Karena Founder sudah ada di DB, kita tidak mengizinkan fallback kunci master. 
+    // Harus menggunakan password lama yang tersimpan di DB.
+    let isOldValid = await userDatabase.verifyPassword(userInDb, cleanOld);
+    
+    if (!isOldValid) {
+      return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Password lama tidak cocok.' });
+    }
+
+    // Bump token version and update password (this hashes it via userDatabase)
+    const newVersion = (userInDb.tokenVersion || 0) + 1;
+    await userDatabase.setUser(targetUid, {
+      ...userInDb,
+      password: cleanNew, // Will be hashed inside setUser
+      tokenVersion: newVersion,
+      token_version: newVersion
+    });
+
+    console.log(`[AUDIT LOG] Password untuk Founder (${userInDb.email}) berhasil diubah pada ${new Date().toISOString()}. Semua sesi sebelumnya dihentikan.`);
+
+    return res.json({
+      success: true,
+      message: 'Password Founder berhasil diubah. Silakan login kembali dengan password baru.'
+    });
+  });
+
   // Admin: Get all users
   app.get('/api/admin/users', verifyToken, requireRole(['founder', 'admin']), async (req: AuthenticatedRequest, res) => {
     const rawUsers = await userDatabase.getAllUsers();
-    const formatted = rawUsers.map(u => ({
-      ...u,
-      id: u.uid,
-      user_id: u.uid,
-      phone_wa: u.phoneWa || '',
-      password_plain: u.passwordPlain || '',
-      status_aktif: !!u.statusAktif,
-      package_tier: u.packageTier || 'early_bird_lifetime',
-      created_at: u.createdAt ? new Date(u.createdAt).toISOString() : new Date().toISOString(),
-      activated_at: u.createdAt ? new Date(u.createdAt).toISOString() : new Date().toISOString()
-    }));
-    res.json({ users: formatted });
+    res.json({ users: rawUsers });
   });
 
   // Admin: Create & Activate User Manual
@@ -369,8 +428,7 @@ createdAt: new Date().toISOString()
       credits: Number(credits) || 150,
       statusAktif: true,
       status_aktif: true,
-      passwordPlain: pin,
-      password_plain: pin,
+      password: pin,
       phoneWa: cleanPhone,
       phone_wa: cleanPhone,
       packageTier: 'early_bird_lifetime',
@@ -381,7 +439,16 @@ createdAt: new Date().toISOString()
     await userDatabase.setUser(userId, newUser);
     res.json({
       success: true,
-      user: newUser,
+      user: {
+        id: userId,
+        uid: userId,
+        email: newUser.email,
+        name: newUser.name,
+        role: newUser.role,
+        credits: newUser.credits,
+        status_aktif: true,
+        phone_wa: cleanPhone
+      },
       pin,
       message: `Pengguna '${newUser.name}' berhasil didaftarkan dan diaktifkan dengan PIN: ${pin}`
     });
@@ -390,7 +457,7 @@ createdAt: new Date().toISOString()
   // Admin / Founder: Activate User & Top-up Credits
   app.post('/api/admin/users/:id/activate', verifyToken, requireRole(['founder', 'admin']), async (req: AuthenticatedRequest, res) => {
     const { id } = req.params;
-    const { credits = 150, role = 'user' } = req.body;
+    const { credits = 150 } = req.body;
     
     console.log(`[RBAC ADMIN] Founder/Admin '${req.user?.user_id}' activating user '${id}' with +${credits} credits...`);
     const updated = await userDatabase.activateUser(id, credits);
@@ -402,7 +469,15 @@ createdAt: new Date().toISOString()
     res.json({
       success: true,
       message: `User '${id}' berhasil diaktifkan dengan ${credits} kredit render.`,
-      user: updated
+      user: {
+        id: updated.uid,
+        uid: updated.uid,
+        email: updated.email,
+        name: updated.name,
+        role: updated.role,
+        credits: updated.credits,
+        status_aktif: updated.statusAktif
+      }
     });
   });
 
@@ -418,10 +493,17 @@ createdAt: new Date().toISOString()
       return res.status(404).json({ error: 'User tidak ditemukan.' });
     }
 
-    console.log(`[RBAC ADMIN] Founder/Admin '${req.user?.user_id}' reset password user '${id}' to: ${newPass}`);
+    console.log(`[RBAC ADMIN] Founder/Admin '${req.user?.user_id}' reset password user '${id}'`);
     res.json({
       success: true,
-      user: updated,
+      user: {
+        id: updated.uid,
+        uid: updated.uid,
+        email: updated.email,
+        name: updated.name,
+        role: updated.role,
+        credits: updated.credits
+      },
       newPassword: newPass,
       message: `Password akun ${updated.email} berhasil direset menjadi: ${newPass}`
     });
@@ -455,13 +537,18 @@ createdAt: new Date().toISOString()
 
     res.json({
       success: true,
-      user: updated,
+      user: {
+        id: updated.uid,
+        uid: updated.uid,
+        email: updated.email,
+        credits: updated.credits
+      },
       message: `Saldo kredit user ${updated.email} berhasil diperbarui menjadi ${updated.credits} kredit.`
     });
   });
 
-  // Utility: Generate Sample Token
-  app.get("/api/auth/token-sample", async (req, res) => {
+  // Utility: Generate Sample Token (Protected - Founder/Admin only)
+  app.get("/api/auth/token-sample", verifyToken, requireRole(['founder', 'admin']), async (req: AuthenticatedRequest, res) => {
     const sample = {
       user_id: 'user_pioneer_' + Math.random().toString(36).substring(2, 7),
       email: (req.query.email as string) || 'kreator@neuronna.ai',
@@ -469,9 +556,7 @@ createdAt: new Date().toISOString()
       role: ((req.query.role as any) || 'user'),
       credits: 150,
       status_aktif: true,
-      package_tier: 'early_bird_lifetime' as const,
-      // created_at: new Date().toISOString(),
-      // updated_at: new Date().toISOString()
+      package_tier: 'early_bird_lifetime' as const
     };
     await userDatabase.setUser(sample.user_id, sample);
     const token = generateToken(sample);
@@ -1854,6 +1939,11 @@ createdAt: new Date().toISOString()
         }
      }
      if (!project) return res.status(404).json({error: "Not found"});
+     if (project.overallProgress !== undefined && project.progress === undefined) {
+       project.progress = project.overallProgress;
+     } else if (project.progress !== undefined && project.overallProgress === undefined) {
+       project.overallProgress = project.progress;
+     }
      checkAndValidateProjectVideo(project);
      res.json(project);
   });

@@ -245,7 +245,7 @@ export class VideoEditor {
           const assPath = path.join(tempDir, `subs_${i}.ass`);
           let assContent = getAssHeader(subtitleStyle || 'Bold Pop', targetW, targetH);
           if (subtitleText && !isPlaceholderSubtitle(subtitleText)) {
-             assContent += getAssDialogueEvents(subtitleText, subtitleStyle || 'Bold Pop', 0.2, SCENE_DURATION - 0.2);
+             assContent += getAssDialogueEvents(subtitleText, subtitleStyle || 'Bold Pop', 0.2, SCENE_DURATION - 0.2, targetH);
           }
           fs.writeFileSync(assPath, assContent.replace(/\n/g, '\r\n')); // ensure CRLF for ffmpeg
 
@@ -257,8 +257,10 @@ export class VideoEditor {
             ffmpegArgs.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100');
           }
           
+          const fontsDir = path.resolve(process.cwd(), 'server', 'assets', 'fonts');
+          
           ffmpegArgs.push(
-            '-filter_complex', `[0:v]${scaleFilter},subtitles='${assPath.replace(/\\/g, '\\\\')}':fontsdir='${tempDir.replace(/\\/g, '\\\\')}'[v]${hasTts ? ';[1:a]apad[a]' : ''}`,
+            '-filter_complex', `[0:v]${scaleFilter},subtitles='${assPath.replace(/\\/g, '\\\\')}':fontsdir='${fontsDir.replace(/\\/g, '\\\\')}'[v]${hasTts ? ';[1:a]apad[a]' : ''}`,
             '-map', '[v]',
             '-map', hasTts ? '[a]' : '1:a:0',
             '-c:v', 'libx264',

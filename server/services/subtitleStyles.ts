@@ -29,31 +29,31 @@ export const SUBTITLE_PRESETS: Record<string, SubtitlePresetConfig> = {
     id: 'Bold Pop',
     name: 'Bold Pop',
     description: 'Teks tebal kuning khas TikTok/Shorts dengan outline hitam pekat dan drop shadow kontras tinggi.',
-    fontName: 'Liberation Sans', // Universally available in Linux container with bold TTF
-    baseFontSize: 52,            // Scaled dynamically by targetH / 720
+    fontName: 'Anton',           // Heavy display font specifically designed for punchy viral captions
+    baseFontSize: 52,            // Scaled dynamically by targetH / 720 (yields ~138px on 1080x1920)
     primaryColor: '&H0000FFFF',  // Vibrant TikTok Yellow (BGR: 00FFFF = RGB FFFF00)
     secondaryColor: '&H000000FF',
     outlineColor: '&H00000000',  // Deep pitch black stroke
-    backColor: '&H80000000',     // 50% opacity solid black drop shadow
-    bold: 1,
+    backColor: '&H00000000',     // 100% solid opaque black drop shadow (no transparency)
+    bold: 0,                     // Anton is natively heavy/black weight
     borderStyle: 1,              // Outline with drop shadow
-    outline: 5,                  // Thick border (5px on 720p base)
-    shadow: 3,                   // Distinct drop shadow offset
+    outline: 5.5,                // Scaled dynamically: ~15px on 1080x1920 (target ratio: 12-16px)
+    shadow: 3.5,                 // Scaled dynamically: ~9px on 1080x1920 (target ratio: 8-12px)
     marginVPercent: 0.12         // 12% from bottom
   },
   'Clean Minimal': {
     id: 'Clean Minimal',
     name: 'Clean Minimal',
     description: 'Sederhana dan elegan ala film bioskop / dokumenter, teks putih bersih dengan kotak latar semi-transparan.',
-    fontName: 'Liberation Sans',
-    baseFontSize: 36,
+    fontName: 'Montserrat',      // Clean modern geometric aesthetic
+    baseFontSize: 36,            // ~96px on 1080x1920
     primaryColor: '&H00FFFFFF',  // Pure crisp white
     secondaryColor: '&H000000FF',
     outlineColor: '&H00000000',
     backColor: '&H80141414',     // Semi-transparent dark background box (~50% alpha)
     bold: 0,                     // Clean regular weight
     borderStyle: 3,              // Background box mode (renders backdrop behind text)
-    outline: 4,                  // Inner padding of the background box
+    outline: 4.5,                // Scaled box padding (~12px on 1080x1920)
     shadow: 0,                   // No drop shadow needed with background box
     marginVPercent: 0.12
   },
@@ -61,15 +61,15 @@ export const SUBTITLE_PRESETS: Record<string, SubtitlePresetConfig> = {
     id: 'Neon Glow',
     name: 'Neon Glow',
     description: 'Teks bercahaya neon futuristik ala Cyberpunk dengan multi-layer aura magenta-cyan dan inti berpendar.',
-    fontName: 'Liberation Sans',
-    baseFontSize: 46,
+    fontName: 'Montserrat',      // Clean heavy weight for neon tubes
+    baseFontSize: 46,            // ~122px on 1080x1920
     primaryColor: '&H00FFFFFF',  // Brilliant white-hot incandescent core
     secondaryColor: '&H000000FF',
     outlineColor: '&H00FF00FF',  // Electric Neon Magenta (BGR: FF00FF)
     backColor: '&H00FFFF00',     // Electric Neon Cyan (BGR: FFFF00)
     bold: 1,
     borderStyle: 1,
-    outline: 3,
+    outline: 2.5,                // Scaled stroke width
     shadow: 0,                   // Multi-layer glow replaces flat shadow
     marginVPercent: 0.12
   }
@@ -89,8 +89,12 @@ export function formatAssTime(seconds: number): string {
 export function getAssHeader(styleName: string = 'Bold Pop', targetW: number = 720, targetH: number = 1280): string {
   const config = SUBTITLE_PRESETS[styleName] || SUBTITLE_PRESETS['Bold Pop'];
   
-  const fontSize = Math.floor(config.baseFontSize * (targetH / 720));
+  const scale = targetH / 720;
+  const fontSize = Math.floor(config.baseFontSize * scale);
+  const outline = Math.max(0, Math.round(config.outline * scale));
+  const shadow = Math.max(0, Math.round(config.shadow * scale));
   const marginV = Math.floor(targetH * config.marginVPercent);
+  const marginH = Math.max(20, Math.round(30 * scale));
   
   return `[Script Info]
 ScriptType: v4.00+
@@ -100,7 +104,7 @@ WrapStyle: 1
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${config.fontName},${fontSize},${config.primaryColor},${config.secondaryColor},${config.outlineColor},${config.backColor},${config.bold},0,0,0,100,100,0,0,${config.borderStyle},${config.outline},${config.shadow},2,20,20,${marginV},1
+Style: Default,${config.fontName},${fontSize},${config.primaryColor},${config.secondaryColor},${config.outlineColor},${config.backColor},${config.bold},0,0,0,100,100,0,0,${config.borderStyle},${outline},${shadow},2,${marginH},${marginH},${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -117,7 +121,8 @@ export function getAssDialogueEvents(
   text: string, 
   styleName: string = 'Bold Pop', 
   startSec: number = 0.2, 
-  endSec: number = 4.8
+  endSec: number = 4.8,
+  targetH: number = 1280
 ): string {
   const cleanText = text.replace(/[\r\n]+/g, ' ').trim();
   if (!cleanText) return '';
@@ -127,10 +132,14 @@ export function getAssDialogueEvents(
   const normalizedStyle = SUBTITLE_PRESETS[styleName] ? styleName : 'Bold Pop';
 
   if (normalizedStyle === 'Neon Glow') {
-    // True multi-layer neon sign simulation using 3 overlapping layers with gaussian blur
-    return `Dialogue: 0,${start},${end},Default,,0,0,0,,{\\blur12\\bord12\\1c&H00FF00FF&\\3c&H00FF00FF&\\fad(80,80)}${cleanText}
-Dialogue: 1,${start},${end},Default,,0,0,0,,{\\blur5\\bord6\\1c&H00FFFF00&\\3c&H00FFFF00&\\fad(80,80)}${cleanText}
-Dialogue: 2,${start},${end},Default,,0,0,0,,{\\blur1\\bord1.5\\1c&H00FFFFFF&\\3c&H00FF00FF&\\fad(80,80)}${cleanText}
+    // True multi-layer neon sign simulation using 3 overlapping layers with gaussian blur scaled to targetH
+    const scale = targetH / 720;
+    const b1 = (12 * scale).toFixed(1);
+    const b2 = (5 * scale).toFixed(1);
+    const b3 = (1.5 * scale).toFixed(1);
+    return `Dialogue: 0,${start},${end},Default,,0,0,0,,{\\blur${b1}\\bord${b1}\\1c&H00FF00FF&\\3c&H00FF00FF&\\fad(80,80)}${cleanText}
+Dialogue: 1,${start},${end},Default,,0,0,0,,{\\blur${b2}\\bord${b2}\\1c&H00FFFF00&\\3c&H00FFFF00&\\fad(80,80)}${cleanText}
+Dialogue: 2,${start},${end},Default,,0,0,0,,{\\blur${b3}\\bord${b3}\\1c&H00FFFFFF&\\3c&H00FF00FF&\\fad(80,80)}${cleanText}
 `;
   }
 
@@ -158,6 +167,6 @@ export function buildAssSubtitleContent(
   const header = getAssHeader(styleName, targetW, targetH);
   const startSec = 0.15;
   const endSec = Math.max(0.5, durationSeconds - 0.15);
-  const dialogue = getAssDialogueEvents(text, styleName, startSec, endSec);
+  const dialogue = getAssDialogueEvents(text, styleName, startSec, endSec, targetH);
   return header + dialogue;
 }

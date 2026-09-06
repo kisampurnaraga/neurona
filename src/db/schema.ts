@@ -7,6 +7,8 @@ export const users = sqliteTable('users', {
   name: text('name'),
   phoneWa: text('phone_wa'),
   passwordPlain: text('password_plain'),
+  passwordHash: text('password_hash'),
+  tokenVersion: integer('token_version').default(0),
   role: text('role').default('user'),
   credits: integer('credits').default(0),
   statusAktif: integer('status_aktif', { mode: 'boolean' }).default(false),

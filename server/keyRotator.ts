@@ -31,17 +31,41 @@ class ApiKeyRotatorService {
   }
 
   /**
+   * Validates whether a key is structurally compatible with Google Gemini GenerativeLanguage API
+   * (Standard API Keys begin with 'AIza', OAuth tokens with 'ya29.').
+   * Tokens starting with 'AQ.' belong to Google Veo / Vertex and will be blocked by Gemini Generative API.
+   */
+  public isCompatibleGeminiKey(key?: string): boolean {
+    if (!key || typeof key !== 'string') return false;
+    const clean = key.trim();
+    if (clean.startsWith('AQ.')) return false;
+    if (clean.startsWith('fal_') || clean.startsWith('sk-')) return false;
+    return clean.startsWith('AIza') || clean.startsWith('ya29.');
+  }
+
+  /**
    * Check if an active key exists for the given provider
    */
   public hasActiveKey(provider: 'gemini' | 'veo' | 'openai' | 'fal'): boolean {
     try {
       const rows = db.select().from(apiKeys).where(eq(apiKeys.provider, provider)).all();
-      const hasActive = rows.some(r => r.status === 'ACTIVE' || r.status === 'COOLDOWN');
+      const hasActive = rows.some(r => {
+        if (r.status !== 'ACTIVE' && r.status !== 'COOLDOWN') return false;
+        if (provider === 'gemini') {
+          const dec = decryptSecret(r.keyEncrypted);
+          return this.isCompatibleGeminiKey(dec);
+        }
+        return true;
+      });
       if (hasActive) return true;
 
       // Platform default environment variables if not disabled by error
-      if (provider === 'gemini' && process.env.GEMINI_API_KEY && !this.disabledEnvKeys.has(process.env.GEMINI_API_KEY)) {
-        return true;
+      if (provider === 'gemini') {
+        const envKey = process.env.GEMINI_MANUAL_API_KEY || process.env.GEMINI_API_KEY;
+        if (envKey && !this.disabledEnvKeys.has(envKey) && this.isCompatibleGeminiKey(envKey)) {
+          return true;
+        }
+        return false;
       }
       if (provider === 'veo') {
         if (process.env.VEO_API_KEY && !this.disabledEnvKeys.has(process.env.VEO_API_KEY)) return true;
@@ -216,9 +240,11 @@ class ApiKeyRotatorService {
    */
   public getNextGeminiKey(): string | null {
     const keyFromDb = this.getNextKeyForProvider('gemini');
-    if (keyFromDb) return keyFromDb;
-    if (process.env.GEMINI_API_KEY && !this.disabledEnvKeys.has(process.env.GEMINI_API_KEY)) {
-      return process.env.GEMINI_API_KEY;
+    if (keyFromDb && this.isCompatibleGeminiKey(keyFromDb)) return keyFromDb;
+
+    const envKey = process.env.GEMINI_MANUAL_API_KEY || process.env.GEMINI_API_KEY;
+    if (envKey && !this.disabledEnvKeys.has(envKey) && this.isCompatibleGeminiKey(envKey)) {
+      return envKey;
     }
     return null;
   }

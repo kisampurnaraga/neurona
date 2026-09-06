@@ -358,12 +358,17 @@ export default function App() {
   }, [currentUser]);
   const hasAutoOpenedStoryboardRef = useRef<string | null>(null);
 
-  // Auto-open storyboard when restoring from refresh
+  // Auto-open storyboard when restoring from refresh or when ready
   useEffect(() => {
     if (project && !isStoryboardMatrixOpen) {
-      if ((project.status === 'AWAITING_APPROVAL' || (project.progress >= 50 && project.storyboard?.scenes?.length)) && hasAutoOpenedStoryboardRef.current !== project.id) {
+      const prog = project.overallProgress ?? project.progress ?? 0;
+      const isReady = project.status === 'AWAITING_APPROVAL' || (prog >= 50 && Boolean(project.storyboard?.scenes?.length));
+      if (isReady && hasAutoOpenedStoryboardRef.current !== project.id) {
         hasAutoOpenedStoryboardRef.current = project.id;
-        setIsStoryboardMatrixOpen(true);
+        const timer = setTimeout(() => {
+          setIsStoryboardMatrixOpen(true);
+        }, 1100);
+        return () => clearTimeout(timer);
       }
     }
   }, [project, isStoryboardMatrixOpen]);
@@ -685,6 +690,7 @@ export default function App() {
       if (data.projectId && data.projectId !== projectId) {
         setProject(null);
         setIsDraftingNewProject(true);
+        hasAutoOpenedStoryboardRef.current = null;
         setProjectId(data.projectId);
       }
     } catch (e) {
@@ -865,9 +871,14 @@ export default function App() {
           setProject(update);
           setIsDraftingNewProject(false);
 
-          // Storyboard readiness tracked, auto-open delegated to the home hub interactive transition banner
-          if ((update.status === 'AWAITING_APPROVAL' || (update.progress >= 50 && update.storyboard?.scenes?.length)) && hasAutoOpenedStoryboardRef.current !== update.id) {
+          // Storyboard readiness tracked & auto-open triggered seamlessly
+          const prog = update.overallProgress ?? update.progress ?? 0;
+          const isReady = update.status === 'AWAITING_APPROVAL' || (prog >= 50 && Boolean(update.storyboard?.scenes?.length));
+          if (isReady && hasAutoOpenedStoryboardRef.current !== update.id) {
             hasAutoOpenedStoryboardRef.current = update.id;
+            setTimeout(() => {
+              setIsStoryboardMatrixOpen(true);
+            }, 1100);
           }
 
           // Vocal alert on key milestones
@@ -900,6 +911,14 @@ export default function App() {
           notFoundCount = 0; const update = await res.json().catch(() => null);
           if (update) {
             setIsDraftingNewProject(false);
+            const prog = update.overallProgress ?? update.progress ?? 0;
+            const isReady = update.status === 'AWAITING_APPROVAL' || (prog >= 50 && Boolean(update.storyboard?.scenes?.length));
+            if (isReady && hasAutoOpenedStoryboardRef.current !== update.id) {
+              hasAutoOpenedStoryboardRef.current = update.id;
+              setTimeout(() => {
+                setIsStoryboardMatrixOpen(true);
+              }, 1100);
+            }
             setProject(prev => {
               if (!prev || JSON.stringify(prev) !== JSON.stringify(update)) {
                 return update;

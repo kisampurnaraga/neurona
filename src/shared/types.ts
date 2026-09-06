@@ -195,6 +195,7 @@ export interface ProductionProject {
   videoModel?: 'kling' | 'seedance' | 'wan' | 'hunyuan' | 'minimax' | string;
   ttsVoiceConfig?: TTSVoiceConfig;
   overallProgress?: number; // 0 to 100%
+  progress?: number; // Standardized alias for overallProgress (0 to 100%)
   currentPhaseName?: string; // e.g. 'Perumusan Konsep (BATARA)', 'Perancangan Storyboard (SINTA)'
   affiliateConfig?: AffiliateConfig;
   animationConfig?: AnimationConfig;

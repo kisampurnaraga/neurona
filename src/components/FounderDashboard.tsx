@@ -178,8 +178,136 @@ const PaymentSettingsPanel = () => {
   );
 };
 
+const FounderChangePasswordPanel = () => {
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [status, setStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error', msg: string }>({ type: 'idle', msg: '' });
+
+  const handleChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      setStatus({ type: 'error', msg: 'Konfirmasi password baru tidak cocok.' });
+      return;
+    }
+    
+    // Validasi kompleksitas password Founder
+    const hasUpperCase = /[A-Z]/.test(newPassword);
+    const hasLowerCase = /[a-z]/.test(newPassword);
+    const hasNumbers = /\d/.test(newPassword);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(newPassword);
+    
+    if (newPassword.length < 12 || !hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
+      setStatus({ type: 'error', msg: 'Password harus min. 12 karakter dan mengandung huruf besar, huruf kecil, angka, dan simbol.' });
+      return;
+    }
+
+    setStatus({ type: 'loading', msg: 'Memvalidasi dan mengubah...' });
+
+    try {
+      const token = localStorage.getItem('neuronna_auth_token') || localStorage.getItem('neuronna_token') || '';
+      const res = await fetch('/api/auth/founder/change-password', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify({ oldPassword, newPassword })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setStatus({ type: 'error', msg: data.message || 'Gagal mengubah password.' });
+        return;
+      }
+
+      setStatus({ type: 'success', msg: 'Password berhasil diubah. Sesi lama dihentikan. Anda akan dilogout...' });
+      
+      // Logout and force redirect to home
+      setTimeout(() => {
+        localStorage.removeItem('neuronna_auth_token');
+        localStorage.removeItem('neuronna_user_session');
+        window.location.href = '/';
+      }, 3000);
+      
+    } catch (err) {
+      setStatus({ type: 'error', msg: 'Gagal terhubung ke server.' });
+    }
+  };
+
+  return (
+    <div className="bg-[#090910] p-6 rounded-xl border border-red-500/20 text-white shadow-2xl max-w-xl mx-auto mt-4">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-3 bg-red-500/10 rounded-lg">
+          <Shield className="text-red-400" size={24} />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold font-mono tracking-tight text-red-400 uppercase">Ubah Password Master</h3>
+          <p className="text-xs text-gray-500 font-mono mt-1">Mengubah password akan menghentikan (logout) semua sesi yang aktif.</p>
+        </div>
+      </div>
+
+      <form onSubmit={handleChange} className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium mb-1.5 font-mono text-gray-300">Password / Kunci Founder Saat Ini</label>
+          <input 
+            type="password" 
+            required
+            value={oldPassword}
+            onChange={(e) => setOldPassword(e.target.value)}
+            className="w-full bg-black/60 border border-white/10 focus:border-red-500/50 rounded-lg p-2.5 text-white outline-none font-mono text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1.5 font-mono text-gray-300">Password Baru</label>
+          <input 
+            type="password" 
+            required
+            minLength={12}
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            className="w-full bg-black/60 border border-white/10 focus:border-red-500/50 rounded-lg p-2.5 text-white outline-none font-mono text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1.5 font-mono text-gray-300">Konfirmasi Password Baru</label>
+          <input 
+            type="password" 
+            required
+            minLength={12}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            className="w-full bg-black/60 border border-white/10 focus:border-red-500/50 rounded-lg p-2.5 text-white outline-none font-mono text-sm"
+          />
+        </div>
+
+        {status.msg && (
+          <div className={`p-3 rounded-lg text-xs font-mono font-bold flex items-center gap-2 ${
+            status.type === 'error' ? 'bg-red-950/50 text-red-400 border border-red-500/30' :
+            status.type === 'success' ? 'bg-emerald-950/50 text-emerald-400 border border-emerald-500/30' :
+            'bg-blue-950/50 text-blue-400 border border-blue-500/30'
+          }`}>
+            {status.type === 'error' && <XCircle size={14} />}
+            {status.type === 'success' && <CheckCircle2 size={14} />}
+            {status.type === 'loading' && <RefreshCw size={14} className="animate-spin" />}
+            {status.msg}
+          </div>
+        )}
+
+        <button 
+          type="submit" 
+          disabled={status.type === 'loading' || status.type === 'success'}
+          className="w-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 disabled:opacity-50 text-white font-bold font-mono py-3 rounded-lg shadow-lg shadow-red-900/20 transition-all cursor-pointer flex items-center justify-center gap-2 uppercase tracking-wide text-xs mt-6"
+        >
+          <Key size={16} /> Update Password
+        </button>
+      </form>
+    </div>
+  );
+};
+
 export const FounderDashboard: React.FC<FounderDashboardProps> = ({ onBack }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'activation_form' | 'stats' | 'payment' | 'inspector' | 'settings'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'activation_form' | 'stats' | 'payment' | 'inspector' | 'settings' | 'change_password'>('users');
   const [isRotatorModalOpen, setIsRotatorModalOpen] = useState(false);
   
   // Form State for Manual Activation
@@ -573,6 +701,19 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
             <Settings size={15} />
             <span>Neurona Audio</span>
           </button>
+          
+          <button
+            onClick={() => setActiveTab('change_password')}
+            className={`shrink-0 flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
+              activeTab === 'change_password'
+                ? 'border-red-500 text-red-400 font-bold bg-red-950/20'
+                : 'border-transparent text-gray-400 hover:text-white'
+            }`}
+          >
+            <Shield size={15} />
+            <span>Ubah Password</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('inspector')}
             className={`shrink-0 flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
@@ -864,6 +1005,13 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
             </div>
           </div>
         )}
+        
+        {activeTab === 'change_password' && (
+          <div className="pt-4 pb-8">
+            <FounderChangePasswordPanel />
+          </div>
+        )}
+
         {activeTab === 'inspector' && (
           <FounderVideoInspector />
         )}

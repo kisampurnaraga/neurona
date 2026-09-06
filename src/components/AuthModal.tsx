@@ -286,23 +286,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onLoginSuccess(data.user, data.token);
       onClose();
     } catch (err: any) {
-      // Offline fallback check for test credentials
-      if (loginEmail.toLowerCase().includes('kreator') || loginEmail.toLowerCase().includes('demo')) {
-        const demoUser: UserSessionData = {
-          user_id: 'usr_demo_offline',
-          email: loginEmail,
-          name: loginEmail.split('@')[0],
-          role: 'user',
-          credits: 150,
-          status_aktif: true,
-          package_tier: 'early_bird_lifetime'
-        };
-        localStorage.setItem('neuronna_user_session', JSON.stringify(demoUser));
-        onLoginSuccess(demoUser, 'demo_token');
-        onClose();
-      } else {
-        setErrorMsg('Gagal terhubung ke server otentikasi. Silakan periksa koneksi Anda.');
-      }
+      setErrorMsg('Gagal terhubung ke server otentikasi. Silakan periksa koneksi Anda.');
     } finally {
       setIsLoading(false);
     }
@@ -339,27 +323,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onLoginSuccess(data.user, data.token);
       onClose();
     } catch (err) {
-      if (
-        founderKey.trim() === 'NEURONNA_FOUNDER_MASTER_2025' || 
-        founderKey.trim() === 'ia12aS87!' || 
-        founderKey.trim() === 'founder2026' || 
-        founderKey.trim() === 'neuronna2026'
-      ) {
-        const founderUser: UserSessionData = {
-          user_id: 'founder_root_001',
-          email: 'ia.asep12@gmail.com',
-          name: 'Asep (Founder & Master Architect)',
-          role: 'founder',
-          credits: 999999,
-          status_aktif: true,
-          package_tier: 'early_bird_lifetime'
-        };
-        localStorage.setItem('neuronna_user_session', JSON.stringify(founderUser));
-        onLoginSuccess(founderUser, 'founder_token');
-        onClose();
-      } else {
-        setErrorMsg('Otorisasi Founder gagal. Kunci tidak valid.');
-      }
+      setErrorMsg('Gagal memverifikasi Kunci Founder. Pastikan koneksi server aktif.');
     } finally {
       setIsLoading(false);
     }

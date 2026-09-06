@@ -78,6 +78,21 @@ import { CreditService } from "./creditService";
 import { getFalImageModelForStudio } from "./falModelConfig";
 
 export const projectEvents = new EventEmitter();
+
+// Intercept all projectEvents emit for 'update:*' to guarantee progress and overallProgress are completely synchronized
+const originalEmit = projectEvents.emit.bind(projectEvents);
+(projectEvents as any).emit = function (event: string | symbol, ...args: any[]) {
+  if (typeof event === 'string' && event.startsWith('update:') && args[0] && typeof args[0] === 'object') {
+    const proj = args[0];
+    if (proj.overallProgress !== undefined) {
+      proj.progress = proj.overallProgress;
+    } else if (proj.progress !== undefined) {
+      proj.overallProgress = proj.progress;
+    }
+  }
+  return originalEmit(event, ...args);
+};
+
 export const projects = new Map<string, ProductionProject>();
 
 import * as fs from 'fs';
@@ -1052,6 +1067,7 @@ export class ProductionOrchestrator {
       videoModel: selectedVideoModel,
       ttsVoiceConfig: selectedTTS,
       overallProgress: 10,
+      progress: 10,
       currentPhaseName: 'Merumuskan Konsep (BATARA - 10%)',
       attachedAssets: attachedAssets || [],
       affiliateConfig: resolvedType === 'AFFILIATE' ? {

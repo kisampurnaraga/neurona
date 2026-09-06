@@ -147,19 +147,20 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
   }
 
   const isCompleted = project?.status === 'COMPLETED';
-  const isStoryboardReady = !isCompleted && (project?.status === 'AWAITING_APPROVAL' || (project?.progress || 0) >= 50 || Boolean(project?.storyboard?.scenes && project.storyboard.scenes.length > 0));
+  const currentProgress = project?.overallProgress ?? project?.progress ?? 0;
+  const isStoryboardReady = !isCompleted && (project?.status === 'AWAITING_APPROVAL' || currentProgress >= 50 || Boolean(project?.storyboard?.scenes && project.storyboard.scenes.length > 0));
   const isVisualGenerating = project?.storyboard?.scenes?.some((s: any) => s.imageStatus === 'GENERATING') || false;
   const isVideoGenerating = project?.storyboard?.scenes?.some((s: any) => s.videoStatus === 'GENERATING') || false;
-  const isRendering = (project?.status === 'IN_PROGRESS' && (project?.progress || 0) >= 50) || isVideoGenerating;
+  const isRendering = (project?.status === 'IN_PROGRESS' && currentProgress >= 50) || isVideoGenerating;
 
   // Show banner when storyboard is ready
   useEffect(() => {
-    if (hubState === 'READY' && isStoryboardReady && !hasDismissedBanner) {
+    if ((hubState === 'READY' || isStoryboardReady) && !hasDismissedBanner) {
       setShowReadyBanner(true);
     } else {
       setShowReadyBanner(false);
     }
-  }, [hubState, isStoryboardReady]);
+  }, [hubState, isStoryboardReady, hasDismissedBanner]);
 
   // Voice subscription & Voice waveform simulation
   useEffect(() => {
@@ -170,11 +171,15 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
         neuronaVoice.playChime('SUCCESS');
         setTimeout(() => {
           setIsHypeActive(false);
+          // Automatically trigger Storyboard modal when SINTA / speech completion hype finishes
+          if (isStoryboardReady || hubState === 'READY' || project?.status === 'AWAITING_APPROVAL') {
+            handleOpenStoryboard();
+          }
         }, 1200);
       }
     });
     return () => unsub();
-  }, []);
+  }, [isStoryboardReady, hubState, project?.status]);
 
   // Real-time audio analyser loop
   useEffect(() => {
@@ -200,11 +205,29 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
       neuronaVoice.playChime('SUCCESS');
       const timer = setTimeout(() => {
         setIsHypeActive(false);
+        if (isStoryboardReady || hubState === 'READY' || project?.status === 'AWAITING_APPROVAL') {
+          handleOpenStoryboard();
+        }
       }, 1200);
       return () => clearTimeout(timer);
     }
     prevSpeakingRef.current = isSpeaking;
-  }, [isSpeaking, isHypeActive]);
+  }, [isSpeaking, isHypeActive, isStoryboardReady, hubState, project?.status]);
+
+  // Robust safeguard auto-opener: If SINTA finishes and project becomes ready, ensure Storyboard opens automatically
+  const hasAutoTriggeredStoryboardRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isStoryboardReady && project?.id && hasAutoTriggeredStoryboardRef.current !== project.id) {
+      hasAutoTriggeredStoryboardRef.current = project.id;
+      setIsHypeActive(true);
+      neuronaVoice.playChime('SUCCESS');
+      const timer = setTimeout(() => {
+        setIsHypeActive(false);
+        handleOpenStoryboard();
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [isStoryboardReady, project?.id]);
 
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -293,16 +316,16 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
     {
       id: 'storyboard',
       label: 'STORYBOARD',
-      desc: hubState === 'COMPLETED' ? '100% Selesai (Video Rendered)' : hubState === 'STORYBOARDING' ? 'GATOTKACA Scene Planning' : isStoryboardReady ? '50% Selesai (Tinjau Adegan)' : 'Scene Planning',
-      color: '#c084fc', // Purple
-      glow: hubState === 'STORYBOARDING' ? 'rgba(192, 132, 252, 0.9)' : 'rgba(192, 132, 252, 0.5)',
-      border: hubState === 'STORYBOARDING' ? 'border-purple-400 ring-2 ring-purple-400 animate-pulse' : 'border-purple-400',
-      bg: hubState === 'STORYBOARDING' ? 'bg-purple-500/30 shadow-[0_0_30px_#c084fc]' : 'bg-purple-500/15',
+      desc: hubState === 'COMPLETED' ? '100% Selesai (Video Rendered)' : hubState === 'STORYBOARDING' ? 'GATOTKACA Scene Planning' : isStoryboardReady ? '50% Selesai (Klik Tinjau Adegan)' : 'Scene Planning',
+      color: isStoryboardReady ? '#10b981' : '#c084fc',
+      glow: isStoryboardReady ? 'rgba(16, 185, 129, 0.95)' : hubState === 'STORYBOARDING' ? 'rgba(192, 132, 252, 0.9)' : 'rgba(192, 132, 252, 0.5)',
+      border: isStoryboardReady ? 'border-emerald-400 ring-4 ring-emerald-400/80 animate-pulse shadow-[0_0_35px_#10b981]' : hubState === 'STORYBOARDING' ? 'border-purple-400 ring-2 ring-purple-400 animate-pulse' : 'border-purple-400',
+      bg: isStoryboardReady ? 'bg-emerald-500/30 shadow-[0_0_30px_#10b981]' : hubState === 'STORYBOARDING' ? 'bg-purple-500/30 shadow-[0_0_30px_#c084fc]' : 'bg-purple-500/15',
       icon: Layers,
       angle: -45, // Top Right
-      isActive: hubState === 'STORYBOARDING',
+      isActive: hubState === 'STORYBOARDING' || isStoryboardReady,
       isDone: hubState === 'READY' || isCompleted,
-      badge: hubState === 'COMPLETED' ? 'FINAL (100%)' : isStoryboardReady ? 'READY (50%)' : undefined,
+      badge: hubState === 'COMPLETED' ? 'FINAL (100%)' : isStoryboardReady ? 'SIAP TINJAU (KLIK)' : undefined,
       action: handleOpenStoryboard
     },
     {
@@ -316,7 +339,7 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
       icon: ImageIcon,
       angle: 0, // Right
       isActive: isVisualGenerating,
-      isDone: project?.progress && project.progress >= 70,
+      isDone: currentProgress >= 70,
       badge: isVisualGenerating ? 'GENERATING' : undefined,
       action: onOpenStudioSelector || onOpenVisualStudio
     },
@@ -704,10 +727,19 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
 
                 {/* Central AI Director Core Disc */}
                 <div 
-                  onClick={() => onInteract()}
+                  onClick={() => {
+                    if (isStoryboardReady || isHypeActive || hubState === 'READY') {
+                      handleOpenStoryboard();
+                    } else {
+                      onInteract();
+                    }
+                  }}
+                  title={isStoryboardReady ? 'Storyboard Siap — Klik untuk Membuka' : isHypeActive ? 'Membuka Storyboard...' : 'AI Director Core'}
                   style={{
                     boxShadow: isHypeActive
                       ? '0 0 80px rgba(245, 158, 11, 0.95), 0 0 40px rgba(6, 182, 212, 0.8), 0 0 120px rgba(168, 85, 247, 0.6)'
+                      : isStoryboardReady
+                      ? '0 0 60px rgba(16, 185, 129, 0.85), 0 0 30px rgba(6, 182, 212, 0.6)'
                       : isSpeaking
                       ? `0 0 ${35 + waveform[2] * 45}px ${(hubState === 'THINKING' || hubState === 'WRITING') ? '#f59e0b' : '#6366f1'}, 0 0 ${15 + waveform[5] * 25}px #06b6d4`
                       : undefined
@@ -715,6 +747,8 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                   className={`relative z-10 w-36 h-36 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-[#0e1630] via-[#141d3d] to-[#1e143b] border-2 ${
                     isHypeActive
                       ? 'border-amber-300 scale-110 ring-4 ring-amber-400/80 transition-all duration-300'
+                      : isStoryboardReady
+                      ? 'border-emerald-400 ring-4 ring-emerald-400/80 shadow-[0_0_50px_#10b981] animate-pulse'
                       : hubState === 'COMPLETED'
                       ? 'border-emerald-400 shadow-[0_0_50px_#10b981]'
                       : (hubState === 'THINKING' || hubState === 'WRITING')
@@ -977,6 +1011,19 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                       ? 'Naskah dan Storyboard telah selesai disusun! Silakan periksa adegan dan setujui untuk merender video utuh.' 
                       : 'NEURONA Director Core Online. Pilih salah satu studio (Animasi, Affiliate, Edukasi) atau masukkan ide cerita Anda di bawah.'}
                   </p>
+
+                  {/* Fallback Action Button when Storyboard is Ready */}
+                  {isStoryboardReady && (
+                    <div className="pt-1 flex items-center gap-3">
+                      <button
+                        onClick={handleOpenStoryboard}
+                        className="px-4 py-2 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 hover:from-emerald-400 hover:to-teal-400 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-500/25 animate-pulse transition-all cursor-pointer"
+                      >
+                        <Layers className="w-4 h-4" />
+                        <span>Buka Storyboard & Tinjau Adegan (50%)</span>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Feature Tags */}
                   <div className="flex flex-wrap gap-1.5 pt-1">

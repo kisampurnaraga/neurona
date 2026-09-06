@@ -189,6 +189,7 @@ export const SUPPORTED_VOICE_PRESETS: VoiceOption[] = [
 
 export class TTSService {
   private static gcpTtsClient: TextToSpeechClient | null = null;
+  private static gcpTtsDisabled = false;
 
   private static getGcpTtsClient(): TextToSpeechClient | null {
     if (!this.gcpTtsClient) {
@@ -268,7 +269,12 @@ export class TTSService {
       return { buffer, tempFilePath: tempPath };
     } else {
       const errTxt = await response.text().catch(() => '');
-      console.warn(`[TTSService] OpenAI TTS error (${response.status}): ${errTxt}`);
+      if (response.status === 401 || response.status === 403) {
+        keyRotator.reportKeyError('openai', openAIKey, `HTTP ${response.status}: ${errTxt}`);
+        console.warn(`[TTSService] OpenAI TTS error (${response.status}): Invalid or unauthorized API key. Key auto-disabled; falling back.`);
+      } else {
+        console.warn(`[TTSService] OpenAI TTS error (${response.status}): ${errTxt}`);
+      }
       return null;
     }
   }
@@ -385,7 +391,7 @@ export class TTSService {
     }
 
     // 3. Google Cloud Text-to-Speech API
-    const client = this.getGcpTtsClient();
+    const client = !this.gcpTtsDisabled ? this.getGcpTtsClient() : null;
     if (client) {
       try {
         console.log(`[TTSService] Generating Google Cloud TTS with voice '${voiceType}'...`);
@@ -403,7 +409,12 @@ export class TTSService {
           },
         };
 
-        const [response] = await client.synthesizeSpeech(request);
+        const synthPromise = client.synthesizeSpeech(request);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("GCP TTS synthesizeSpeech timed out")), 3500)
+        );
+        const [response] = await Promise.race([synthPromise, timeoutPromise]);
+
         if (response.audioContent && response.audioContent.length > 0) {
           const audioBuffer = Buffer.from(response.audioContent);
           const tempPath = path.join(os.tmpdir(), `gcp_tts_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.mp3`);
@@ -412,75 +423,67 @@ export class TTSService {
           return { buffer: audioBuffer, tempFilePath: tempPath };
         }
       } catch (gcpErr: any) {
-        console.warn(`[TTSService] Google Cloud TTS Notice (${gcpErr?.message}). Falling back to Gemini Flash TTS...`);
+        if (gcpErr?.message?.includes('PERMISSION_DENIED') || gcpErr?.message?.includes('timed out')) {
+          this.gcpTtsDisabled = true;
+        }
+        console.warn(`[TTSService] Google Cloud TTS Notice (${gcpErr?.message}). Proceeding to next provider...`);
       }
     }
 
     // 4. Gemini Flash Native Speech AI (via KeyRotator)
-    try {
-      const isMale = voiceType.toLowerCase().includes('male') || voiceType.endsWith('B') || voiceType.endsWith('D');
-      const geminiVoice = isMale ? 'Puck' : 'Kore';
-      const promptText = isMale
-        ? `Bicaralah dengan intonasi pria yang ramah, artikulatif, natural, dan berwibawa: "${cleanText}"`
-        : `Bicaralah dengan intonasi wanita yang ceria, ramah, memikat, artikulatif, dan natural: "${cleanText}"`;
+    if (keyRotator.hasActiveKey('gemini')) {
+      try {
+        const isMale = voiceType.toLowerCase().includes('male') || voiceType.endsWith('B') || voiceType.endsWith('D');
+        const geminiVoice = isMale ? 'Puck' : 'Kore';
+        const promptText = isMale
+          ? `Bicaralah dengan intonasi pria yang ramah, artikulatif, natural, dan berwibawa: "${cleanText}"`
+          : `Bicaralah dengan intonasi wanita yang ceria, ramah, memikat, artikulatif, dan natural: "${cleanText}"`;
 
-      const candidateModels = ['gemini-3.1-flash-tts-preview', 'gemini-3.6-flash'];
+        const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 
-      const result = await keyRotator.executeGeminiWithRotation(async (ai) => {
-        for (const modelName of candidateModels) {
-          try {
-            const response = await ai.models.generateContent({
-              model: modelName,
-              contents: [{ parts: [{ text: promptText }] }],
-              config: {
-                responseModalities: [Modality.AUDIO],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: geminiVoice }
+        const result = await keyRotator.executeGeminiWithRotation(async (ai) => {
+          for (const modelName of candidateModels) {
+            try {
+              const response = await ai.models.generateContent({
+                model: modelName,
+                contents: [{ parts: [{ text: promptText }] }],
+                config: {
+                  responseModalities: [Modality.AUDIO],
+                  speechConfig: {
+                    voiceConfig: {
+                      prebuiltVoiceConfig: { voiceName: geminiVoice }
+                    }
                   }
                 }
+              });
+
+              const part = response.candidates?.[0]?.content?.parts?.[0];
+              const base64Audio = part?.inlineData?.data;
+
+              if (base64Audio) {
+                const rawBuffer = Buffer.from(base64Audio, 'base64');
+                const wavBuffer = this.pcmToWav(rawBuffer, 24000);
+                const tempPath = path.join(os.tmpdir(), `gemini_tts_${Date.now()}.wav`);
+                fs.writeFileSync(tempPath, wavBuffer);
+                console.log(`[TTSService] Gemini Speech synthesized successfully (${wavBuffer.length} bytes)`);
+                return { buffer: wavBuffer, tempFilePath: tempPath };
               }
-            });
-
-            const part = response.candidates?.[0]?.content?.parts?.[0];
-            const base64Audio = part?.inlineData?.data;
-
-            if (base64Audio) {
-              const rawBuffer = Buffer.from(base64Audio, 'base64');
-              const wavBuffer = this.pcmToWav(rawBuffer, 24000);
-              const tempPath = path.join(os.tmpdir(), `gemini_tts_${Date.now()}.wav`);
-              fs.writeFileSync(tempPath, wavBuffer);
-              console.log(`[TTSService] Gemini Speech synthesized successfully (${wavBuffer.length} bytes)`);
-              return { buffer: wavBuffer, tempFilePath: tempPath };
+            } catch (mErr: any) {
+              console.log(`[TTSService] Model ${modelName} failed: ${mErr.message}`);
             }
-          } catch (mErr: any) {
-            console.log(`[TTSService] Model ${modelName} failed: ${mErr.message}`);
           }
-        }
-        throw new Error("Failed to synthesize via all Gemini models.");
-      });
+          throw new Error("Failed to synthesize via all Gemini models.");
+        });
 
-      if (result) return result;
-    } catch (geminiErr: any) {
-      console.log(`[TTSService] Gemini Flash TTS notice: ${geminiErr?.message || geminiErr}`);
-    }
-
-    // 5. Try Google Translate TTS as fast online fallback
-    try {
-      const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=id&client=tw-ob`;
-      const gResp = await fetch(googleTtsUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-      });
-      if (gResp.ok) {
-        const arrBuf = await gResp.arrayBuffer();
-        const buffer = Buffer.from(arrBuf);
-        const tempPath = path.join(os.tmpdir(), `gtrans_tts_${Date.now()}.mp3`);
-        fs.writeFileSync(tempPath, buffer);
-        return { buffer, tempFilePath: tempPath };
+        if (result) return result;
+      } catch (geminiErr: any) {
+        console.log(`[TTSService] Gemini Flash TTS notice: ${geminiErr?.message || geminiErr}`);
       }
-    } catch (gtErr) {
-      console.warn('[TTSService] Google Translate TTS fallback error:', gtErr);
     }
+
+    // 5. Try Google Speech / Translate TTS with automatic chunking (No API key required)
+    const gSpeechRes = await this.generateGoogleTranslateSpeech(cleanText, preset.languageCode?.startsWith('en') ? 'en' : 'id');
+    if (gSpeechRes) return gSpeechRes;
 
     // 6. Acoustic Harmonic Fail-Safe
     console.log(`[TTSService] Using studio acoustic audio fallback.`);
@@ -489,6 +492,66 @@ export class TTSService {
     const tempPath = path.join(os.tmpdir(), `studio_harmonic_${Date.now()}.wav`);
     fs.writeFileSync(tempPath, fallbackBuffer);
     return { buffer: fallbackBuffer, tempFilePath: tempPath };
+  }
+
+  /**
+   * Generates natural, fluent speech via Google Speech service.
+   * Breaks long text into chunks <= 180 chars to avoid service limits.
+   */
+  public static async generateGoogleTranslateSpeech(text: string, lang = 'id'): Promise<{ buffer: Buffer; tempFilePath: string } | null> {
+    try {
+      const sentences = text.match(/[^.!?\n]+[.!?\n]*/g) || [text];
+      const chunks: string[] = [];
+      let current = '';
+
+      for (const s of sentences) {
+        if ((current + ' ' + s).trim().length <= 180) {
+          current = (current + ' ' + s).trim();
+        } else {
+          if (current) chunks.push(current);
+          if (s.length > 180) {
+            const words = s.split(' ');
+            let sub = '';
+            for (const w of words) {
+              if ((sub + ' ' + w).trim().length <= 180) {
+                sub = (sub + ' ' + w).trim();
+              } else {
+                if (sub) chunks.push(sub);
+                sub = w;
+              }
+            }
+            if (sub) chunks.push(sub);
+            current = '';
+          } else {
+            current = s.trim();
+          }
+        }
+      }
+      if (current) chunks.push(current);
+
+      const buffers: Buffer[] = [];
+      for (const chunk of chunks) {
+        if (!chunk.trim()) continue;
+        const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk.trim())}&tl=${lang}&client=tw-ob`;
+        const gResp = await fetch(googleTtsUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        });
+        if (!gResp.ok) throw new Error(`Google Translate TTS failed with status ${gResp.status}`);
+        const arrBuf = await gResp.arrayBuffer();
+        buffers.push(Buffer.from(arrBuf));
+      }
+
+      if (buffers.length > 0) {
+        const fullBuffer = Buffer.concat(buffers);
+        const tempPath = path.join(os.tmpdir(), `gtrans_tts_${Date.now()}.mp3`);
+        fs.writeFileSync(tempPath, fullBuffer);
+        console.log(`[TTSService] Google Speech synthesized successfully (${fullBuffer.length} bytes, ${chunks.length} chunks) -> ${tempPath}`);
+        return { buffer: fullBuffer, tempFilePath: tempPath };
+      }
+    } catch (gtErr: any) {
+      console.warn('[TTSService] Google Speech fallback error:', gtErr?.message || gtErr);
+    }
+    return null;
   }
 
   public static async generateTTS(provider: string, text: string, config?: any): Promise<Buffer> {
