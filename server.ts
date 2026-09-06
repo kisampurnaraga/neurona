@@ -1,3 +1,4 @@
+import { validateProxyUrl } from './server/utils/ssrf.ts';
 import "dotenv/config";
 import { NeuronaChatService } from './server/neuronaChatService';
 import http from "http";
@@ -20,6 +21,7 @@ import { TTSService, SUPPORTED_VOICE_PRESETS } from "./server/services/ttsServic
 import { isPlaceholderSubtitle } from "./server/utils/subtitleUtils";
 import { GCSStreamService } from "./server/services/gcsStreamService";
 import { verifyToken, requireRole, generateToken, userDatabase, AuthenticatedRequest, UserSession } from "./server/middleware/auth";
+import { AuditLogger } from "./server/utils/auditLogger";
 import videoStudioRouter from "./server/routes/videoStudio";
 import workerRouter from "./server/routes/workerRoute";
 import founderPaymentRouter from "./server/routes/founderPayment";
@@ -90,12 +92,14 @@ async function startServer() {
 
   
   
-  app.post('/api/founder/update-key', (req, res) => {
+  app.post('/api/founder/update-key', verifyToken, requireRole(['founder']), (req: AuthenticatedRequest, res) => {
     const { key } = req.body;
     if (key) {
       process.env.GEMINI_MANUAL_API_KEY = key;
+      AuditLogger.log('UPDATE_MANUAL_API_KEY', req.user!.user_id, null, 'Founder memperbarui API key manual');
     } else {
       delete process.env.GEMINI_MANUAL_API_KEY;
+      AuditLogger.log('DELETE_MANUAL_API_KEY', req.user!.user_id, null, 'Founder menghapus API key manual');
     }
     res.json({ success: true });
   });
@@ -437,6 +441,7 @@ async function startServer() {
     };
 
     await userDatabase.setUser(userId, newUser);
+    AuditLogger.log('CREATE_USER', req.user!.user_id, userId, `Founder/Admin mendaftarkan user baru (Email: ${newUser.email}, Role: ${newUser.role})`);
     res.json({
       success: true,
       user: {
@@ -459,13 +464,13 @@ async function startServer() {
     const { id } = req.params;
     const { credits = 150 } = req.body;
     
-    console.log(`[RBAC ADMIN] Founder/Admin '${req.user?.user_id}' activating user '${id}' with +${credits} credits...`);
     const updated = await userDatabase.activateUser(id, credits);
     
     if (!updated) {
       return res.status(404).json({ error: 'User not found in registry.' });
     }
     
+    AuditLogger.log('ACTIVATE_USER', req.user!.user_id, id, `Founder/Admin mengaktifkan user dan memberikan ${credits} kredit awal`);
     res.json({
       success: true,
       message: `User '${id}' berhasil diaktifkan dengan ${credits} kredit render.`,
@@ -493,7 +498,7 @@ async function startServer() {
       return res.status(404).json({ error: 'User tidak ditemukan.' });
     }
 
-    console.log(`[RBAC ADMIN] Founder/Admin '${req.user?.user_id}' reset password user '${id}'`);
+    AuditLogger.log('RESET_USER_PASSWORD', req.user!.user_id, id, 'Founder/Admin me-reset password user');
     res.json({
       success: true,
       user: {
@@ -518,7 +523,7 @@ async function startServer() {
       return res.status(404).json({ error: 'User tidak ditemukan atau sudah dihapus.' });
     }
 
-    console.log(`[RBAC ADMIN] Founder/Admin '${req.user?.user_id}' deleted user '${id}'`);
+    AuditLogger.log('DELETE_USER_ACCOUNT', req.user!.user_id, id, 'Founder/Admin menghapus akun user secara permanen');
     res.json({
       success: true,
       message: `Akun user '${id}' telah berhasil dihapus secara permanen.`
@@ -535,6 +540,7 @@ async function startServer() {
       return res.status(404).json({ error: 'User tidak ditemukan.' });
     }
 
+    AuditLogger.log('MANUAL_CREDIT_ADJUSTMENT', req.user!.user_id, id, `Founder/Admin menyesuaikan kredit manual sebesar ${amount} (isDelta: ${isDelta})`);
     res.json({
       success: true,
       user: {
@@ -1064,6 +1070,14 @@ async function startServer() {
   app.post('/api/projects/:id/generate-scene-video', async (req, res) => {
     try {
       const { sceneId, videoModel } = req.body;
+      const project = projects.get(req.params.id);
+      if (!project) return res.status(404).json({ error: 'Project not found' });
+      
+      // HARD GATE: Cannot render video before storyboard is approved
+      if (['DRAFT', 'BRIEFING', 'STORYBOARDING', 'AWAITING_APPROVAL'].includes(project.status || 'DRAFT')) {
+         return res.status(403).json({ error: `Video tidak bisa mulai di-render sebelum storyboard di-approve. Status saat ini: ${project.status}` });
+      }
+
       // Do not await to avoid 504 timeouts on the frontend. The video generation takes minutes.
       // The frontend will poll the project state to see the updated videoUrl.
       ProductionOrchestrator.generateSceneVideo(req.params.id, sceneId, videoModel).catch(err => {
@@ -1075,10 +1089,11 @@ async function startServer() {
     }
   });
 
-  app.get('/api/admin/diagnostics/video-models', async (req, res) => {
+  app.get('/api/admin/diagnostics/video-models', verifyToken, requireRole(['founder', 'admin']), async (req: AuthenticatedRequest, res) => {
     try {
       const { runVideoModelsDiagnostic } = await import('./src/server/diagnostics');
       const results = await runVideoModelsDiagnostic();
+      AuditLogger.log('RUN_DIAGNOSTICS', req.user!.user_id, null, 'Founder/Admin menjalankan diagnostik model video');
       res.json({ success: true, results });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -1142,10 +1157,17 @@ async function startServer() {
         return res.status(400).json({ error: 'ID Proyek tidak valid atau tidak disertakan.' });
       }
 
+      const project = projects.get(projectId);
+      if (!project) return res.status(404).json({ error: 'Project not found' });
+
+      // HARD GATE: Cannot stitch video before storyboard is approved
+      if (['DRAFT', 'BRIEFING', 'STORYBOARDING', 'AWAITING_APPROVAL'].includes(project.status || 'DRAFT')) {
+         return res.status(403).json({ error: `Video tidak bisa digabungkan sebelum storyboard di-approve. Status saat ini: ${project.status}` });
+      }
+
       const { subtitleStyle, ttsVoiceConfig, scenes } = body;
       
       // Update status immediately so client knows it's processing
-      const project = projects.get(projectId);
       if (project) {
         if (Array.isArray(scenes) && scenes.length > 0 && project.storyboard?.scenes) {
           scenes.forEach((sc: any, idx: number) => {
@@ -1286,6 +1308,11 @@ async function startServer() {
       const url = req.query.url as string;
       if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
         return res.status(400).json({ error: 'Valid URL is required' });
+      }
+      
+      const isSafe = await validateProxyUrl(url);
+      if (!isSafe) {
+        return res.status(403).json({ error: 'Forbidden: Unauthorized proxy destination or blocked IP' });
       }
 
       const headers: Record<string, string> = {
@@ -2014,6 +2041,11 @@ async function startServer() {
       const url = req.query.url as string;
       if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
         return res.status(400).json({ error: 'Valid URL is required' });
+      }
+
+      const isSafe = await validateProxyUrl(url);
+      if (!isSafe) {
+        return res.status(403).json({ error: 'Forbidden: Unauthorized proxy destination or blocked IP' });
       }
       const response = await fetch(url);
       if (!response.ok) {

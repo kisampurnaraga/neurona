@@ -13,19 +13,25 @@ export class ConversationalIntentRouter {
     const p = prompt.toLowerCase().trim();
     
     // WAKE
-    if (/^(neurona|hey neurona|neurona\?|halo neurona)$/.test(p)) {
+    if (/^(neurona|hey neurona|neurona\?|halo neurona)[.!?]*$/.test(p)) {
       return { intent: 'WAKE', response: 'Ya, Bos. NEURONA siap bertugas. Mau produksi video apa hari ini?' };
     }
     
     // GREETING
-    if (/^(hello|hi|halo|selamat pagi|selamat siang|selamat sore|selamat malam)( neurona)?$/.test(p)) {
+    if (/^(hello|hi|halo|selamat pagi|selamat siang|selamat sore|selamat malam)( neurona)?[.!?]*$/.test(p)) {
       return { intent: 'GREETING', response: 'Hello Bos. Studio produksi siap. Anda bisa pilih membuat Video Animasi (3D/Anime), Video Pembelajaran Edukasi, atau Video Affiliate Produk.' };
     }
 
     // APPROVAL / CONTINUE
-    if (p === 'lanjut' || p === 'lanjutkan' || p === 'oke lanjut' || p === 'gas' || p === 'mulai render' || p === 'eksekusi') {
+    if (/^(lanjut|lanjutkan|oke lanjut|gas|mulai render|eksekusi)[.!?]*$/.test(p)) {
       if (project?.status === 'AWAITING_APPROVAL') {
         return { intent: 'APPROVAL', response: 'Siap Bos! Node produksi diaktifkan, rendering visual adegan sedang dieksekusi oleh AI Video Director.', action: 'APPROVE' };
+      } else if (project?.status === 'STORYBOARDING' || project?.status === 'BRIEFING') {
+        return { intent: 'AMBIGUOUS', response: 'Sabar Bos, tim kreatif masih merumuskan storyboard. Tunggu sampai selesai ya.' };
+      } else if (project?.status === 'PRODUCING' || project?.status === 'ASSEMBLING' || project?.status === 'PROCESSING') {
+        return { intent: 'AMBIGUOUS', response: 'Produksi sedang berjalan Bos. Silakan pantau progress di layar.' };
+      } else if (project?.status === 'COMPLETED') {
+        return { intent: 'AMBIGUOUS', response: 'Video ini sudah selesai diproduksi Bos. Ingin membuat video baru?' };
       } else {
         return { intent: 'AMBIGUOUS', response: 'Siap, Bos. Mau melanjutkan proses produksi yang mana?' };
       }
@@ -42,20 +48,19 @@ export class ConversationalIntentRouter {
       p.includes('gpt4') ||
       p.includes('ganti model')
     ) {
-      process.env.LLM_PROVIDER = 'openai';
-      process.env.OPENAI_MODEL = 'gpt-4o';
+      
       return { 
         intent: 'SWITCH_MODEL_OPENAI', 
-        response: 'Siap Bos! Model AI dialihkan ke OpenAI ChatGPT 4.0 (GPT-4o). Seluruh perumusan ide cerita, skrip adegan, dan prompt visual teknis akan diproses langsung menggunakan GPT-4o.' 
+        response: 'Untuk mengubah model AI ke OpenAI, silakan atur melalui Founder Control Center (FCC) di pojok kanan atas agar tersimpan aman di database.' 
       };
     }
 
     // FOUNDER CONTROL CENTER / HUD
-    if (/^(buka founder( control center)?|akses founder|founder control center|control center founder|buka fcc)$/.test(p)) {
+    if (/^(buka founder( control center)?|akses founder|founder control center|control center founder|buka fcc)[.!?]*$/.test(p)) {
       return { intent: 'FOUNDER_ACCESS', response: 'Membuka Founder Control Center...', action: 'OPEN_FOUNDER' };
     }
 
-    if (/^(buka hud|mode hud|avengers protocol|hud mode|tampilkan hud|radar node)$/.test(p)) {
+    if (/^(buka hud|mode hud|avengers protocol|hud mode|tampilkan hud|radar node)[.!?]*$/.test(p)) {
       return { intent: 'HUD_ACCESS', response: 'Mengaktifkan mode Holographic HUD Node Command Center...', action: 'TOGGLE_HUD' };
     }
 

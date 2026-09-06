@@ -317,9 +317,16 @@ export const userDatabase = {
   },
   resetPassword: async (userId: string, newPasswordPlain: string) => {
     const hash = bcrypt.hashSync(newPasswordPlain.trim(), 10);
+    const target = await db.select().from(users).where(or(eq(users.uid, userId), eq(users.email, userId.toLowerCase()))).limit(1);
+    if (!target || target.length === 0) return null;
+    
+    const user = target[0];
+    const newVersion = (user.tokenVersion || 0) + 1;
+
     const res = await db.update(users).set({ 
       passwordHash: hash,
-      passwordPlain: null 
+      passwordPlain: null,
+      tokenVersion: newVersion
     }).where(or(eq(users.uid, userId), eq(users.email, userId.toLowerCase()))).returning();
     return res[0] || null;
   },

@@ -800,7 +800,7 @@ export function startStaleJobSweeper() {
     let changed = false;
     const now = Date.now();
     for (const [id, project] of projects.entries()) {
-      if (project.status === 'PROCESSING') {
+      if (['PRODUCING', 'ASSEMBLING', 'PROCESSING', 'STORYBOARDING', 'BRIEFING'].includes(project.status)) {
         const lastUpdate = project.updatedAt ? new Date(project.updatedAt).getTime() : 0;
         // 15 minutes timeout for stitching/processing
         if (now - lastUpdate > 15 * 60 * 1000) {
@@ -818,8 +818,99 @@ export function startStaleJobSweeper() {
   }, 30 * 1000);
 }
 
+let cleanupStarted = false;
+export function startStorageCleanupSweeper() {
+  if (cleanupStarted) return;
+  cleanupStarted = true;
+  
+  const runCleanup = () => {
+    let changed = false;
+    const now = Date.now();
+    for (const [id, project] of projects.entries()) {
+      // Rule 1 & 2 only apply to COMPLETED projects that have a valid final video
+      if (project.status === 'COMPLETED' && project.finalVideoUrl) {
+        
+        // Rule 1: Delete per-scene raw videos if final video is successfully stitched
+        if (project.storyboard && project.storyboard.scenes) {
+          let scenesChanged = false;
+          for (const scene of project.storyboard.scenes) {
+            // Check local file paths
+            const urlsToCheck = [scene.videoUrl, scene.assetUrl, (project as any).scenes?.find((s) => s.id === scene.id)?.videoUrl];
+            for (let url of urlsToCheck) {
+               if (url && url.startsWith('/api/outputs/')) {
+                 const filename = url.split('/').pop();
+                 if (filename) {
+                   const filepath = path.join(process.cwd(), 'outputs', filename);
+                   if (fs.existsSync(filepath)) {
+                     try {
+                       fs.unlinkSync(filepath);
+                       console.log(`[Storage Cleanup] Deleted scene video ${filepath} for project ${id}`);
+                       appendLog(project, 'SYSTEM', `File video mentah adegan dihapus otomatis untuk menghemat storage: ${filename}`, 'INFO');
+                       scenesChanged = true;
+                     } catch (e) {
+                       console.error(`[Storage Cleanup] Failed to delete ${filepath}:`, e);
+                     }
+                   }
+                 }
+               }
+            }
+            
+            // Clean up DB references
+            if (scene.videoUrl && scene.videoUrl.startsWith('/api/outputs/')) {
+                scene.videoUrl = undefined;
+                scenesChanged = true;
+            }
+            if (scene.assetUrl && scene.assetUrl.startsWith('/api/outputs/')) {
+                scene.assetUrl = undefined;
+                scenesChanged = true;
+            }
+          }
+          if (scenesChanged) {
+             changed = true;
+          }
+        }
+
+        // Rule 2: Delete final video if older than 7 days
+        const lastUpdate = project.updatedAt ? new Date(project.updatedAt).getTime() : 0;
+        const sevenDays = 7 * 24 * 60 * 60 * 1000;
+        if (lastUpdate && (now - lastUpdate > sevenDays)) {
+          if (project.finalVideoUrl.startsWith('/api/outputs/')) {
+            const filename = project.finalVideoUrl.split('/').pop();
+            if (filename) {
+              const filepath = path.join(process.cwd(), 'outputs', filename);
+              if (fs.existsSync(filepath)) {
+                try {
+                  fs.unlinkSync(filepath);
+                  console.log(`[Storage Cleanup] Deleted final video ${filepath} for project ${id} (>7 days)`);
+                  appendLog(project, 'SYSTEM', `File video final dihapus otomatis (sudah lewat masa retensi 7 hari): ${filename}`, 'INFO');
+                  changed = true;
+                } catch (e) {
+                  console.error(`[Storage Cleanup] Failed to delete final video ${filepath}:`, e);
+                }
+              }
+            }
+            project.finalVideoUrl = undefined;
+            // Optionally set status to EXPIRED to indicate the asset is gone
+            changed = true;
+          }
+        }
+      }
+    }
+    
+    if (changed) {
+      saveProjects();
+    }
+  };
+
+  // Run shortly after boot, then every hour
+  setTimeout(runCleanup, 5000);
+  setInterval(runCleanup, 60 * 60 * 1000);
+}
+
 export function loadProjects() {
+
   startStaleJobSweeper();
+  startStorageCleanupSweeper();
   (async () => {
     try {
       await db.insert(dbUsers).values({
@@ -850,6 +941,23 @@ export function loadProjects() {
             }
             (parsed as any).showcaseEligible = row.showcaseEligible === true || (row.showcaseEligible as any) === 1 || Boolean((parsed as any).showcaseEligible);
             (parsed as any).showcaseOrder = typeof row.showcaseOrder === 'number' ? row.showcaseOrder : (parsed as any).showcaseOrder ?? null;
+            
+            // RESTART RESILIENCE FIX: Fail stuck jobs from interrupted process
+            if (['PRODUCING', 'ASSEMBLING', 'PROCESSING', 'STORYBOARDING', 'BRIEFING'].includes(parsed.status)) {
+              parsed.status = 'FAILED';
+              parsed.error = 'Proses terputus karena server restart. Silakan klik Retry.';
+              if (parsed.agentStatus) {
+                for (const key in parsed.agentStatus) {
+                  if (parsed.agentStatus[key] === 'WORKING') parsed.agentStatus[key] = 'FAILED';
+                }
+              }
+            }
+            if (parsed.storyboard?.scenes) {
+              parsed.storyboard.scenes.forEach(s => {
+                if (s.videoStatus === 'GENERATING') s.videoStatus = 'FAILED';
+                if (s.imageStatus === 'GENERATING') s.imageStatus = 'FAILED';
+              });
+            }
             if (["STORYBOARDING", "PRODUCING", "ASSEMBLING", "AUDIO", "EDITING", "QA", "PROCESSING"].includes(parsed.status)) {
               parsed.status = "FAILED";
               parsed.error = "Proses terputus karena server restart.";
@@ -861,6 +969,7 @@ export function loadProjects() {
         }
       }
       console.log(`Loaded ${projects.size} projects from SQLite DB.`);
+      saveProjects(); // Persist any FAILED state corrections back to DB
     } catch(e) {
       console.error("Failed to load projects from SQLite:", e);
     }
@@ -1815,6 +1924,12 @@ export class ProductionOrchestrator {
   static async generateSceneVideo(id: string, sceneId: string, videoModel?: string) {
     const project = projects.get(id);
     if (!project) return;
+    
+    // HARD GATE: Cannot render video before storyboard is approved (Phase 3 requirement)
+    if (['DRAFT', 'BRIEFING', 'STORYBOARDING', 'AWAITING_APPROVAL'].includes(project.status || 'DRAFT')) {
+       throw new Error(`Video tidak bisa mulai di-render sebelum storyboard di-approve. Status saat ini: ${project.status}`);
+    }
+
     ensureStoryboardExists(project);
     if (!project.storyboard || !project.storyboard.scenes || project.storyboard.scenes.length === 0) return;
 
@@ -1838,6 +1953,7 @@ export class ProductionOrchestrator {
     
     appendLog(project, 'GATOTKACA', `MEMULAI RENDER VIDEO ADEGAN ${sceneIdx + 1} dengan ${provider.name} (Biaya: 15 Kredit)...`, 'INFO');
     updateTelemetry(project, 'GATOTKACA', { status: 'ACTIVE', currentTask: `Rendering scene ${sceneIdx + 1} video latent diffusion...`, progress: 15 });
+    saveProjects();
     projectEvents.emit(`update:${id}`, project);
 
     try {
@@ -1951,6 +2067,7 @@ export class ProductionOrchestrator {
 
     appendLog(project, 'PROTOCOL', `PRODUCTION PIPELINE DISETUJUI -> MEMULAI MULTI-AGENT VIDEO ASSEMBLY & EDITING (${project.storyboard?.totalVideoCredits || 60} KREDIT)`, 'SUCCESS');
     updateTelemetry(project, 'GATOTKACA', { status: 'ACTIVE', currentTask: 'Rendering video frames on neural cluster', progress: 10 });
+    saveProjects();
 
     projectEvents.emit(`update:${id}`, project);
 
@@ -2248,9 +2365,27 @@ export class ProductionOrchestrator {
       } else if (updates.textOverlay && (!updates.subtitle || isPlaceholderSubtitle(updates.subtitle))) {
         updates.subtitle = updates.textOverlay;
       }
+      // RACE CONDITION FIX: Prevent stale client data from overwriting background job progress
+      const safeUpdates = { ...updates };
+      if (existing.videoStatus === 'GENERATING') {
+        delete safeUpdates.videoUrl;
+        delete safeUpdates.videoStatus;
+        delete safeUpdates.status;
+        delete safeUpdates.videoProgress;
+      } else if (updates.videoUrl && !updates.videoUrl.startsWith('data:') && !updates.videoUrl.startsWith('/api/outputs')) {
+        // Ignore stale video URLs from frontend if they are not new uploads or local outputs
+        delete safeUpdates.videoUrl;
+      }
+      if (existing.imageStatus === 'GENERATING') {
+        delete safeUpdates.imageUrl;
+        delete safeUpdates.imageStatus;
+      } else if (updates.imageUrl && !updates.imageUrl.startsWith('data:') && !updates.imageUrl.startsWith('/api/outputs')) {
+        delete safeUpdates.imageUrl;
+      }
+
       project.storyboard.scenes[sceneIdx] = {
         ...existing,
-        ...updates
+        ...safeUpdates
       };
       
       // If videoUrl was explicitly provided and videoStatus is COMPLETED, we can assume the scene is COMPLETED
@@ -2287,7 +2422,25 @@ export class ProductionOrchestrator {
       project.storyboard = { scenes: [] };
     }
 
-    project.storyboard.scenes = scenes;
+    // RACE CONDITION FIX: Only reorder existing scenes by ID to prevent stale client data from overwriting background job progress.
+    const newOrderIds = scenes.map((s: any) => String(s.id));
+    const existingScenes = [...project.storyboard.scenes];
+    
+    const reorderedScenes = [];
+    for (const id of newOrderIds) {
+      const found = existingScenes.find(s => String(s.id) === id);
+      if (found) {
+        reorderedScenes.push(found);
+      }
+    }
+    
+    for (const s of existingScenes) {
+      if (!newOrderIds.includes(String(s.id))) {
+        reorderedScenes.push(s);
+      }
+    }
+
+    project.storyboard.scenes = reorderedScenes;
     appendLog(project, 'TIMELINE', `Urutan adegan timeline diperbarui (${scenes.length} adegan).`, 'INFO');
     saveProjects();
     projectEvents.emit(`update:${projectId}`, project);
@@ -2377,6 +2530,11 @@ export class ProductionOrchestrator {
       }
     }
     if (!project) throw new Error(`Project ${projectId} tidak ditemukan di memori maupun database`);
+
+    // HARD GATE: Cannot stitch video before storyboard is approved and project is producing
+    if (['DRAFT', 'BRIEFING', 'STORYBOARDING', 'AWAITING_APPROVAL'].includes(project.status || 'DRAFT')) {
+       throw new Error(`Video tidak bisa digabungkan sebelum storyboard di-approve. Status saat ini: ${project.status}`);
+    }
 
     if (ttsVoiceConfig) {
       project.ttsVoiceConfig = ttsVoiceConfig;

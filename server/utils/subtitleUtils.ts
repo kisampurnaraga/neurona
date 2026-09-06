@@ -31,21 +31,14 @@ export function isPlaceholderSubtitle(text?: string | null): boolean {
 export function resolveSceneSubtitle(scene: any, index: number = 0): string {
   if (!scene) return `Adegan ${index + 1}`;
 
-  // 1. Direct user subtitle (e.g. from Track 3 Subtitles)
+  // Prioritize the same fields for BOTH subtitle and TTS to avoid desync
+  
+  // 1. Direct user subtitle (override)
   if (typeof scene.subtitle === 'string' && scene.subtitle.trim().length > 0 && !isPlaceholderSubtitle(scene.subtitle)) {
     return scene.subtitle.trim();
   }
 
-  // 2. Direct text overlay
-  if (typeof scene.textOverlay === 'string' && scene.textOverlay.trim().length > 0 && !isPlaceholderSubtitle(scene.textOverlay)) {
-    return scene.textOverlay.trim();
-  }
-
-  if (typeof scene.text_overlay === 'string' && scene.text_overlay.trim().length > 0 && !isPlaceholderSubtitle(scene.text_overlay)) {
-    return scene.text_overlay.trim();
-  }
-
-  // 3. Voiceover script / narration text
+  // 2. Voiceover script / narration text
   if (typeof scene.voiceOver === 'string' && scene.voiceOver.trim().length > 0 && !isPlaceholderSubtitle(scene.voiceOver)) {
     return scene.voiceOver.trim();
   }
@@ -54,9 +47,18 @@ export function resolveSceneSubtitle(scene: any, index: number = 0): string {
     return scene.voiceover_script.trim();
   }
 
-  // 4. Scene dialogue
+  // 3. Scene dialogue
   if (typeof scene.dialogue === 'string' && scene.dialogue.trim().length > 0 && !isPlaceholderSubtitle(scene.dialogue)) {
     return scene.dialogue.trim();
+  }
+
+  // 4. Direct text overlay (Fallback if no narration)
+  if (typeof scene.textOverlay === 'string' && scene.textOverlay.trim().length > 0 && !isPlaceholderSubtitle(scene.textOverlay)) {
+    return scene.textOverlay.trim();
+  }
+
+  if (typeof scene.text_overlay === 'string' && scene.text_overlay.trim().length > 0 && !isPlaceholderSubtitle(scene.text_overlay)) {
+    return scene.text_overlay.trim();
   }
 
   // 5. Visual direction summary
@@ -69,14 +71,7 @@ export function resolveSceneSubtitle(scene: any, index: number = 0): string {
 
 export function resolveSceneVoiceover(scene: any, index: number = 0): string {
   if (!scene) return '';
-  if (typeof scene.voiceOver === 'string' && scene.voiceOver.trim().length > 0 && !isPlaceholderSubtitle(scene.voiceOver)) {
-    return scene.voiceOver.trim();
-  }
-  if (typeof scene.voiceover_script === 'string' && scene.voiceover_script.trim().length > 0 && !isPlaceholderSubtitle(scene.voiceover_script)) {
-    return scene.voiceover_script.trim();
-  }
-  if (typeof scene.dialogue === 'string' && scene.dialogue.trim().length > 0 && !isPlaceholderSubtitle(scene.dialogue)) {
-    return scene.dialogue.trim();
-  }
-  return '';
+  const text = resolveSceneSubtitle(scene, index);
+  if (text.startsWith('Adegan ')) return '';
+  return text;
 }
