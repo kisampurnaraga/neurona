@@ -139,6 +139,8 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
       }
     } else if (project.status === 'AWAITING_APPROVAL') {
       hubState = 'READY';
+    } else if (project.status === 'QUOTA_FALLBACK_PENDING') {
+      hubState = 'IDLE';
     } else if (project.status === 'PRODUCING' || project.status === 'ASSEMBLING' || project.status === 'AUDIO' || project.status === 'EDITING' || project.status === 'QA') {
       hubState = 'STORYBOARDING';
     } else {
@@ -1001,7 +1003,9 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
                   </div>
 
                   <p className="text-xs text-slate-300 leading-relaxed">
-                    {(hubState === 'THINKING' || hubState === 'WRITING')
+                    {project?.status === 'QUOTA_FALLBACK_PENDING'
+                      ? '⚠️ AI Kuota Penuh. Konfirmasi di chat apakah ingin menggunakan template naskah darurat (ketik "Ya").'
+                      : (hubState === 'THINKING' || hubState === 'WRITING')
                       ? 'SINTA sedang menyusun naskah, sudut kamera sinematik, dan prompt visual adegan...' 
                       : hubState === 'STORYBOARDING'
                       ? 'GATOTKACA sedang menyusun adegan (scene) storyboard...'

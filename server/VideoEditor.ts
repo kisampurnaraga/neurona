@@ -193,6 +193,8 @@ export class VideoEditor {
 
              if (cleanUrl.startsWith('outputs/')) {
                resolvedSourcePath = path.join(process.cwd(), cleanUrl);
+             } else if (cleanUrl.startsWith('api/outputs/')) {
+               resolvedSourcePath = path.join(process.cwd(), cleanUrl.replace('api/outputs/', 'outputs/'));
              } else if (cleanUrl.startsWith('api/videos/')) {
                const filename = cleanUrl.replace('api/videos/', '');
                const outCandidate = path.join(process.cwd(), 'outputs', filename);

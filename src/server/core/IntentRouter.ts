@@ -22,6 +22,14 @@ export class ConversationalIntentRouter {
       return { intent: 'GREETING', response: 'Hello Bos. Studio produksi siap. Anda bisa pilih membuat Video Animasi (3D/Anime), Video Pembelajaran Edukasi, atau Video Affiliate Produk.' };
     }
 
+    // FALLBACK QUOTA APPROVAL
+    if (/^(ya|iya|y|boleh|lanjutkan|setuju)[.!?]*$/.test(p) && project?.status === 'QUOTA_FALLBACK_PENDING') {
+      return { intent: 'FALLBACK_APPROVE', response: 'Menggunakan naskah template untuk melanjutkan produksi. Mohon tunggu...', action: 'FALLBACK_APPROVE' };
+    }
+    if (/^(tidak|ga|enggak|batal|jangan)[.!?]*$/.test(p) && project?.status === 'QUOTA_FALLBACK_PENDING') {
+      return { intent: 'FALLBACK_REJECT', response: 'Produksi dibatalkan. Menunggu kuota tersedia kembali.', action: 'FALLBACK_REJECT' };
+    }
+
     // APPROVAL / CONTINUE
     if (/^(lanjut|lanjutkan|oke lanjut|gas|mulai render|eksekusi)[.!?]*$/.test(p)) {
       if (project?.status === 'AWAITING_APPROVAL') {
@@ -37,7 +45,7 @@ export class ConversationalIntentRouter {
       }
     }
 
-    // MODEL SWITCHING / OPENAI CHATGPT 4.0
+    // MODEL SWITCHING / OPENAI CHATGPT
     if (
       p.includes('open ai') || 
       p.includes('openai') || 
@@ -46,6 +54,10 @@ export class ConversationalIntentRouter {
       p.includes('gpt 4') || 
       p.includes('gpt-4') || 
       p.includes('gpt4') ||
+      p.includes('gpt 6') ||
+      p.includes('gpt-6') ||
+      p.includes('gpt6') ||
+      p.includes('astra') ||
       p.includes('ganti model')
     ) {
       

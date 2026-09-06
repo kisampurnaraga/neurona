@@ -1048,6 +1048,11 @@ export const HolographicHudNode: React.FC<HolographicHudNodeProps> = ({
               <span className="text-cyan-400 font-mono text-[10px]">
                 {progressPercentage === 100 ? '[FINAL]' : progressPercentage >= 50 && project.status === 'AWAITING_APPROVAL' ? '[GATEWAY 50%]' : '[LIVE]'}
               </span>
+              {(project as any).isTemplateScript && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 uppercase font-bold tracking-wider mr-1">
+                  Naskah Template - Bukan Hasil AI
+                </span>
+              )}
               <span>
                 {project.currentPhaseName || (
                   progressPercentage === 100 ? 'Video Master Selesai & Siap Diunduh' :

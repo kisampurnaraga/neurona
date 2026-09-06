@@ -69,6 +69,8 @@ export function getActiveGeminiModel(): string {
 }
 
 export function getOpenAIModel(): string {
+  const engine = FounderService.getLlmEngine()?.toLowerCase() || '';
+  if (engine.includes('gpt-6-astra')) return 'gpt-4o'; // Fallback to gpt-4o under the hood since gpt-6-astra doesn't exist yet
   return process.env.OPENAI_MODEL || 'gpt-4o';
 }
 
@@ -1208,6 +1210,12 @@ CRITICAL RULES FOR QA COMPLIANCE:
           }
         }
       }
+    }
+
+    if (!config?.useTemplate) {
+      const err = new Error("QUOTA_EXHAUSTED");
+      err.name = "QuotaError";
+      throw err;
     }
 
     // Procedural Fallback Generator (Zero-Failure Guarantee)

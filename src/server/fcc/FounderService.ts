@@ -41,6 +41,7 @@ export type LlmEngineOption =
   | 'claude-opus-5' 
   | 'openai' 
   | 'gpt-4o'
+  | 'gpt-6-astra'
   | 'gemini-3.6-flash';
 export type ImageEngineOption = 'draft' | 'standard' | 'precision' | 'chatgpt-image-2' | 'openai' | 'dall-e-3' | 'gemini_banana' | 'google_image' | 'imagen-3' | 'flux-diffusion';
 export type VideoEngineOption = string; // Allowing 'fal-wan21', 'fal-hunyuan', 'fal-kling', 'fal-minimax', etc.

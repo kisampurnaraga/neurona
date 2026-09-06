@@ -592,7 +592,8 @@ async function startServer() {
         affiliateConfig, 
         animationConfig, 
         educationalConfig, 
-        videoType 
+        videoType,
+        userRole
       } = req.body;
       const project = projectId ? projects.get(projectId) : null;
       const hasAssets = Boolean(attachedAssets && attachedAssets.length > 0);
@@ -610,10 +611,15 @@ async function startServer() {
            attachedAssets,
            affiliateConfig,
            animationConfig: animationConfig || (finalType === 'ANIMATION' ? result.quickConfig : undefined),
-           educationalConfig: educationalConfig || (finalType === 'EDUCATIONAL' ? result.quickConfig : undefined)
+           educationalConfig: educationalConfig || (finalType === 'EDUCATIONAL' ? result.quickConfig : undefined),
+           userRole
          });
       } else if (result.action === 'APPROVE' && projectId) {
          await ProductionOrchestrator.approveStoryboard(projectId);
+      } else if (result.action === 'FALLBACK_APPROVE' && projectId) {
+         await ProductionOrchestrator.resumeWithTemplate(projectId);
+      } else if (result.action === 'FALLBACK_REJECT' && projectId) {
+         await ProductionOrchestrator.rejectFallback(projectId);
       }
       
       res.json({ ...result, projectId: newProjectId });
@@ -2064,7 +2070,7 @@ async function startServer() {
   });
 
   // Resilient /outputs handler: serves disk file or dynamically restores from remote CDN (Fal.ai, GCS)
-  app.get('/outputs/:filename', async (req, res) => {
+  app.get(['/outputs/:filename', '/api/outputs/:filename'], async (req, res) => {
     const filename = req.params.filename;
     const outputsDir = path.join(process.cwd(), 'outputs');
     const filePath = path.join(outputsDir, filename);
@@ -2214,8 +2220,6 @@ async function startServer() {
     });
   }
 
-  const ALT_PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : null;
-
   let activeServer: http.Server | null = null;
   let listeningAttempts = 0;
   const MAX_ATTEMPTS = 15;
@@ -2250,36 +2254,12 @@ async function startServer() {
     srv.listen(PORT, "0.0.0.0");
   }
 
-  // Also bind to Cloud Run's external PORT if provided and distinct from 3000
-  let altServer: http.Server | null = null;
-  if (ALT_PORT && ALT_PORT !== PORT) {
-    try {
-      altServer = http.createServer(app);
-      altServer.on("listening", () => {
-        console.log(`Cloud Run ingress listener active on port ${ALT_PORT}`);
-      });
-      altServer.on("error", (err: any) => {
-        if (err && err.code === "EADDRINUSE") {
-          console.log(`[INFO] Port ${ALT_PORT} is already bound by reverse proxy; proxying traffic to ${PORT}.`);
-        } else {
-          console.warn(`[WARN] Secondary listener on port ${ALT_PORT}:`, err?.message || err);
-        }
-      });
-      altServer.listen(ALT_PORT, "0.0.0.0");
-    } catch (e: any) {
-      console.warn(`[WARN] Could not initialize secondary listener on port ${ALT_PORT}:`, e?.message || e);
-    }
-  }
-
   const cleanupAndExit = (signal: string) => {
     console.log(`[SYSTEM] ${signal} received. Closing server gracefully...`);
     if (activeServer) {
       activeServer.close(() => {
         console.log(`[SYSTEM] Closed server on port ${PORT}.`);
       });
-    }
-    if (altServer) {
-      altServer.close();
     }
     setTimeout(() => {
       process.exit(0);

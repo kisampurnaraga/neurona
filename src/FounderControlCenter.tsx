@@ -49,7 +49,7 @@ interface FCCConfig {
   providers: ProviderItem[];
   flags: Record<string, boolean>;
   imageEngine?: 'draft' | 'standard' | 'precision' | 'chatgpt-image-2' | 'openai' | 'dall-e-3' | 'gemini_banana' | 'google_image' | 'imagen-3' | 'flux-diffusion';
-  llmEngine?: 'gemini' | 'gemini-3.1-pro-preview' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gemini-3.6-flash';
+  llmEngine?: 'gemini' | 'gemini-3.1-pro-preview' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gpt-6-astra' | 'gemini-3.6-flash';
   qaMinScoreThreshold?: number;
   qaAutoFixThreshold?: number;
   primaryVideoEngine?: string;
@@ -254,7 +254,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
       showNotification(e.message);
     }
   };
-  const handleSetLlmEngine = async (engine: 'gemini' | 'gemini-3.1-pro-preview' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gemini-3.6-flash') => {
+  const handleSetLlmEngine = async (engine: 'gemini' | 'gemini-3.1-pro-preview' | 'anthropic' | 'claude-3-5-sonnet' | 'claude-opus-5' | 'openai' | 'gpt-4o' | 'gpt-6-astra' | 'gemini-3.6-flash') => {
     try {
       const res = await fetch('/api/fcc/llm-engine', {
         method: 'POST',
@@ -794,8 +794,14 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
                   {[
+                    { 
+                      id: 'gpt-6-astra', 
+                      label: 'OpenAI GPT-6 Astra', 
+                      badge: 'NEXT-GEN INTELLIGENCE', 
+                      desc: 'Kecerdasan naskah superior, reasoning tingkat sutradara dunia nyata, instruksi kompleks yang presisi.' 
+                    },
                     { 
                       id: 'gemini-3.1-pro-preview', 
                       label: 'Google Gemini 3.1 Pro (Preview)', 

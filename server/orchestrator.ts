@@ -751,7 +751,7 @@ export function saveProjects() {
                 const b64 = sc.videoUrl.split(';base64,').pop();
                 if (b64) {
                   fs.writeFileSync(fpath, Buffer.from(b64, 'base64'));
-                  sc.videoUrl = `/api/outputs/${fname}`;
+                  sc.videoUrl = `/outputs/${fname}`;
                   if (sc.assetUrl && sc.assetUrl.startsWith('data:video/')) {
                     sc.assetUrl = sc.videoUrl;
                   }
@@ -835,9 +835,9 @@ export function startStorageCleanupSweeper() {
           let scenesChanged = false;
           for (const scene of project.storyboard.scenes) {
             // Check local file paths
-            const urlsToCheck = [scene.videoUrl, scene.assetUrl, (project as any).scenes?.find((s) => s.id === scene.id)?.videoUrl];
+            const urlsToCheck = [scene.videoUrl, scene.assetUrl, (project as any).scenes?.find((s: any) => s.id === scene.id)?.videoUrl];
             for (let url of urlsToCheck) {
-               if (url && url.startsWith('/api/outputs/')) {
+               if (url && (url.startsWith('/api/outputs/') || url.startsWith('/outputs/'))) {
                  const filename = url.split('/').pop();
                  if (filename) {
                    const filepath = path.join(process.cwd(), 'outputs', filename);
@@ -856,11 +856,11 @@ export function startStorageCleanupSweeper() {
             }
             
             // Clean up DB references
-            if (scene.videoUrl && scene.videoUrl.startsWith('/api/outputs/')) {
+            if (scene.videoUrl && (scene.videoUrl.startsWith('/api/outputs/') || scene.videoUrl.startsWith('/outputs/'))) {
                 scene.videoUrl = undefined;
                 scenesChanged = true;
             }
-            if (scene.assetUrl && scene.assetUrl.startsWith('/api/outputs/')) {
+            if (scene.assetUrl && (scene.assetUrl.startsWith('/api/outputs/') || scene.assetUrl.startsWith('/outputs/'))) {
                 scene.assetUrl = undefined;
                 scenesChanged = true;
             }
@@ -874,7 +874,7 @@ export function startStorageCleanupSweeper() {
         const lastUpdate = project.updatedAt ? new Date(project.updatedAt).getTime() : 0;
         const sevenDays = 7 * 24 * 60 * 60 * 1000;
         if (lastUpdate && (now - lastUpdate > sevenDays)) {
-          if (project.finalVideoUrl.startsWith('/api/outputs/')) {
+          if (project.finalVideoUrl && (project.finalVideoUrl.startsWith('/api/outputs/') || project.finalVideoUrl.startsWith('/outputs/'))) {
             const filename = project.finalVideoUrl.split('/').pop();
             if (filename) {
               const filepath = path.join(process.cwd(), 'outputs', filename);
@@ -1128,12 +1128,13 @@ export interface ProductionStartOptions {
   affiliateConfig?: AffiliateConfig;
   animationConfig?: AnimationConfig;
   educationalConfig?: EducationalConfig;
+  userRole?: string;
 }
 
 export class ProductionOrchestrator {
   static async startProduction(input: string | ProductionStartOptions) {
     const options: ProductionStartOptions = typeof input === 'string' ? { prompt: input } : input;
-    const { prompt, videoType, videoModel, ttsVoiceConfig, attachedAssets, affiliateConfig, animationConfig, educationalConfig } = options;
+    const { prompt, videoType, videoModel, ttsVoiceConfig, attachedAssets, affiliateConfig, animationConfig, educationalConfig, userRole } = options;
 
     const id = crypto.randomUUID();
     
@@ -1236,6 +1237,8 @@ export class ProductionOrchestrator {
       telemetry,
       logs: []
     };
+
+    (project as any).userRole = userRole;
 
     appendLog(project, 'PROTOCOL', `DISPATCHING MISSION [${resolvedType}] -> ID: ${id.substring(0, 8)}`, 'INFO');
     appendLog(project, 'BATARA', `TASKING CREATIVE STRATEGIST -> Merumuskan konsep & arsitektur video: "${prompt.substring(0, 60)}..."`, 'INFO');
@@ -1606,6 +1609,22 @@ export class ProductionOrchestrator {
       projectEvents.emit(`update:${id}`, project);
 
     } catch (error: any) {
+      if (error.name === 'QuotaError') {
+        if ((project as any).userRole === 'founder') {
+           project.status = 'QUOTA_FALLBACK_PENDING';
+           project.currentPhaseName = "Menunggu Konfirmasi Fallback AI (Kuota Habis)";
+           appendLog(project, 'SINTA', 'Kuota AI (Gemini/OpenAI) sedang habis. Apakah Anda ingin melanjutkan menggunakan naskah template/hardcode untuk keperluan testing sistem?', 'WARN');
+           projectEvents.emit(`update:${id}`, project);
+           return;
+        } else {
+           project.status = 'FAILED';
+           project.error = "Maaf, kuota produksi AI saat ini sedang penuh/habis. Silakan coba beberapa saat lagi, atau hubungi admin.";
+           appendLog(project, 'ERROR', project.error, 'ERROR');
+           projectEvents.emit(`update:${id}`, project);
+           return;
+        }
+      }
+
       project.status = 'FAILED';
       project.overallProgress = 35;
       if (error.code) {
@@ -2050,6 +2069,29 @@ export class ProductionOrchestrator {
     }
   }
 
+  static async resumeWithTemplate(id: string) {
+    const project = projects.get(id);
+    if (!project || project.status !== 'QUOTA_FALLBACK_PENDING') return;
+    
+    (project as any).useTemplate = true;
+    (project as any).isTemplateScript = true;
+    project.status = 'BRIEFING';
+    appendLog(project, 'PROTOCOL', 'Menggunakan Naskah Template (isTemplateScript: true) karena kuota AI habis.', 'INFO');
+    
+    // Resume pipeline
+    this.runPipeline(id, project.brief?.product || "Produk").catch(console.error);
+  }
+
+  static async rejectFallback(id: string) {
+    const project = projects.get(id);
+    if (!project || project.status !== 'QUOTA_FALLBACK_PENDING') return;
+
+    project.status = 'FAILED';
+    project.error = "Produksi dibatalkan karena kuota AI habis (Tidak menggunakan template).";
+    appendLog(project, 'SYSTEM', project.error, 'ERROR');
+    projectEvents.emit(`update:${id}`, project);
+  }
+
   static async approveStoryboard(id: string) {
     const project = projects.get(id);
     if (!project || (project.status !== 'AWAITING_APPROVAL' && project.activeProductionStage !== 'IMAGES')) return;
@@ -2372,14 +2414,14 @@ export class ProductionOrchestrator {
         delete safeUpdates.videoStatus;
         delete safeUpdates.status;
         delete safeUpdates.videoProgress;
-      } else if (updates.videoUrl && !updates.videoUrl.startsWith('data:') && !updates.videoUrl.startsWith('/api/outputs')) {
+      } else if (updates.videoUrl && !updates.videoUrl.startsWith('data:') && !updates.videoUrl.startsWith('/api/outputs') && !updates.videoUrl.startsWith('/outputs')) {
         // Ignore stale video URLs from frontend if they are not new uploads or local outputs
         delete safeUpdates.videoUrl;
       }
       if (existing.imageStatus === 'GENERATING') {
         delete safeUpdates.imageUrl;
         delete safeUpdates.imageStatus;
-      } else if (updates.imageUrl && !updates.imageUrl.startsWith('data:') && !updates.imageUrl.startsWith('/api/outputs')) {
+      } else if (updates.imageUrl && !updates.imageUrl.startsWith('data:') && !updates.imageUrl.startsWith('/api/outputs') && !updates.imageUrl.startsWith('/outputs')) {
         delete safeUpdates.imageUrl;
       }
 

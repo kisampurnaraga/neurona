@@ -666,7 +666,8 @@ export default function App() {
           affiliateConfig,
           animationConfig,
           educationalConfig,
-          videoType: videoType || (animationConfig ? 'ANIMATION' : educationalConfig ? 'EDUCATIONAL' : affiliateConfig ? 'AFFILIATE' : undefined)
+          videoType: videoType || (animationConfig ? 'ANIMATION' : educationalConfig ? 'EDUCATIONAL' : affiliateConfig ? 'AFFILIATE' : undefined),
+          userRole: currentUser?.role || 'user'
         })
       });
       const data = await res.json().catch(() => ({}));

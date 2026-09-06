@@ -108,7 +108,7 @@ export class QAAuditAgent {
 
     // 1. Attempt LLM-driven deep audit using active Master Engine if keys are available
     try {
-      if (activeLlm.includes('openai') || activeLlm.includes('gpt-4o')) {
+      if (activeLlm.includes('openai') || activeLlm.includes('gpt-4o') || activeLlm.includes('gpt-6-astra')) {
         const openAiKey = process.env.OPENAI_API_KEY || keyRotator.getNextOpenAIKey();
         if (openAiKey) {
           const result = await this.runOpenAIAudit(input, openAiKey);
@@ -286,7 +286,12 @@ Format Output WAJIB JSON murni tanpa markdown pembungkus. Kamu WAJIB merespons s
     apiKey: string
   ): Promise<QAAuditResult | null> {
     const openai = new OpenAI({ apiKey });
-    const model = 'gpt-4o';
+    let model = 'gpt-4o';
+    const activeLlm = FounderService.getLlmEngine() || '';
+    if (activeLlm.includes('gpt-6-astra')) {
+      model = 'gpt-4o'; // Fallback to gpt-4o since gpt-6 doesn't exist on OpenAI API yet
+    }
+
 
     const response = await openai.chat.completions.create({
       model,
