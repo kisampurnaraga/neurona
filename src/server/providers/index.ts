@@ -24,56 +24,82 @@ export function getAvailableVideoProviders() {
   }));
 }
 
-export function getVideoProvider(preferredType?: string): VideoGenerationProvider {
-  const providerType = (preferredType || activeProviderType || process.env.VIDEO_PROVIDER || 'fal').toLowerCase();
-  
-  // 1. OpenArt MCP
+export function getVideoProvider(preferredType?: string, preferredProvider?: string): VideoGenerationProvider {
+  const typeClean = (preferredType || '').trim().toLowerCase();
+  const providerClean = (preferredProvider || '').trim().toLowerCase();
+
+  // 1. Explicit provider precedence (MUST ALWAYS WIN FIRST!)
+  if (providerClean === 'openart') {
+    return new OpenArtMCPAdapter();
+  }
+  if (providerClean === 'google_veo' || providerClean === 'google-veo' || providerClean === 'google') {
+    return new GoogleVeoAdapter();
+  }
+  if (providerClean === 'fal' || providerClean === 'fal-ai') {
+    return new FalVideoAdapter();
+  }
+  if (providerClean === 'byteplus') {
+    return new BytePlusAdapter();
+  }
+  if (providerClean === 'mock') {
+    return new MockVideoProvider();
+  }
+
+  // 2. Implicit provider resolution by model ID
   if (
-    providerType === 'openart' || 
-    providerType.startsWith('openart-') || 
-    providerType.includes('openart') ||
-    providerType === 'veo3-1' ||
-    providerType === 'byte-plus-seedance-2-fast' ||
-    providerType === 'wan2-7' ||
-    providerType === 'kling-3-omni' ||
-    providerType === 'nano-banana-pro' ||
-    providerType === 'byte-plus-seedream-5-pro' ||
-    providerType === 'gpt-image-2'
+    typeClean === 'openart' || 
+    typeClean.startsWith('openart-') || 
+    typeClean.includes('openart')
   ) {
     return new OpenArtMCPAdapter();
   }
 
-  // 2. Fal.ai Hosted models (including Fal-hosted Veo, Seedance, Wan, Kling, Luma, Minimax, Hunyuan)
+  // Known OpenArt models (only when no explicit provider is specified)
+  const knownOpenArtModels = [
+    'veo3-1', 'wan2-7', 'byte-plus-seedance-2', 'byte-plus-seedance-2-fast', 'byte-plus-seedance-2-5',
+    'kling-3-omni', 'nano-banana-2-lite', 'nano-banana-2', 'nano-banana-pro',
+    'byte-plus-seedream-5-lite', 'byte-plus-seedream-5-pro', 'gpt-image-2', 'wan2-7-image', 'gemini-omni-flash',
+    'openart-sdxl', 'openart-flux-schnell', 'openart-flux-pro', 'openart-photoreal-v2',
+    'openart-video-fast', 'openart-video-pro', 'openart-wan2.1', 'openart-wan21', 'openart-veo2'
+  ];
+  if (knownOpenArtModels.includes(typeClean)) {
+    return new OpenArtMCPAdapter();
+  }
+
   if (
-    providerType.startsWith('fal') || 
-    providerType.includes('fal-ai') || 
-    providerType.includes('fal.run') || 
-    providerType.includes('fal.ai')
+    typeClean.startsWith('fal') || 
+    typeClean.includes('fal-ai') || 
+    typeClean.includes('fal.run') || 
+    typeClean.includes('fal.ai')
   ) {
     return new FalVideoAdapter();
   }
 
-  // 3. Direct Google Veo Generative Language API
   if (
-    providerType === 'google_veo' || 
-    providerType === 'google-veo' || 
-    providerType === 'veo-asli' || 
-    providerType.startsWith('veo-asli') || 
-    providerType === 'google'
+    typeClean === 'google_veo' || 
+    typeClean === 'google-veo' || 
+    typeClean === 'veo-asli' || 
+    typeClean.startsWith('veo-asli') || 
+    typeClean === 'google'
   ) {
     return new GoogleVeoAdapter();
   }
 
-  // 4. BytePlus / Doubao native SDK
-  if (providerType.includes('byteplus') || providerType.includes('pixeldance') || providerType.includes('doubao')) {
+  if (typeClean.includes('byteplus') || typeClean.includes('pixeldance') || typeClean.includes('doubao')) {
     return new BytePlusAdapter();
   }
-  
-  if (providerType === 'mock') {
+
+  if (typeClean === 'mock') {
     return new MockVideoProvider();
   }
-  
-  // Default to FalVideoAdapter for all verified Fal.ai & ByteDance models
+
+  // Otherwise, check activeProviderType
+  const fallbackProvider = (activeProviderType || process.env.VIDEO_PROVIDER || 'fal').toLowerCase();
+  if (fallbackProvider === 'openart') return new OpenArtMCPAdapter();
+  if (fallbackProvider === 'google_veo' || fallbackProvider === 'google-veo' || fallbackProvider === 'google') return new GoogleVeoAdapter();
+  if (fallbackProvider === 'byteplus') return new BytePlusAdapter();
+  if (fallbackProvider === 'mock') return new MockVideoProvider();
+
   return new FalVideoAdapter();
 }
 

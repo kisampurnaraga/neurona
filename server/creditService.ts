@@ -24,20 +24,37 @@ export interface ProviderPricing {
   verificationStatus: 'VERIFIED' | 'UNVERIFIED';
 }
 
-export function resolveCanonicalModelId(modelId: string): string {
+export function resolveCanonicalModelId(modelId: string, provider?: string): string {
   const clean = (modelId || '').trim().toLowerCase();
-  const aliasMap: Record<string, string> = {
-    'openart-sdxl': 'kling-3-omni',
-    'openart-flux-schnell': 'nano-banana-2-lite',
-    'openart-flux-pro': 'nano-banana-pro',
-    'openart-photoreal-v2': 'byte-plus-seedream-5-lite',
-    'openart-video-fast': 'byte-plus-seedance-2-fast',
-    'openart-video-pro': 'byte-plus-seedance-2',
-    'openart-wan2.1': 'wan2-7',
-    'openart-wan21': 'wan2-7',
-    'openart-veo2': 'veo3-1'
-  };
-  return aliasMap[clean] || clean;
+  const provClean = (provider || '').trim().toLowerCase();
+
+  // ONLY canonicalize if the provider context is OpenArt, or if the model itself explicitly starts with "openart-"
+  if (provClean === 'openart' || clean.startsWith('openart-')) {
+    const aliasMap: Record<string, string> = {
+      'openart-sdxl': 'kling-3-omni',
+      'openart-flux-schnell': 'nano-banana-2-lite',
+      'openart-flux-pro': 'nano-banana-pro',
+      'openart-photoreal-v2': 'byte-plus-seedream-5-lite',
+      'openart-video-fast': 'byte-plus-seedance-2-fast',
+      'openart-video-pro': 'byte-plus-seedance-2',
+      'openart-wan2.1': 'wan2-7',
+      'openart-wan21': 'wan2-7',
+      'openart-veo2': 'veo3-1',
+      // Allow bare alias resolving inside OpenArt context
+      'sdxl': 'kling-3-omni',
+      'flux-schnell': 'nano-banana-2-lite',
+      'flux-pro': 'nano-banana-pro',
+      'photoreal-v2': 'byte-plus-seedream-5-lite',
+      'video-fast': 'byte-plus-seedance-2-fast',
+      'video-pro': 'byte-plus-seedance-2',
+      'wan2.1': 'wan2-7',
+      'wan21': 'wan2-7',
+      'veo2': 'veo3-1'
+    };
+    return aliasMap[clean] || clean;
+  }
+
+  return clean;
 }
 
 const AUTHORITATIVE_PRICING_REGISTRY: ProviderPricing[] = [
@@ -170,7 +187,6 @@ export class CreditService {
     }
 
     // Resolve canonical model and provider
-    const canonicalModelId = resolveCanonicalModelId(modelId);
     let resolvedProvider = params?.provider;
 
     if (!resolvedProvider) {
@@ -179,14 +195,17 @@ export class CreditService {
         'kling-3-omni', 'nano-banana-2-lite', 'nano-banana-2', 'nano-banana-pro',
         'byte-plus-seedream-5-lite', 'byte-plus-seedream-5-pro', 'gpt-image-2', 'wan2-7-image', 'gemini-omni-flash'
       ];
+      const modelIdLower = modelId.toLowerCase();
       if (
-        knownOpenArtModels.includes(canonicalModelId) || 
-        modelId.toLowerCase().startsWith('openart-') || 
-        modelId.toLowerCase().includes('openart')
+        knownOpenArtModels.includes(modelIdLower) || 
+        modelIdLower.startsWith('openart-') || 
+        modelIdLower.includes('openart')
       ) {
         resolvedProvider = 'OpenArt';
       }
     }
+
+    const canonicalModelId = resolveCanonicalModelId(modelId, resolvedProvider);
 
     // Check authoritative registry first for explicit providers
     if (resolvedProvider && params?.operation) {
@@ -307,7 +326,6 @@ export class CreditService {
     }
 
     // Resolve canonical model and provider
-    const canonicalModelId = resolveCanonicalModelId(modelId);
     let resolvedProvider = params?.provider;
 
     if (!resolvedProvider) {
@@ -316,14 +334,17 @@ export class CreditService {
         'kling-3-omni', 'nano-banana-2-lite', 'nano-banana-2', 'nano-banana-pro',
         'byte-plus-seedream-5-lite', 'byte-plus-seedream-5-pro', 'gpt-image-2', 'wan2-7-image', 'gemini-omni-flash'
       ];
+      const modelIdLower = modelId.toLowerCase();
       if (
-        knownOpenArtModels.includes(canonicalModelId) || 
-        modelId.toLowerCase().startsWith('openart-') || 
-        modelId.toLowerCase().includes('openart')
+        knownOpenArtModels.includes(modelIdLower) || 
+        modelIdLower.startsWith('openart-') || 
+        modelIdLower.includes('openart')
       ) {
         resolvedProvider = 'OpenArt';
       }
     }
+
+    const canonicalModelId = resolveCanonicalModelId(modelId, resolvedProvider);
 
     // Check authoritative registry first for explicit providers
     if (resolvedProvider && params?.operation) {

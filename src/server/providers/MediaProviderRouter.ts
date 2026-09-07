@@ -62,25 +62,9 @@ export class MediaProviderRouter {
     const preferredProvider = (options.preferredProvider || '').trim().toLowerCase();
 
     // -------------------------------------------------------------
-    // EXACT MODEL/PROVIDER CONTEXT RESOLUTION (No heuristics first!)
+    // EXPLICIT PROVIDER SELECTION (MUST ALWAYS WIN FIRST!)
     // -------------------------------------------------------------
-    
-    // Check if the requested model is an EXACT known OpenArt Model ID or Alias
-    const knownOpenArtModels = [
-      'veo3-1', 'wan2-7', 'byte-plus-seedance-2', 'byte-plus-seedance-2-fast', 'byte-plus-seedance-2-5',
-      'kling-3-omni', 'nano-banana-2-lite', 'nano-banana-2', 'nano-banana-pro',
-      'byte-plus-seedream-5-lite', 'byte-plus-seedream-5-pro', 'gpt-image-2', 'wan2-7-image', 'gemini-omni-flash',
-      'openart-sdxl', 'openart-flux-schnell', 'openart-flux-pro', 'openart-photoreal-v2',
-      'openart-video-fast', 'openart-video-pro', 'openart-wan2.1', 'openart-wan21', 'openart-veo2'
-    ];
-
-    const isExplicitOpenArt = 
-      preferredProvider === 'openart' ||
-      knownOpenArtModels.includes(preferredModelLower) ||
-      preferredModelLower.startsWith('openart-') ||
-      preferredModelLower.includes('openart');
-
-    if (isExplicitOpenArt) {
+    if (preferredProvider === 'openart') {
       const isImg = operation === 'IMAGE';
       const resolvedModel = preferredModel || (isImg ? 'kling-3-omni' : 'byte-plus-seedance-2-fast');
       return {
@@ -89,22 +73,13 @@ export class MediaProviderRouter {
         model: resolvedModel,
         tier: 'balanced',
         estimatedCostUsd: isImg ? 0.010 : 0.050,
-        reason: 'Explicitly configured OpenArt MCP Provider (Exact Match)',
+        reason: 'Explicitly configured OpenArt MCP Provider',
         fallbackChain: [],
         allowFallback: false
       };
     }
 
-    // Check if the requested model is Google Veo (direct)
-    const knownGoogleModels = [
-      'google-veo-2.0', 'google-veo', 'veo-2.0-generate-video', 'gemini-3.1-flash-image', 'veo-asli', 'google'
-    ];
-    const isExplicitGoogle = 
-      preferredProvider === 'google' || 
-      preferredProvider === 'google_veo' ||
-      knownGoogleModels.includes(preferredModelLower);
-
-    if (isExplicitGoogle) {
+    if (preferredProvider === 'google' || preferredProvider === 'google_veo' || preferredProvider === 'google-veo') {
       const isImg = operation === 'IMAGE';
       const resolvedModel = preferredModel || (isImg ? 'gemini-3.1-flash-image' : 'veo-2.0-generate-video');
       return {
@@ -113,26 +88,13 @@ export class MediaProviderRouter {
         model: resolvedModel,
         tier: 'premium',
         estimatedCostUsd: isImg ? 0.03 : 0.20,
-        reason: 'Selected Google Cinematic Veo / Imagen engine (Exact Match)',
+        reason: 'Explicitly configured Google Cinematic Veo / Imagen engine',
         fallbackChain: [],
         allowFallback: false
       };
     }
 
-    // Check if the requested model/provider is Fal AI
-    const knownFalModels = [
-      'fal-ai/veo3.1/lite/image-to-video', 'fal-ai/flux/schnell'
-    ];
-    const isExplicitFal = 
-      preferredProvider === 'fal' || 
-      preferredProvider === 'fal-ai' ||
-      knownFalModels.includes(preferredModelLower) ||
-      preferredModelLower.startsWith('fal') ||
-      preferredModelLower.includes('fal-ai') ||
-      preferredModelLower.includes('fal.run') ||
-      preferredModelLower.includes('fal.ai');
-
-    if (isExplicitFal) {
+    if (preferredProvider === 'fal' || preferredProvider === 'fal-ai') {
       const isImg = operation === 'IMAGE';
       const resolvedModel = preferredModel || (isImg ? 'fal-ai/flux/schnell' : 'fal-ai/veo3.1/lite/image-to-video');
       return {
@@ -141,31 +103,113 @@ export class MediaProviderRouter {
         model: resolvedModel,
         tier: 'balanced',
         estimatedCostUsd: isImg ? 0.01 : 0.12,
-        reason: 'Selected Fal.ai universal media pipeline (Exact Match)',
+        reason: 'Explicitly configured Fal.ai universal media pipeline',
         fallbackChain: [],
         allowFallback: false
       };
     }
 
-    // Check if the requested model/provider is BytePlus
-    const knownBytePlusModels = [
-      'dreamina-seedance-2-0-mini-260615'
-    ];
-    const isExplicitBytePlus = 
-      preferredProvider === 'byteplus' ||
-      knownBytePlusModels.includes(preferredModelLower) ||
-      preferredModelLower.includes('byteplus') ||
-      preferredModelLower.includes('pixeldance') ||
-      preferredModelLower.includes('doubao');
-
-    if (isExplicitBytePlus) {
+    if (preferredProvider === 'byteplus') {
       return {
         providerId: 'byteplus',
         providerName: 'BytePlus ModelArk',
         model: preferredModel || 'dreamina-seedance-2-0-mini-260615',
         tier: 'balanced',
         estimatedCostUsd: 0.08,
-        reason: 'Selected BytePlus ModelArk seedance engine (Exact Match)',
+        reason: 'Explicitly configured BytePlus ModelArk seedance engine',
+        fallbackChain: [],
+        allowFallback: false
+      };
+    }
+
+    // -------------------------------------------------------------
+    // IMPLICIT RESOLUTION BY MODEL ID (Only when no explicit provider)
+    // -------------------------------------------------------------
+    const knownOpenArtModels = [
+      'veo3-1', 'wan2-7', 'byte-plus-seedance-2', 'byte-plus-seedance-2-fast', 'byte-plus-seedance-2-5',
+      'kling-3-omni', 'nano-banana-2-lite', 'nano-banana-2', 'nano-banana-pro',
+      'byte-plus-seedream-5-lite', 'byte-plus-seedream-5-pro', 'gpt-image-2', 'wan2-7-image', 'gemini-omni-flash',
+      'openart-sdxl', 'openart-flux-schnell', 'openart-flux-pro', 'openart-photoreal-v2',
+      'openart-video-fast', 'openart-video-pro', 'openart-wan2.1', 'openart-wan21', 'openart-veo2'
+    ];
+
+    if (
+      knownOpenArtModels.includes(preferredModelLower) ||
+      preferredModelLower.startsWith('openart-') ||
+      preferredModelLower.includes('openart')
+    ) {
+      const isImg = operation === 'IMAGE';
+      const resolvedModel = preferredModel || (isImg ? 'kling-3-omni' : 'byte-plus-seedance-2-fast');
+      return {
+        providerId: 'openart',
+        providerName: 'OpenArt MCP Media Provider',
+        model: resolvedModel,
+        tier: 'balanced',
+        estimatedCostUsd: isImg ? 0.010 : 0.050,
+        reason: 'Implicit OpenArt MCP Model Match',
+        fallbackChain: [],
+        allowFallback: false
+      };
+    }
+
+    const knownGoogleModels = [
+      'google-veo-2.0', 'google-veo', 'veo-2.0-generate-video', 'gemini-3.1-flash-image', 'veo-asli', 'google'
+    ];
+    if (knownGoogleModels.includes(preferredModelLower)) {
+      const isImg = operation === 'IMAGE';
+      const resolvedModel = preferredModel || (isImg ? 'gemini-3.1-flash-image' : 'veo-2.0-generate-video');
+      return {
+        providerId: 'google_veo',
+        providerName: 'Google Veo / Imagen 3',
+        model: resolvedModel,
+        tier: 'premium',
+        estimatedCostUsd: isImg ? 0.03 : 0.20,
+        reason: 'Implicit Google Cinematic Veo / Imagen Match',
+        fallbackChain: [],
+        allowFallback: false
+      };
+    }
+
+    const knownFalModels = [
+      'fal-ai/veo3.1/lite/image-to-video', 'fal-ai/flux/schnell'
+    ];
+    if (
+      knownFalModels.includes(preferredModelLower) ||
+      preferredModelLower.startsWith('fal') ||
+      preferredModelLower.includes('fal-ai') ||
+      preferredModelLower.includes('fal.run') ||
+      preferredModelLower.includes('fal.ai')
+    ) {
+      const isImg = operation === 'IMAGE';
+      const resolvedModel = preferredModel || (isImg ? 'fal-ai/flux/schnell' : 'fal-ai/veo3.1/lite/image-to-video');
+      return {
+        providerId: 'fal',
+        providerName: 'Fal.ai Universal Media Engine',
+        model: resolvedModel,
+        tier: 'balanced',
+        estimatedCostUsd: isImg ? 0.01 : 0.12,
+        reason: 'Implicit Fal.ai Universal Media Match',
+        fallbackChain: [],
+        allowFallback: false
+      };
+    }
+
+    const knownBytePlusModels = [
+      'dreamina-seedance-2-0-mini-260615'
+    ];
+    if (
+      knownBytePlusModels.includes(preferredModelLower) ||
+      preferredModelLower.includes('byteplus') ||
+      preferredModelLower.includes('pixeldance') ||
+      preferredModelLower.includes('doubao')
+    ) {
+      return {
+        providerId: 'byteplus',
+        providerName: 'BytePlus ModelArk',
+        model: preferredModel || 'dreamina-seedance-2-0-mini-260615',
+        tier: 'balanced',
+        estimatedCostUsd: 0.08,
+        reason: 'Implicit BytePlus ModelArk Match',
         fallbackChain: [],
         allowFallback: false
       };

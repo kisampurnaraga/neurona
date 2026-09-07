@@ -1974,10 +1974,27 @@ export class ProductionOrchestrator {
     scene.videoStatus = 'GENERATING';
     scene.status = 'GENERATING';
 
-    const isOpenArt = effectiveVideoModel.toLowerCase().includes('openart');
-    const actualProvider = isOpenArt ? 'OpenArt' : undefined;
+    const scenePreferredProvider = (scene as any).videoProvider || (scene as any).metadata?.provider;
+    const projectPreferredProvider = (project as any).videoProvider;
+    const preferredProvider = scenePreferredProvider || projectPreferredProvider;
+
+    const route = MediaProviderRouter.resolveRoute('VIDEO', {
+      preferredModelOrEngine: effectiveVideoModel,
+      preferredProvider,
+      studio: project.videoType
+    });
+
+    const routeProviderId = route.providerId;
+    const actualProvider = routeProviderId === 'openart' ? 'OpenArt' : routeProviderId;
+    const canonicalModel = route.model;
+
     const isFounderBypass = (project as any).isFounderBypass || (project.userId === 'founder' || project.userId === 'admin');
-    const creditCalc = CreditService.calculateCreditCost(effectiveVideoModel, { duration: scene.duration || 5, isFounderBypass, provider: actualProvider, operation: 'image-to-video' });
+    const creditCalc = CreditService.calculateCreditCost(canonicalModel, { 
+      duration: scene.duration || 5, 
+      isFounderBypass, 
+      provider: actualProvider, 
+      operation: 'image-to-video' 
+    });
 
     let holdSuccess = true;
     let holdId: string | undefined = undefined;
@@ -1985,10 +2002,10 @@ export class ProductionOrchestrator {
       const holdRes = await CreditService.holdCredits(
         project.userId, 
         creditCalc.credits, 
-        `Video Scene ${sceneIdx + 1} (${effectiveVideoModel})`, 
+        `Video Scene ${sceneIdx + 1} (${canonicalModel})`, 
         undefined, 
         actualProvider, 
-        effectiveVideoModel, 
+        canonicalModel, 
         'image-to-video'
       );
       if (!holdRes.success) {
@@ -2002,7 +2019,7 @@ export class ProductionOrchestrator {
       holdId = holdRes.holdId;
     }
 
-    const provider = getVideoProvider(effectiveVideoModel);
+    const provider = getVideoProvider(canonicalModel, routeProviderId);
     
     appendLog(project, 'GATOTKACA', `MEMULAI RENDER VIDEO ADEGAN ${sceneIdx + 1} dengan ${provider.name} (Biaya: ${creditCalc.credits} Kredit)...`, 'INFO');
     updateTelemetry(project, 'GATOTKACA', { status: 'ACTIVE', currentTask: `Rendering scene ${sceneIdx + 1} video latent diffusion...`, progress: 15 });
@@ -2131,7 +2148,13 @@ export class ProductionOrchestrator {
     const project = projects.get(id)!;
     
     try {
-      const provider = getVideoProvider(project.videoModel);
+      const projectPreferredProvider = (project as any).videoProvider;
+      const route = MediaProviderRouter.resolveRoute('VIDEO', {
+        preferredModelOrEngine: project.videoModel,
+        preferredProvider: projectPreferredProvider,
+        studio: project.videoType
+      });
+      const provider = getVideoProvider(route.model, route.providerId);
       const pStatus = await provider.getStatus();
       
       if (startFromAgent === 'AI Video Director') {
