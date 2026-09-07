@@ -60,7 +60,7 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
 
   public getSessionToken(): string | null {
     const fccConfig: any = (FounderService as any).getHiggsfieldConfig?.() || {};
-    let token = fccConfig.sessionToken || fccConfig.apiKey || process.env.HIGGSFIELD_AUTH_TOKEN || process.env.HIGGSFIELD_SESSION_TOKEN || process.env.HIGGSFIELD_API_KEY || null;
+    let token = fccConfig.sessionToken || fccConfig.apiKey || process.env.HIGGSFIELD_OAUTH_TOKEN || process.env.HIGGSFIELD_AUTH_TOKEN || null;
     if (!token) {
       try {
         const row = db.select().from(apiKeys).where(and(eq(apiKeys.provider, 'higgsfield'), eq(apiKeys.status, 'ACTIVE'))).get();

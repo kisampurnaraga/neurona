@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   Server,
   Key,
-  Eye,
-  EyeOff,
   CheckCircle2,
   AlertCircle,
   RefreshCw,
@@ -11,19 +9,21 @@ import {
   Sparkles,
   Play,
   Trash2,
-  Clock,
   ShieldCheck,
   Cpu,
   ChevronDown,
   ChevronUp,
   LogIn,
   X,
-  Video
+  Video,
+  ExternalLink,
+  Layers,
+  Check
 } from 'lucide-react';
 
 interface HiggsfieldStatusResponse {
   success: boolean;
-  status: 'CONNECTED' | 'NOT_CONNECTED' | 'CONFIGURED_OFFLINE' | 'ERROR';
+  status: 'CONNECTED' | 'NOT_CONNECTED' | 'CONNECTING' | 'CONFIGURED_OFFLINE' | 'ERROR';
   endpoint: string;
   model: string;
   authenticated: boolean;
@@ -39,10 +39,8 @@ interface HiggsfieldStatusResponse {
 
 export const FounderHiggsfieldPanel: React.FC = () => {
   const [statusData, setStatusData] = useState<HiggsfieldStatusResponse | null>(null);
-  const [sessionTokenInput, setSessionTokenInput] = useState('');
   const [endpointInput, setEndpointInput] = useState('https://mcp.higgsfield.ai/mcp');
   const [selectedModel, setSelectedModel] = useState('higgsfield-video-pro');
-  const [showKey, setShowKey] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isDiscovering, setIsDiscovering] = useState(false);
@@ -51,6 +49,12 @@ export const FounderHiggsfieldPanel: React.FC = () => {
   const [testVideoResult, setTestVideoResult] = useState<string | null>(null);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [showToolsList, setShowToolsList] = useState(false);
+
+  // Authorization Modal State (OAuth PKCE Flow)
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isConnectingOAuth, setIsConnectingOAuth] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authDirectUrl, setAuthDirectUrl] = useState<string | null>(null);
 
   const fetchStatus = async () => {
     setIsLoading(true);
@@ -73,43 +77,65 @@ export const FounderHiggsfieldPanel: React.FC = () => {
 
   useEffect(() => {
     fetchStatus();
+
+    // Listen for OAuth Popup PostMessage Callbacks
+    const handleAuthMessage = async (event: MessageEvent) => {
+      if (event.data?.type === 'HIGGSFIELD_AUTH_SUCCESS') {
+        setIsConnectingOAuth(false);
+        setIsAuthModalOpen(false);
+        showFeedback('success', `✓ Otorisasi Akun Higgsfield MCP Berhasil! (${event.data.toolsCount ?? 2} tools terverifikasi)`);
+        await fetchStatus();
+      } else if (event.data?.type === 'HIGGSFIELD_AUTH_ERROR') {
+        setAuthError(event.data.description || event.data.error || 'Otorisasi Higgsfield dibatalkan atau ditolak.');
+        setIsConnectingOAuth(false);
+      }
+    };
+
+    window.addEventListener('message', handleAuthMessage);
+    return () => window.removeEventListener('message', handleAuthMessage);
   }, []);
 
   const showFeedback = (type: 'success' | 'error' | 'info', text: string) => {
     setFeedbackMsg({ type, text });
-    setTimeout(() => setFeedbackMsg(null), 5000);
+    setTimeout(() => setFeedbackMsg(null), 6000);
   };
 
-  const handleConnect = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!sessionTokenInput.trim()) {
-      showFeedback('error', 'Silakan masukkan API Key / Session Token Higgsfield.');
-      return;
-    }
+  // Launch Higgsfield Official OAuth PKCE Flow
+  const handleOpenAuthPopup = async () => {
+    setAuthError(null);
+    setIsConnectingOAuth(true);
+    setIsAuthModalOpen(true);
 
-    setIsTesting(true);
     try {
-      const res = await fetch('/api/fcc/higgsfield/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-role': 'founder' },
-        body: JSON.stringify({
-          apiKey: sessionTokenInput.trim(),
-          endpoint: endpointInput.trim(),
-          model: selectedModel
-        })
+      const origin = window.location.origin;
+      const res = await fetch(`/api/fcc/higgsfield/auth/init?origin=${encodeURIComponent(origin)}`, {
+        headers: { 'x-role': 'founder' }
       });
       const data = await res.json();
-      if (data.success) {
-        showFeedback('success', `✓ Higgsfield MCP berhasil terhubung (${data.toolsCount ?? 0} tools ditemukan)!`);
-        setSessionTokenInput('');
-        await fetchStatus();
-      } else {
-        showFeedback('error', data.message || data.error || 'Gagal menghubungkan Higgsfield MCP.');
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Gagal menginisialisasi sesi otorisasi Higgsfield');
+      }
+
+      setAuthDirectUrl(data.directAuthUrl || data.authUrl);
+
+      const width = 640;
+      const height = 750;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+
+      const popup = window.open(
+        data.authUrl,
+        'Higgsfield_Authorization',
+        `width=${width},height=${height},left=${left},top=${top},status=no,menubar=no,toolbar=no`
+      );
+
+      if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+        setAuthError('Pop-up terblokir oleh browser. Klik tombol di bawah untuk membuka halaman otorisasi Higgsfield secara manual.');
       }
     } catch (err: any) {
-      showFeedback('error', `Error: ${err?.message || 'Jaringan bermasalah'}`);
-    } finally {
-      setIsTesting(false);
+      setAuthError('Gagal membuka portal otorisasi Higgsfield: ' + (err.message || String(err)));
+      setIsConnectingOAuth(false);
     }
   };
 
@@ -156,7 +182,7 @@ export const FounderHiggsfieldPanel: React.FC = () => {
   };
 
   const handleDisconnect = async () => {
-    if (!confirm('Putuskan koneksi Higgsfield MCP?')) return;
+    if (!confirm('Putuskan dan cabut otorisasi sesi Higgsfield MCP? Sesi terenkripsi akan dihapus secara aman.')) return;
     setIsLoading(true);
     try {
       const res = await fetch('/api/fcc/higgsfield/disconnect', {
@@ -164,7 +190,7 @@ export const FounderHiggsfieldPanel: React.FC = () => {
         headers: { 'x-role': 'founder' }
       });
       if (res.ok) {
-        showFeedback('info', 'Higgsfield MCP terputus.');
+        showFeedback('info', 'Higgsfield MCP disconnected dan otorisasi dicabut secara aman.');
         await fetchStatus();
       }
     } catch (err: any) {
@@ -198,7 +224,8 @@ export const FounderHiggsfieldPanel: React.FC = () => {
     }
   };
 
-  const isConnected = statusData?.status === 'CONNECTED';
+  const isConnected = statusData?.status === 'CONNECTED' && statusData?.authenticated;
+  const isError = statusData?.status === 'ERROR';
 
   return (
     <div id="founder-higgsfield-panel" className="space-y-6">
@@ -211,18 +238,18 @@ export const FounderHiggsfieldPanel: React.FC = () => {
                 <Video className="w-6 h-6 text-white" />
               </div>
               <span className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-black ${
-                isConnected ? 'bg-emerald-500 shadow-sm shadow-emerald-500' : 'bg-rose-500'
+                isConnected ? 'bg-emerald-500 shadow-sm shadow-emerald-500' : isError ? 'bg-rose-500' : 'bg-slate-500'
               }`} />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-bold text-white tracking-tight">Higgsfield MCP Gateway</h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  Model Context Protocol
+                  Official OAuth / Account Authorization
                 </span>
               </div>
               <p className="text-xs text-gray-400 mt-0.5">
-                Official MCP adapter untuk Text-to-Video & Image-to-Video generation berkecepatan tinggi.
+                Official Model Context Protocol (MCP) video provider dengan otentikasi akun aman OAuth 2.0 PKCE.
               </p>
             </div>
           </div>
@@ -264,89 +291,111 @@ export const FounderHiggsfieldPanel: React.FC = () => {
         )}
       </div>
 
-      {/* Grid: Config Form & Health Status */}
+      {/* Grid: OAuth Action / Connection Status & Telemetry */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Connection Settings */}
+        {/* Left 2 Cols: OAuth Authorization & MCP Controls */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="rounded-2xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl space-y-4">
-            <h3 className="text-sm font-semibold text-gray-200 uppercase tracking-wider font-mono flex items-center gap-2">
-              <Server className="w-4 h-4 text-purple-400" />
-              Koneksi & Kredensial MCP
-            </h3>
+          <div className="rounded-2xl border border-white/10 bg-black/40 p-6 backdrop-blur-xl space-y-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-200 uppercase tracking-wider font-mono flex items-center gap-2">
+                <Server className="w-4 h-4 text-purple-400" />
+                Higgsfield MCP Account Connection
+              </h3>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                Endpoint: https://mcp.higgsfield.ai/mcp
+              </span>
+            </div>
 
-            <form onSubmit={handleConnect} className="space-y-4">
-              <div>
-                <label className="block text-xs font-mono text-gray-400 mb-1">MCP Endpoint</label>
-                <input
-                  type="text"
-                  value={endpointInput}
-                  onChange={(e) => setEndpointInput(e.target.value)}
-                  placeholder="https://mcp.higgsfield.ai/mcp"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
-                />
+            {/* Architecture Separation Notice */}
+            <div className="p-3.5 rounded-xl border border-purple-500/20 bg-purple-950/20 text-xs font-mono text-purple-200/90 space-y-1.5">
+              <div className="flex items-center gap-1.5 font-semibold text-purple-300">
+                <ShieldCheck className="w-4 h-4 text-purple-400" />
+                Otorisasi Resmi OAuth 2.0 PKCE
               </div>
+              <p className="text-[11px] text-gray-400 leading-relaxed">
+                Higgsfield MCP menggunakan otorisasi akun resmi (OAuth/PKCE), bukan API Key manual. Kredensial sesi disimpan terenkripsi di SQLite server, menjamin keamanan data dan integritas billing CreditService.
+              </p>
+            </div>
 
-              <div>
-                <label className="block text-xs font-mono text-gray-400 mb-1">
-                  Session Token / API Key
-                  {statusData?.maskedKey && (
-                    <span className="ml-2 text-[10px] text-gray-500 font-mono">
-                      (Tersimpan: {statusData.maskedKey})
+            {/* Connection State Card */}
+            <div className="p-5 rounded-xl bg-white/5 border border-white/10 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-mono text-gray-400">Status Otorisasi Sesi</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`text-sm font-mono font-bold ${
+                      isConnected ? 'text-emerald-400' : isError ? 'text-rose-400' : 'text-gray-300'
+                    }`}>
+                      {isConnected ? 'CONNECTED / READY' : isError ? 'ERROR' : isConnectingOAuth ? 'CONNECTING...' : 'NOT CONNECTED'}
                     </span>
+                    {isConnected && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        Active MCP Session
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {!isConnected ? (
+                    <button
+                      type="button"
+                      id="btn-connect-higgsfield"
+                      onClick={handleOpenAuthPopup}
+                      disabled={isConnectingOAuth}
+                      className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-mono font-bold py-2.5 px-5 rounded-xl shadow-lg shadow-purple-600/30 flex items-center gap-2 transition-all disabled:opacity-50"
+                    >
+                      <LogIn className="w-4 h-4" />
+                      CONNECT HIGGSFIELD
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleTestConnection}
+                        disabled={isTesting}
+                        className="border border-white/10 bg-white/5 hover:bg-white/10 text-white text-xs font-mono py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition-all"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-amber-400" />
+                        Ping Health
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDisconnect}
+                        className="border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-mono py-2 px-3 rounded-xl flex items-center gap-1.5 transition-all"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Disconnect
+                      </button>
+                    </div>
                   )}
-                </label>
-                <div className="relative">
-                  <input
-                    type={showKey ? 'text' : 'password'}
-                    value={sessionTokenInput}
-                    onChange={(e) => setSessionTokenInput(e.target.value)}
-                    placeholder={statusData?.authenticated ? '•••••••••••••••• (Terotentikasi)' : 'Masukkan Higgsfield Session Token / Key'}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 pr-10 text-xs font-mono text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowKey(!showKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                  >
-                    {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-mono text-gray-400 mb-1">Model Default</label>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="w-full bg-black/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white focus:outline-none focus:border-purple-500/50"
-                >
-                  <option value="higgsfield-video-pro">Higgsfield Video Pro (Cinematic T2V / I2V - 15 cr)</option>
-                  <option value="higgsfield-anim">Higgsfield Anim (Character Animation I2V - 10 cr)</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="submit"
-                  disabled={isTesting}
-                  className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-mono font-semibold py-2.5 px-4 rounded-xl shadow-lg shadow-purple-600/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-                >
-                  <Key className="w-3.5 h-3.5" />
-                  {isTesting ? 'Memverifikasi...' : 'Simpan & Verifikasi Otorisasi'}
-                </button>
-                {isConnected && (
-                  <button
-                    type="button"
-                    onClick={handleTestConnection}
-                    disabled={isTesting}
-                    className="border border-white/10 bg-white/5 hover:bg-white/10 text-white text-xs font-mono py-2.5 px-4 rounded-xl flex items-center gap-1.5 transition-all"
+              {/* Endpoint & Model Settings */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-white/5">
+                <div>
+                  <label className="block text-[11px] font-mono text-gray-400 mb-1">MCP Endpoint</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={endpointInput}
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-gray-300 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-mono text-gray-400 mb-1">Model Default</label>
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="w-full bg-black/60 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-purple-500/50"
                   >
-                    <Zap className="w-3.5 h-3.5 text-amber-400" />
-                    Ping Health
-                  </button>
-                )}
+                    <option value="higgsfield-video-pro">Higgsfield Video Pro (Cinematic T2V / I2V - 15 cr)</option>
+                    <option value="higgsfield-anim">Higgsfield Anim (Character Animation I2V - 10 cr)</option>
+                  </select>
+                </div>
               </div>
-            </form>
+            </div>
           </div>
 
           {/* Test Generation Box */}
@@ -357,7 +406,7 @@ export const FounderHiggsfieldPanel: React.FC = () => {
                 Live Video Generation Tester
               </h3>
               <p className="text-xs text-gray-400 font-mono">
-                Uji langsung kemampuan render Text-to-Video via Higgsfield MCP pipeline.
+                Uji langsung kemampuan render Text-to-Video via Higgsfield MCP pipeline yang terotorisasi.
               </p>
 
               <div className="space-y-3">
@@ -411,9 +460,11 @@ export const FounderHiggsfieldPanel: React.FC = () => {
                 <span className={`text-xs font-mono font-semibold px-2 py-0.5 rounded-full ${
                   isConnected
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    : isError
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    : 'bg-slate-500/20 text-slate-300 border border-slate-500/30'
                 }`}>
-                  {statusData?.status || 'UNKNOWN'}
+                  {isConnected ? 'CONNECTED' : isError ? 'ERROR' : isConnectingOAuth ? 'CONNECTING' : 'NOT_CONNECTED'}
                 </span>
               </div>
 
@@ -476,6 +527,80 @@ export const FounderHiggsfieldPanel: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* OAuth Connecting Modal */}
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+          <div className="relative w-full max-w-lg rounded-2xl border border-purple-500/30 bg-slate-950 p-6 shadow-2xl shadow-purple-950/50 space-y-5">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center">
+                  <LogIn className="w-5 h-5 text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Otorisasi Akun Higgsfield MCP</h3>
+                  <p className="text-xs text-gray-400">OAuth 2.0 PKCE Account Handshake</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAuthModalOpen(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-purple-950/30 border border-purple-500/20 text-xs font-mono text-purple-200 space-y-2">
+                <div className="flex items-center gap-2 font-semibold text-purple-300">
+                  <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
+                  Menunggu Otorisasi di Jendela Higgsfield...
+                </div>
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  Silakan login dan setujui permintaan otorisasi akun NEURONA di jendela pop-up Higgsfield. Setelah selesai, jendela akan tertutup otomatis dan MCP session akan terhubung.
+                </p>
+              </div>
+
+              {authError && (
+                <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs font-mono space-y-2">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{authError}</span>
+                  </div>
+                  {authDirectUrl && (
+                    <a
+                      href={authDirectUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 text-xs font-mono border border-rose-500/40 transition-colors"
+                    >
+                      Buka Otorisasi Higgsfield <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAuthModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-mono text-gray-300 transition-colors"
+                >
+                  Batal / Tutup
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenAuthPopup}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-mono text-white font-semibold transition-colors flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Buka Ulang Pop-up
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

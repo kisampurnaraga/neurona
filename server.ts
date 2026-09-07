@@ -1266,7 +1266,7 @@ async function startServer() {
     }
   });
 
-  // HIGGSFIELD MCP MANAGEMENT ENDPOINTS
+  // HIGGSFIELD MCP MANAGEMENT & OAUTH ENDPOINTS
   app.get('/api/fcc/higgsfield/status', async (req, res) => {
     if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
     try {
@@ -1316,24 +1316,208 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/higgsfield/connect', async (req, res) => {
+  // Higgsfield OAuth Authorization Flow Initialization (RFC 7591 Dynamic Client + RFC 7636 PKCE)
+  app.get('/api/fcc/higgsfield/auth/init', async (req, res) => {
     if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
     try {
-      const { apiKey, sessionToken, endpoint, model } = req.body;
-      const tokenToSave = (sessionToken || apiKey || '').trim();
+      const forwardedProto = req.headers['x-forwarded-proto'] as string;
+      const forwardedHost = req.headers['x-forwarded-host'] as string;
+      const protocol = forwardedProto || req.protocol || 'http';
+      const host = forwardedHost || req.get('host') || 'localhost:3000';
+      const origin = (req.query.origin as string) || `${protocol}://${host}`;
 
-      if (!tokenToSave) {
-        return res.status(400).json({ error: 'Session token atau API Key Higgsfield wajib diisi.' });
+      const { HiggsfieldOAuthService } = await import('./server/services/higgsfieldOAuthService');
+      const session = await HiggsfieldOAuthService.createAuthorizationSession(origin);
+      const directPortalUrl = 'https://higgsfield.ai/account/api-keys';
+
+      res.json({
+        success: true,
+        authUrl: session.authUrl,
+        directAuthUrl: session.directAuthUrl,
+        directPortalUrl,
+        state: session.state,
+        redirectUri: session.redirectUri,
+        clientId: session.clientId,
+        endpoint: process.env.HIGGSFIELD_MCP_ENDPOINT || 'https://mcp.higgsfield.ai/mcp'
+      });
+    } catch (e: any) {
+      console.error('[Higgsfield OAuth Init Error]:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Higgsfield OAuth Callback (Browser Redirect / Popup with PKCE Token Exchange & MCP Validation)
+  app.get('/api/fcc/higgsfield/oauth/callback', async (req, res) => {
+    const { code, state, error, error_description } = req.query;
+    const forwardedProto = req.headers['x-forwarded-proto'] as string;
+    const forwardedHost = req.headers['x-forwarded-host'] as string;
+    const protocol = forwardedProto || req.protocol || 'http';
+    const host = forwardedHost || req.get('host') || 'localhost:3000';
+    const fallbackOrigin = `${protocol}://${host}`;
+
+    if (error) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Higgsfield Authorization Error</title></head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
+          <h2 style="color: #ef4444; margin-bottom: 12px;">Otorisasi Ditolak atau Dibatalkan</h2>
+          <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${error_description || error || 'Otorisasi Higgsfield dibatalkan oleh pengguna.'}</p>
+          <button onclick="window.close()" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Tutup Jendela</button>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: 'HIGGSFIELD_AUTH_ERROR', error: '${error}', description: '${error_description || ''}' }, ${JSON.stringify(fallbackOrigin)});
+              setTimeout(() => window.close(), 3000);
+            }
+          </script>
+        </body>
+        </html>
+      `);
+    }
+
+    if (!code || !state) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Higgsfield Authorization Failed</title></head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
+          <h2 style="color: #ef4444; margin-bottom: 12px;">Parameter Callback Tidak Lengkap</h2>
+          <p style="color: #94a3b8; font-size: 14px;">Authorization code atau state tidak ditemukan dalam URL callback.</p>
+          <button onclick="window.close()" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Tutup</button>
+        </body>
+        </html>
+      `);
+    }
+
+    try {
+      const { HiggsfieldOAuthService } = await import('./server/services/higgsfieldOAuthService');
+      const exchangeRes = await HiggsfieldOAuthService.exchangeCodeForToken(String(code), String(state));
+      const targetOrigin = exchangeRes?.origin || fallbackOrigin;
+
+      if (!exchangeRes.success || !exchangeRes.token) {
+        return res.send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>Higgsfield Token Exchange Failed</title></head>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
+            <h2 style="color: #ef4444; margin-bottom: 12px;">Gagal Menukar Authorization Code</h2>
+            <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${exchangeRes.message || exchangeRes.error || 'Server Higgsfield menolak kode otorisasi.'}</p>
+            <button onclick="window.close()" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Tutup Jendela</button>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'HIGGSFIELD_AUTH_ERROR', error: '${exchangeRes.error || 'EXCHANGE_FAILED'}', description: '${exchangeRes.message || ''}' }, ${JSON.stringify(targetOrigin)});
+              }
+            </script>
+          </body>
+          </html>
+        `);
+      }
+
+      // Perform real-time MCP validation (initialize + tools/list)
+      const { HiggsfieldMCPAdapter } = await import('./src/server/providers/HiggsfieldMCPAdapter');
+      const adapter = new HiggsfieldMCPAdapter();
+      const valRes = await adapter.validateSessionToken(exchangeRes.token);
+
+      if (!valRes.valid) {
+        return res.send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>Higgsfield MCP Validation Failed</title></head>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
+            <h2 style="color: #ef4444; margin-bottom: 12px;">Validasi MCP Server Ditolak</h2>
+            <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${valRes.message || 'Token valid namun handshake MCP gagal.'}</p>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'HIGGSFIELD_AUTH_ERROR', error: '${valRes.error || 'MCP_VALIDATION_FAILED'}', description: '${valRes.message || ''}' }, ${JSON.stringify(targetOrigin)});
+              }
+            </script>
+          </body>
+          </html>
+        `);
+      }
+
+      // Save encrypted token to SQLite
+      FounderService.saveProviderConfig('higgsfield', {
+        apiKey: exchangeRes.token,
+        endpoint: 'https://mcp.higgsfield.ai/mcp',
+        model: 'higgsfield-video-pro'
+      });
+
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Higgsfield Authorization Success</title></head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #34d399; text-align: center; padding: 60px 20px;">
+          <h2 style="color: #a855f7; margin-bottom: 12px;">✓ Otorisasi Higgsfield MCP Berhasil</h2>
+          <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${valRes.toolsCount || 0} MCP Tools terdeteksi (${valRes.latencyMs || 25}ms). Menyimpan sesi ke sistem NEURONA...</p>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({
+                type: 'HIGGSFIELD_AUTH_SUCCESS',
+                success: true,
+                toolsCount: ${valRes.toolsCount || 0},
+                latencyMs: ${valRes.latencyMs || 25}
+              }, ${JSON.stringify(targetOrigin)});
+              setTimeout(() => window.close(), 1200);
+            }
+          </script>
+        </body>
+        </html>
+      `);
+    } catch (err: any) {
+      console.error('[Higgsfield Callback Error]:', err);
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Higgsfield Server Error</title></head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
+          <h2 style="color: #ef4444; margin-bottom: 12px;">Terjadi Kesalahan Server</h2>
+          <p style="color: #94a3b8; font-size: 14px;">${err?.message || String(err)}</p>
+        </body>
+        </html>
+      `);
+    }
+  });
+
+  // Higgsfield OAuth Token / Session Validation Endpoint
+  app.post('/api/fcc/higgsfield/auth/verify', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const { token, sessionToken, code, endpoint, model } = req.body;
+      const targetToken = (token || sessionToken || code || '').trim();
+
+      if (!targetToken) {
+        return res.status(400).json({
+          success: false,
+          error: 'EMPTY_TOKEN',
+          message: 'Token otorisasi tidak ditemukan. Silakan klik "Connect Higgsfield" untuk otorisasi akun.'
+        });
+      }
+
+      const { HiggsfieldMCPAdapter } = await import('./src/server/providers/HiggsfieldMCPAdapter');
+      const adapter = new HiggsfieldMCPAdapter();
+      const valRes = await adapter.validateSessionToken(targetToken);
+
+      if (!valRes.valid) {
+        return res.status(401).json({
+          success: false,
+          error: valRes.error || 'INVALID_TOKEN',
+          message: valRes.message || 'Otorisasi Higgsfield MCP ditolak oleh server.'
+        });
       }
 
       FounderService.saveProviderConfig('higgsfield', {
-        apiKey: tokenToSave,
+        apiKey: targetToken,
         endpoint: endpoint || 'https://mcp.higgsfield.ai/mcp',
         model: model || 'higgsfield-video-pro'
       });
 
-      const testRes = await FounderService.testProvider('higgsfield');
-      res.json(testRes);
+      res.json({
+        success: true,
+        message: 'Otorisasi Higgsfield MCP berhasil diverifikasi dan disimpan.',
+        toolsCount: valRes.toolsCount,
+        latencyMs: valRes.latencyMs
+      });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1364,10 +1548,12 @@ async function startServer() {
   app.post('/api/fcc/higgsfield/disconnect', async (req, res) => {
     if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
     try {
+      const { HiggsfieldOAuthService } = await import('./server/services/higgsfieldOAuthService');
+      await HiggsfieldOAuthService.revokeToken();
       FounderService.saveProviderConfig('higgsfield', { apiKey: '', model: 'higgsfield-video-pro', endpoint: 'https://mcp.higgsfield.ai/mcp' });
       const { HiggsfieldMCPAdapter } = await import('./src/server/providers/HiggsfieldMCPAdapter');
       HiggsfieldMCPAdapter.clearCache();
-      res.json({ success: true, message: 'Higgsfield MCP disconnected dan kredensial dibersihkan.' });
+      res.json({ success: true, message: 'Higgsfield MCP disconnected dan otorisasi dicabut secara aman.' });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

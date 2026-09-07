@@ -114,7 +114,7 @@ export class FounderService {
             this.customHiggsfieldConfig.apiKey = decrypted;
             this.customHiggsfieldConfig.sessionToken = decrypted;
             this.customHiggsfieldConfig.status = 'READY';
-            process.env.HIGGSFIELD_API_KEY = decrypted;
+            process.env.HIGGSFIELD_OAUTH_TOKEN = decrypted;
           }
         }
       } catch (err) {
@@ -290,11 +290,11 @@ export class FounderService {
     protocolVersion?: string;
     toolsDiscovered?: number;
   } = {
-    apiKey: process.env.HIGGSFIELD_API_KEY || '',
-    sessionToken: process.env.HIGGSFIELD_API_KEY || '',
+    apiKey: process.env.HIGGSFIELD_OAUTH_TOKEN || process.env.HIGGSFIELD_AUTH_TOKEN || '',
+    sessionToken: process.env.HIGGSFIELD_OAUTH_TOKEN || process.env.HIGGSFIELD_AUTH_TOKEN || '',
     model: 'higgsfield-video-pro',
     endpoint: process.env.HIGGSFIELD_MCP_ENDPOINT || 'https://mcp.higgsfield.ai/mcp',
-    status: process.env.HIGGSFIELD_ENABLED === 'false' ? 'NOT_CONFIGURED' : 'READY',
+    status: (process.env.HIGGSFIELD_OAUTH_TOKEN || process.env.HIGGSFIELD_AUTH_TOKEN) ? 'READY' : 'NOT_CONFIGURED',
     protocolVersion: '2024-11-05',
     toolsDiscovered: 2
   };
@@ -521,7 +521,7 @@ export class FounderService {
     const isEnabled = process.env.HIGGSFIELD_ENABLED !== 'false';
     const endpoint = this.customHiggsfieldConfig.endpoint || process.env.HIGGSFIELD_MCP_ENDPOINT || 'https://mcp.higgsfield.ai/mcp';
     const model = this.customHiggsfieldConfig.model || 'higgsfield-video-pro';
-    const sessionToken = this.customHiggsfieldConfig.sessionToken || this.customHiggsfieldConfig.apiKey || process.env.HIGGSFIELD_API_KEY || '';
+    const sessionToken = this.customHiggsfieldConfig.sessionToken || this.customHiggsfieldConfig.apiKey || process.env.HIGGSFIELD_OAUTH_TOKEN || process.env.HIGGSFIELD_AUTH_TOKEN || '';
     const status = !isEnabled ? 'NOT_CONFIGURED' : (!sessionToken ? 'NOT_CONFIGURED' : (this.customHiggsfieldConfig.status || 'READY'));
 
     return {
@@ -1698,7 +1698,7 @@ export class FounderService {
             success: false,
             status: 'NOT_CONFIGURED',
             error: 'AUTH_REQUIRED',
-            message: 'Belum terautentikasi. Silakan masukkan API Key / Session Token Higgsfield MCP Anda.'
+            message: 'Belum terautentikasi. Silakan klik "Connect Higgsfield" untuk mengotorisasi akun Higgsfield MCP Anda.'
           };
         }
 

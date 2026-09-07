@@ -2,10 +2,11 @@ import { MediaProviderRouter, MediaProviderRegistry } from '../src/server/provid
 import { HiggsfieldMCPAdapter, HIGGSFIELD_DEFAULT_MODELS } from '../src/server/providers/HiggsfieldMCPAdapter';
 import { CreditService } from '../server/creditService';
 import { FounderService } from '../src/server/fcc/FounderService';
+import { HiggsfieldOAuthService } from '../server/services/higgsfieldOAuthService';
 
 async function runAudit() {
   console.log('====================================================');
-  console.log(' NEURONA HIGGSFIELD MCP AUDIT & REGRESSION SUITE');
+  console.log(' NEURONA HIGGSFIELD MCP OAUTH & REGRESSION SUITE');
   console.log('====================================================\n');
 
   let passed = 0;
@@ -51,11 +52,32 @@ async function runAudit() {
   assert(typeof t2vTool === 'string' && t2vTool.length > 0, `Text-to-Video tool resolved to: "${t2vTool}"`);
   assert(typeof i2vTool === 'string' && i2vTool.length > 0, `Image-to-Video tool resolved to: "${i2vTool}"`);
 
-  // TEST 4: Official Auth & Health State Gate
-  console.log('\n--- TEST GROUP 4: Official Auth & Health State Gate ---');
-  const statusBefore = await adapter.getStatus();
-  assert(typeof statusBefore === 'string' && ['READY', 'NOT_CONFIGURED', 'UNAVAILABLE', 'ERROR', 'DEGRADED'].includes(statusBefore), 
-    `getStatus returns valid strict ProviderStatus: "${statusBefore}"`);
+  // TEST 4: Official OAuth PKCE Flow Verification
+  console.log('\n--- TEST GROUP 4: Official Higgsfield OAuth PKCE Flow ---');
+  
+  // 4.1 PKCE Generation
+  const pkce = HiggsfieldOAuthService.generatePKCE();
+  assert(typeof pkce.verifier === 'string' && pkce.verifier.length > 30, 'PKCE Verifier generated with cryptographic entropy');
+  assert(typeof pkce.challenge === 'string' && pkce.challenge.length > 30, 'PKCE S256 Challenge generated correctly');
+
+  // 4.2 Authorization Session Creation
+  const authSession = await HiggsfieldOAuthService.createAuthorizationSession('http://localhost:3000');
+  assert(typeof authSession.state === 'string' && authSession.state.startsWith('higgsfield_pkce_'), `OAuth state is prefixed: "${authSession.state.substring(0, 25)}..."`);
+  assert(typeof authSession.authUrl === 'string' && authSession.authUrl.includes('higgsfield.ai'), 'OAuth authUrl points to official Higgsfield login/auth portal');
+  assert(typeof authSession.clientId === 'string' && authSession.clientId.length > 0, `OAuth client ID established: "${authSession.clientId.substring(0, 15)}..."`);
+
+  // 4.3 OAuth Token Exchange & Replay Protection Test
+  const mockCode = 'hf_mock_oauth_auth_code_' + Date.now();
+  const exchangeResult = await HiggsfieldOAuthService.exchangeCodeForToken(mockCode, authSession.state);
+  assert(exchangeResult.success === true && !!exchangeResult.token, 'OAuth code exchanged for authorized MCP session token');
+
+  // Replay protection: using the same state again must fail
+  const replayResult = await HiggsfieldOAuthService.exchangeCodeForToken(mockCode, authSession.state);
+  assert(replayResult.success === false && replayResult.error === 'INVALID_STATE', 'Replay protection active: Consumed state is deleted from session store');
+
+  // 4.4 Disconnect & Revocation
+  const revokeResult = await HiggsfieldOAuthService.revokeToken(exchangeResult.token);
+  assert(revokeResult.success === true, 'Higgsfield OAuth token revocation & SQLite credential purge succeeded');
 
   // TEST 5: CreditService Integrity (HOLD -> COMMIT / REFUND)
   console.log('\n--- TEST GROUP 5: CreditService Integrity & Hold Lifecycle ---');
@@ -162,6 +184,6 @@ async function runAudit() {
 }
 
 runAudit().catch(err => {
-  console.error('Audit crashed:', err);
+  console.error('Audit run error:', err);
   process.exit(1);
 });
