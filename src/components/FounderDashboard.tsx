@@ -223,14 +223,18 @@ const FounderChangePasswordPanel = () => {
         return;
       }
 
-      setStatus({ type: 'success', msg: 'Password berhasil diubah. Sesi lama dihentikan. Anda akan dilogout...' });
-      
-      // Logout and force redirect to home
-      setTimeout(() => {
-        localStorage.removeItem('neuronna_auth_token');
-        localStorage.removeItem('neuronna_user_session');
-        window.location.href = '/';
-      }, 3000);
+      if (data.token) {
+        localStorage.setItem('neuronna_auth_token', data.token);
+        localStorage.setItem('neuronna_token', data.token);
+      }
+      if (data.user) {
+        localStorage.setItem('neuronna_user_session', JSON.stringify(data.user));
+      }
+
+      setStatus({ type: 'success', msg: 'Password berhasil diubah. Sesi otentikasi Anda telah diperbarui dengan token baru.' });
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
       
     } catch (err) {
       setStatus({ type: 'error', msg: 'Gagal terhubung ke server.' });

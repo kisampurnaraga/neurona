@@ -449,18 +449,35 @@ async function startServer() {
 
     // Bump token version and update password (this hashes it via userDatabase)
     const newVersion = (userInDb.tokenVersion || 0) + 1;
-    await userDatabase.setUser(targetUid, {
+    const updatedUserObj = {
       ...userInDb,
       password: cleanNew, // Will be hashed inside setUser
       tokenVersion: newVersion,
       token_version: newVersion
-    });
+    };
+    await userDatabase.setUser(targetUid, updatedUserObj);
 
-    console.log(`[AUDIT LOG] Password untuk Founder (${userInDb.email}) berhasil diubah pada ${new Date().toISOString()}. Semua sesi sebelumnya dihentikan.`);
+    // Issue a fresh JWT token with the new token_version so current session stays active
+    const newTokenPayload = {
+      user_id: userInDb.uid,
+      email: userInDb.email,
+      name: userInDb.name,
+      role: userInDb.role,
+      credits: userInDb.credits,
+      status_aktif: userInDb.statusAktif,
+      package_tier: userInDb.packageTier,
+      phone_wa: userInDb.phoneWa,
+      token_version: newVersion
+    };
+    const newToken = generateToken(newTokenPayload);
+
+    console.log(`[AUDIT LOG] Password untuk Founder (${userInDb.email}) berhasil diubah pada ${new Date().toISOString()}. Token baru diterbitkan (version ${newVersion}).`);
 
     return res.json({
       success: true,
-      message: 'Password Founder berhasil diubah. Silakan login kembali dengan password baru.'
+      token: newToken,
+      user: newTokenPayload,
+      message: 'Password Founder berhasil diubah. Sesi otentikasi telah diperbarui.'
     });
   });
 

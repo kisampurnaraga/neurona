@@ -42,6 +42,17 @@ function savePricingConfig(): void {
   }
 }
 
+export interface CreditHoldRecord {
+  holdId: string;
+  userId: string;
+  amount: number;
+  idempotencyKey?: string;
+  status: 'HELD' | 'COMMITTED' | 'REFUNDED';
+  createdAt: number;
+}
+
+const activeHoldsMap = new Map<string, CreditHoldRecord>();
+
 export class CreditService {
   /**
    * Get current pricing configuration
@@ -273,12 +284,13 @@ export class CreditService {
   }
 
   /**
-   * Hold/Deduct credits before rendering starts. Rejects if balance is insufficient.
+   * Hold/Deduct credits before rendering starts. Idempotent & prevents double charging.
    */
   static async holdCredits(
     userId: string,
     amount: number,
-    projectId?: string
+    projectId?: string,
+    idempotencyKey?: string
   ): Promise<{
     success: boolean;
     holdId?: string;
@@ -290,6 +302,18 @@ export class CreditService {
       return { success: false, message: 'Identitas user tidak valid.' };
     }
 
+    const effectiveKey = idempotencyKey || (projectId ? `idemp_${projectId}_${amount}` : null);
+    if (effectiveKey && activeHoldsMap.has(effectiveKey)) {
+      const existing = activeHoldsMap.get(effectiveKey)!;
+      console.log(`[CREDIT SERVICE] 🔁 Idempotent hit for key '${effectiveKey}'. Status: ${existing.status}`);
+      return {
+        success: existing.status !== 'REFUNDED',
+        holdId: existing.holdId,
+        currentCredits: existing.amount,
+        requiredCredits: existing.amount
+      };
+    }
+
     const user = await userDatabase.getUser(userId);
     if (!user) {
       return { success: false, message: `User '${userId}' tidak ditemukan di database.` };
@@ -297,9 +321,20 @@ export class CreditService {
 
     // Founder bypass
     if (user.role === 'founder' || userId === 'founder_root_001') {
+      const holdId = `founder_bypass_${Date.now()}`;
+      if (effectiveKey) {
+        activeHoldsMap.set(effectiveKey, {
+          holdId,
+          userId,
+          amount: 0,
+          idempotencyKey: effectiveKey,
+          status: 'COMMITTED',
+          createdAt: Date.now()
+        });
+      }
       return {
         success: true,
-        holdId: `founder_bypass_${Date.now()}`,
+        holdId,
         currentCredits: 999999,
         requiredCredits: 0
       };
@@ -319,6 +354,20 @@ export class CreditService {
     await userDatabase.adjustCredits(user.uid, -amount, true);
     const holdId = `hold_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
+    const record: CreditHoldRecord = {
+      holdId,
+      userId: user.uid,
+      amount,
+      idempotencyKey: effectiveKey || holdId,
+      status: 'HELD',
+      createdAt: Date.now()
+    };
+
+    activeHoldsMap.set(holdId, record);
+    if (effectiveKey) {
+      activeHoldsMap.set(effectiveKey, record);
+    }
+
     console.log(`[CREDIT SERVICE] Held ${amount} credits from user '${user.email}' for project '${projectId || 'direct'}'. Hold ID: ${holdId}`);
     return {
       success: true,
@@ -334,10 +383,24 @@ export class CreditService {
   static async refundCredits(
     userId: string,
     amount: number,
-    reason?: string
+    reason?: string,
+    holdId?: string
   ): Promise<void> {
     if (!userId || amount <= 0) return;
     
+    if (holdId && activeHoldsMap.has(holdId)) {
+      const record = activeHoldsMap.get(holdId)!;
+      if (record.status === 'REFUNDED') {
+        console.log(`[CREDIT SERVICE] ⚠️ Hold '${holdId}' has ALREADY been refunded. Skipping duplicate refund.`);
+        return;
+      }
+      if (record.status === 'COMMITTED') {
+        console.log(`[CREDIT SERVICE] ⚠️ Hold '${holdId}' was ALREADY committed. Cannot refund.`);
+        return;
+      }
+      record.status = 'REFUNDED';
+    }
+
     // Check if founder bypass
     if (userId === 'founder_root_001') return;
 
@@ -360,6 +423,10 @@ export class CreditService {
     amount: number,
     holdId?: string
   ): Promise<void> {
+    if (holdId && activeHoldsMap.has(holdId)) {
+      const record = activeHoldsMap.get(holdId)!;
+      record.status = 'COMMITTED';
+    }
     console.log(`[CREDIT SERVICE] ✅ Committed deduction of ${amount} credits for user '${userId}'. (Hold: ${holdId || 'N/A'})`);
   }
 }
