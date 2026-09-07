@@ -666,7 +666,10 @@ async function startServer() {
         attachedAssets, 
         affiliateConfig, 
         animationConfig, 
-        educationalConfig, 
+        educationalConfig,
+        filmConfig,
+        videoAdsConfig,
+        quickCreateConfig,
         videoType,
         userRole
       } = req.body;
@@ -681,12 +684,15 @@ async function startServer() {
          newProjectId = await ProductionOrchestrator.startProduction({
            prompt: prompt || (hasAssets ? "Buatkan video affiliate produk sepatu ini" : "Buatkan video produksi"),
            videoType: finalType,
-           videoModel: affiliateConfig?.videoEngine || animationConfig?.videoEngine || educationalConfig?.videoEngine || videoModel,
+           videoModel: affiliateConfig?.videoEngine || animationConfig?.videoEngine || educationalConfig?.videoEngine || filmConfig?.videoEngine || videoAdsConfig?.videoEngine || quickCreateConfig?.model || videoModel,
            ttsVoiceConfig,
            attachedAssets,
            affiliateConfig,
            animationConfig: animationConfig || (finalType === 'ANIMATION' ? result.quickConfig : undefined),
            educationalConfig: educationalConfig || (finalType === 'EDUCATIONAL' ? result.quickConfig : undefined),
+           filmConfig,
+           videoAdsConfig,
+           quickCreateConfig,
            userRole
          });
       } else if (result.action === 'APPROVE' && projectId) {
@@ -1255,6 +1261,138 @@ async function startServer() {
       const adapter = new OpenArtMCPAdapter();
       const result = await adapter.testImageGeneration(prompt);
       res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // HIGGSFIELD MCP MANAGEMENT ENDPOINTS
+  app.get('/api/fcc/higgsfield/status', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const { HiggsfieldMCPAdapter, HIGGSFIELD_DEFAULT_MODELS } = await import('./src/server/providers/HiggsfieldMCPAdapter');
+      const adapter = new HiggsfieldMCPAdapter();
+      const cfg = FounderService.getHiggsfieldConfig();
+      const sessionToken = adapter.getSessionToken();
+      const endpoint = adapter.getEndpoint();
+      const maskedKey = sessionToken ? (sessionToken.length > 8 ? `${sessionToken.substring(0, 4)}...${sessionToken.substring(sessionToken.length - 4)}` : '****') : null;
+
+      let authenticated = false;
+      let tools: any[] = [];
+      let toolsCount = cfg.toolsDiscovered || 0;
+      let lastError: string | null = null;
+      let latencyMs = 0;
+
+      if (sessionToken) {
+        const valRes = await adapter.validateSessionToken(sessionToken);
+        authenticated = valRes.valid;
+        if (valRes.valid) {
+          toolsCount = valRes.toolsCount || toolsCount;
+          latencyMs = valRes.latencyMs || 25;
+          const discRes = await adapter.discoverTools(false);
+          tools = discRes.tools || [];
+        } else {
+          lastError = valRes.message || 'Token validasi gagal';
+        }
+      }
+
+      res.json({
+        success: true,
+        status: authenticated ? 'CONNECTED' : (sessionToken ? 'CONFIGURED_OFFLINE' : 'NOT_CONNECTED'),
+        endpoint,
+        model: cfg.model || 'higgsfield-video-pro',
+        authenticated,
+        maskedKey,
+        capabilities: ['textToVideo', 'imageToVideo'],
+        tools,
+        toolsCount,
+        supportedModels: HIGGSFIELD_DEFAULT_MODELS,
+        lastConnected: cfg.lastTested || null,
+        lastError,
+        latencyMs
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/fcc/higgsfield/connect', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const { apiKey, sessionToken, endpoint, model } = req.body;
+      const tokenToSave = (sessionToken || apiKey || '').trim();
+
+      if (!tokenToSave) {
+        return res.status(400).json({ error: 'Session token atau API Key Higgsfield wajib diisi.' });
+      }
+
+      FounderService.saveProviderConfig('higgsfield', {
+        apiKey: tokenToSave,
+        endpoint: endpoint || 'https://mcp.higgsfield.ai/mcp',
+        model: model || 'higgsfield-video-pro'
+      });
+
+      const testRes = await FounderService.testProvider('higgsfield');
+      res.json(testRes);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/fcc/higgsfield/test', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const result = await FounderService.testProvider('higgsfield');
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/fcc/higgsfield/discover-tools', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const { HiggsfieldMCPAdapter } = await import('./src/server/providers/HiggsfieldMCPAdapter');
+      const adapter = new HiggsfieldMCPAdapter();
+      const result = await adapter.discoverTools(true);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/fcc/higgsfield/disconnect', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      FounderService.saveProviderConfig('higgsfield', { apiKey: '', model: 'higgsfield-video-pro', endpoint: 'https://mcp.higgsfield.ai/mcp' });
+      const { HiggsfieldMCPAdapter } = await import('./src/server/providers/HiggsfieldMCPAdapter');
+      HiggsfieldMCPAdapter.clearCache();
+      res.json({ success: true, message: 'Higgsfield MCP disconnected dan kredensial dibersihkan.' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/fcc/higgsfield/test-generation', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const { prompt, imageUrl } = req.body;
+      const { HiggsfieldMCPAdapter } = await import('./src/server/providers/HiggsfieldMCPAdapter');
+      const adapter = new HiggsfieldMCPAdapter();
+      let videoUrl = '';
+      if (imageUrl) {
+        videoUrl = await adapter.imageToVideo({
+          imageUrl,
+          prompt: prompt || 'Smooth cinematic motion',
+          duration: 5
+        });
+      } else {
+        videoUrl = await adapter.generateVideo({
+          prompt: prompt || 'Cinematic futuristic city with vibrant neon lights',
+          duration: 5
+        });
+      }
+      res.json({ success: true, videoUrl });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

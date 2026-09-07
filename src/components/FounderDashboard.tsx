@@ -28,6 +28,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { FounderVideoInspector } from './FounderVideoInspector';
 import { KeyRotatorModal } from './KeyRotatorModal';
 import { FounderOpenArtPanel } from './FounderOpenArtPanel';
+import { FounderHiggsfieldPanel } from './FounderHiggsfieldPanel';
 import { AVAILABLE_VOICES } from '../utils/speechSynthesis';
 
 export interface ActivatedUser {
@@ -313,7 +314,7 @@ const FounderChangePasswordPanel = () => {
 };
 
 export const FounderDashboard: React.FC<FounderDashboardProps> = ({ onBack }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'activation_form' | 'stats' | 'payment' | 'inspector' | 'openart' | 'settings' | 'change_password'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'activation_form' | 'stats' | 'payment' | 'inspector' | 'openart' | 'higgsfield' | 'settings' | 'change_password'>('users');
   const [isRotatorModalOpen, setIsRotatorModalOpen] = useState(false);
   
   // Form State for Manual Activation
@@ -730,6 +731,18 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
           >
             <Server size={15} />
             <span>OpenArt MCP</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('higgsfield')}
+            className={`shrink-0 flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
+              activeTab === 'higgsfield'
+                ? 'border-purple-400 text-purple-300 font-bold bg-purple-950/20'
+                : 'border-transparent text-gray-400 hover:text-white'
+            }`}
+          >
+            <Video size={15} />
+            <span>Higgsfield MCP</span>
           </button>
 
           <button
@@ -1235,6 +1248,12 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
         {activeTab === 'openart' && (
           <div className="pt-2">
             <FounderOpenArtPanel />
+          </div>
+        )}
+        {/* TAB 9: HIGGSFIELD MCP MEDIA PROVIDER */}
+        {activeTab === 'higgsfield' && (
+          <div className="pt-2">
+            <FounderHiggsfieldPanel />
           </div>
         )}
       </div>

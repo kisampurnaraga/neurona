@@ -1687,7 +1687,9 @@ export class FounderService {
       this.customHiggsfieldConfig.lastTested = timestamp;
 
       try {
-        const sessionToken = this.customHiggsfieldConfig.apiKey || process.env.HIGGSFIELD_API_KEY || '';
+        const { HiggsfieldMCPAdapter } = await import('../providers/HiggsfieldMCPAdapter');
+        const adapter = new HiggsfieldMCPAdapter();
+        const sessionToken = adapter.getSessionToken();
 
         if (!sessionToken) {
           this.customHiggsfieldConfig.status = 'NOT_CONFIGURED';
@@ -1696,19 +1698,32 @@ export class FounderService {
             success: false,
             status: 'NOT_CONFIGURED',
             error: 'AUTH_REQUIRED',
-            message: 'Belum terautentikasi. Silakan masukkan API Key Higgsfield Anda.'
+            message: 'Belum terautentikasi. Silakan masukkan API Key / Session Token Higgsfield MCP Anda.'
           };
         }
 
-        // Test Higgsfield MCP connection via ping or mock call
+        const valRes = await adapter.validateSessionToken(sessionToken);
+
+        if (!valRes.valid) {
+          this.customHiggsfieldConfig.status = 'ERROR';
+          this.saveConfig();
+          return {
+            success: false,
+            status: 'ERROR',
+            error: valRes.error || 'INVALID_TOKEN',
+            message: valRes.message || 'Otorisasi Higgsfield ditolak oleh MCP Server.'
+          };
+        }
+
         this.customHiggsfieldConfig.status = 'READY';
-        this.customHiggsfieldConfig.toolsDiscovered = 2;
+        this.customHiggsfieldConfig.toolsDiscovered = valRes.toolsCount || 2;
+        this.customHiggsfieldConfig.protocolVersion = valRes.protocolVersion || '2024-11-05';
         this.auditLogs.push({
           id: `log-${Date.now()}`,
           timestamp,
           action: 'TEST_CONNECTION',
           target: 'HIGGSFIELD_MCP_VIDEO_API',
-          details: `Higgsfield MCP Gateway connection established successfully (Endpoint: ${endpoint}).`,
+          details: `Higgsfield MCP Gateway connection established and verified successfully (${valRes.toolsCount} tools discovered, latency: ${valRes.latencyMs}ms, Endpoint: ${endpoint}).`,
           status: 'SUCCESS'
         });
 
@@ -1716,7 +1731,10 @@ export class FounderService {
         return {
           success: true,
           status: 'READY',
-          message: 'Koneksi ke Higgsfield MCP Video Provider BERHASIL Terhubung & Terverifikasi Aktif!'
+          toolsCount: valRes.toolsCount,
+          protocolVersion: valRes.protocolVersion,
+          latencyMs: valRes.latencyMs,
+          message: `Koneksi ke Higgsfield MCP Video Provider BERHASIL Terhubung & Terverifikasi Aktif (${valRes.toolsCount} tools, ${valRes.latencyMs}ms)!`
         };
       } catch (err: any) {
         this.customHiggsfieldConfig.status = 'ERROR';

@@ -1281,6 +1281,155 @@ export class ProductionOrchestrator {
     const project = projects.get(id)!;
     const vType = project.videoType;
 
+    // ISOLATED DIRECT GENERATION FLOW FOR QUICK CREATE (Bypasses Storyboard-First Gate)
+    if (vType === 'QUICK_CREATE') {
+      try {
+        project.status = 'PRODUCING';
+        project.overallProgress = 15;
+        project.currentPhaseName = 'Direct Generation (Quick Create)';
+        appendLog(project, 'PROTOCOL', `[Quick Create] Starting direct video generation with isolated routing...`, 'INFO');
+        projectEvents.emit(`update:${id}`, project);
+
+        const config = (project as any).quickCreateConfig || {};
+        const preferredProvider = config.preferredProvider || (project as any).preferredProvider || 'higgsfield';
+        const model = config.model || (project as any).modelPreference || 'higgsfield-video-pro';
+        const isI2V = !!config.imageUrl;
+        const promptText = config.prompt || prompt || 'Cinematic video scene';
+        const duration = config.duration || 5;
+        const aspectRatio = config.aspectRatio || '9:16';
+        const userId = project.userId || 'system';
+
+        // 1. Resolve Provider via Router with allowFallback=false
+        const route = MediaProviderRouter.resolveRoute('VIDEO', {
+          preferredProvider,
+          preferredModelOrEngine: model
+        });
+
+        appendLog(project, 'PROTOCOL', `[Quick Create] Routed to provider: ${route.providerName} (${route.model})`, 'INFO');
+
+        // 2. Calculate Cost & HOLD Credits
+        const creditCalc = CreditService.calculateCreditCost(route.model, {
+          provider: route.providerId,
+          operation: isI2V ? 'image-to-video' : 'text-to-video',
+          duration
+        });
+
+        let holdId: string | undefined = undefined;
+        if (userId && creditCalc.credits > 0) {
+          const holdRes = await CreditService.holdCredits(
+            userId,
+            creditCalc.credits,
+            id,
+            undefined,
+            route.providerId,
+            route.model,
+            isI2V ? 'image-to-video' : 'text-to-video'
+          );
+
+          if (!holdRes.success) {
+            const errMsg = holdRes.message || 'Saldo kredit tidak mencukupi untuk Quick Create.';
+            appendLog(project, 'PROTOCOL', `[Quick Create] Credit hold failed: ${errMsg}`, 'ERROR');
+            project.status = 'FAILED';
+            project.error = errMsg;
+            projectEvents.emit(`update:${id}`, project);
+            return;
+          }
+          holdId = holdRes.holdId;
+          appendLog(project, 'PROTOCOL', `[Quick Create] Credit held (Hold ID: ${holdId}, Amount: ${creditCalc.credits} credits). Generating video...`, 'INFO');
+        }
+
+        project.overallProgress = 40;
+        projectEvents.emit(`update:${id}`, project);
+
+        // 3. Execute Direct Generation via Provider
+        let videoUrl = '';
+        try {
+          const providerInstance: any = getVideoProvider(route.providerId);
+          if (isI2V && providerInstance.imageToVideo) {
+            videoUrl = await providerInstance.imageToVideo({
+              imageUrl: config.imageUrl!,
+              prompt: promptText,
+              duration,
+              aspectRatio,
+              model: route.model,
+              onProgress: (pMsg: string) => {
+                appendLog(project, 'VIDEO', `[Quick Create] ${pMsg}`, 'INFO');
+              }
+            });
+          } else {
+            videoUrl = await providerInstance.generateVideo({
+              prompt: promptText,
+              duration,
+              aspectRatio,
+              model: route.model,
+              onProgress: (pMsg: string) => {
+                appendLog(project, 'VIDEO', `[Quick Create] ${pMsg}`, 'INFO');
+              }
+            });
+          }
+
+          if (!videoUrl) {
+            throw new Error(`Provider ${route.providerName} did not return a valid video URL.`);
+          }
+
+          // 4. Commit Credits upon successful generation
+          if (userId && holdId && creditCalc.credits > 0) {
+            await CreditService.commitHold(userId, creditCalc.credits, holdId);
+          }
+
+          // 5. Save and finalize project
+          const savedUrl = await saveFileLocally(videoUrl, 'quick_create', 'mp4', project);
+          project.finalVideoUrl = savedUrl;
+          project.status = 'COMPLETED';
+          project.overallProgress = 100;
+          project.currentPhaseName = 'Produksi Selesai (100%)';
+          appendLog(project, 'PROTOCOL', `[Quick Create] Direct generation completed successfully: ${savedUrl}`, 'SUCCESS');
+          projectEvents.emit(`update:${id}`, project);
+
+          try {
+            await db.update(dbProjects)
+              .set({
+                status: 'COMPLETED',
+                finalVideoUrl: savedUrl
+              })
+              .where(eq(dbProjects.id, id));
+          } catch (dbErr) {}
+
+          return;
+        } catch (genErr: any) {
+          // 6. Explicit Failure = STOP + REFUND
+          console.error('[Quick Create] Generation error:', genErr);
+          if (userId && holdId && creditCalc.credits > 0) {
+            try {
+              await CreditService.refundCredits(userId, creditCalc.credits, genErr?.message || 'Quick Create video generation failed', holdId);
+              appendLog(project, 'PROTOCOL', `[Quick Create] Generation failed: ${genErr?.message}. Credits refunded.`, 'ERROR');
+            } catch (refErr: any) {
+              console.error('[Quick Create] Refund error:', refErr);
+            }
+          }
+          project.status = 'FAILED';
+          project.error = genErr?.message || 'Quick Create video generation failed.';
+          projectEvents.emit(`update:${id}`, project);
+
+          try {
+            await db.update(dbProjects)
+              .set({
+                status: 'FAILED'
+              })
+              .where(eq(dbProjects.id, id));
+          } catch (dbErr) {}
+
+          return;
+        }
+      } catch (fatalErr: any) {
+        console.error('[Quick Create] Fatal error:', fatalErr);
+        project.status = 'FAILED';
+        project.error = fatalErr?.message;
+        projectEvents.emit(`update:${id}`, project);
+        return;
+      }
+    }
+
     try {
       project.overallProgress = 18;
       project.currentPhaseName = 'Perumusan Konsep Kreatif (BATARA - 18%)';
@@ -1294,7 +1443,6 @@ export class ProductionOrchestrator {
       else if (vType === 'EDUCATIONAL') currentConfig = project.educationalConfig;
       else if (vType === 'FILM') currentConfig = project.filmConfig;
       else if (vType === 'VIDEO_ADS') currentConfig = project.videoAdsConfig;
-      else if (vType === 'QUICK_CREATE') currentConfig = project.quickCreateConfig;
       else if (vType === 'AFFILIATE') {
         currentConfig = project.affiliateConfig;
         if (currentConfig?.productImages && currentConfig.productImages.length > 0) {

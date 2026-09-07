@@ -54,6 +54,17 @@ export function resolveCanonicalModelId(modelId: string, provider?: string): str
     return aliasMap[clean] || clean;
   }
 
+  if (provClean === 'higgsfield' || clean.startsWith('higgsfield-')) {
+    const aliasMap: Record<string, string> = {
+      'higgsfield-video-pro': 'higgsfield-video-pro',
+      'higgsfield-anim': 'higgsfield-anim',
+      'video-pro': 'higgsfield-video-pro',
+      'anim': 'higgsfield-anim',
+      'default': 'higgsfield-video-pro'
+    };
+    return aliasMap[clean] || clean;
+  }
+
   return clean;
 }
 
@@ -87,11 +98,11 @@ const AUTHORITATIVE_PRICING_REGISTRY: ProviderPricing[] = [
   { provider: 'OpenArt', model: 'gemini-omni-flash', operation: 'image-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
   { provider: 'OpenArt', model: 'gemini-omni-flash', operation: 'text-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
 
-  // Verified Higgsfield Live MCP Video Models
-  { provider: 'Higgsfield', model: 'higgsfield-video-pro', operation: 'text-to-video', costUsd: 0.150, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
-  { provider: 'Higgsfield', model: 'higgsfield-video-pro', operation: 'image-to-video', costUsd: 0.150, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
-  { provider: 'Higgsfield', model: 'higgsfield-anim', operation: 'image-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
-  { provider: 'Higgsfield', model: 'higgsfield-anim', operation: 'text-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' }
+  // Higgsfield MCP Video Models (Unverified until live runtime validation)
+  { provider: 'Higgsfield', model: 'higgsfield-video-pro', operation: 'text-to-video', costUsd: 0.150, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'UNVERIFIED' },
+  { provider: 'Higgsfield', model: 'higgsfield-video-pro', operation: 'image-to-video', costUsd: 0.150, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'UNVERIFIED' },
+  { provider: 'Higgsfield', model: 'higgsfield-anim', operation: 'image-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'UNVERIFIED' },
+  { provider: 'Higgsfield', model: 'higgsfield-anim', operation: 'text-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'UNVERIFIED' }
 ];
 
 export function getProviderPricing(provider: string, model: string, operation: string): ProviderPricing | undefined {

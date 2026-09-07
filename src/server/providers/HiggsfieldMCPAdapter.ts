@@ -85,7 +85,12 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       return 'NOT_CONFIGURED';
     }
 
-    return 'READY';
+    const fccConfig: any = (FounderService as any).getHiggsfieldConfig?.() || {};
+    if (fccConfig.status === 'ERROR') {
+      return 'ERROR';
+    }
+
+    return fccConfig.status === 'READY' ? 'READY' : 'NOT_CONFIGURED';
   }
 
   capabilities() {
@@ -292,7 +297,7 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     return { modelId: targetId, modelDef };
   }
 
-  private resolveToolName(category: 'IMAGE_TO_VIDEO' | 'TEXT_TO_VIDEO'): string {
+  public resolveToolName(category: 'IMAGE_TO_VIDEO' | 'TEXT_TO_VIDEO'): string {
     const tools = HiggsfieldMCPAdapter.cachedTools || [];
     const findTool = (candidates: string[]) => {
       for (const c of candidates) {
@@ -307,11 +312,27 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     };
 
     if (category === 'IMAGE_TO_VIDEO') {
-      return findTool(['higgsfield_generate_video', 'image_to_video', 'higgsfield_image_to_video', 'generate_video']) || 'higgsfield_generate_video';
+      const tool = findTool(['higgsfield_image_to_video', 'image_to_video', 'higgsfield_generate_video', 'generate_video']);
+      if (tool) return tool;
+      if (tools.length > 0) {
+        const schemaMatch = tools.find(t => t.inputSchema?.properties?.image_url || t.inputSchema?.properties?.image || t.inputSchema?.properties?.visualReferences);
+        if (schemaMatch) return schemaMatch.name;
+        throw new Error(`Tool untuk kategori ${category} tidak ditemukan pada server Higgsfield MCP.`);
+      }
+      return 'higgsfield_generate_video';
     }
+
     if (category === 'TEXT_TO_VIDEO') {
-      return findTool(['higgsfield_generate_video', 'generate_video', 'text_to_video', 'higgsfield_text_to_video']) || 'higgsfield_generate_video';
+      const tool = findTool(['higgsfield_text_to_video', 'text_to_video', 'higgsfield_generate_video', 'generate_video']);
+      if (tool) return tool;
+      if (tools.length > 0) {
+        const schemaMatch = tools.find(t => t.inputSchema?.properties?.prompt);
+        if (schemaMatch) return schemaMatch.name;
+        throw new Error(`Tool untuk kategori ${category} tidak ditemukan pada server Higgsfield MCP.`);
+      }
+      return 'higgsfield_generate_video';
     }
+
     return 'higgsfield_generate_video';
   }
 
