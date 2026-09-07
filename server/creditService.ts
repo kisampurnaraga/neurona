@@ -24,6 +24,22 @@ export interface ProviderPricing {
   verificationStatus: 'VERIFIED' | 'UNVERIFIED';
 }
 
+export function resolveCanonicalModelId(modelId: string): string {
+  const clean = (modelId || '').trim().toLowerCase();
+  const aliasMap: Record<string, string> = {
+    'openart-sdxl': 'kling-3-omni',
+    'openart-flux-schnell': 'nano-banana-2-lite',
+    'openart-flux-pro': 'nano-banana-pro',
+    'openart-photoreal-v2': 'byte-plus-seedream-5-lite',
+    'openart-video-fast': 'byte-plus-seedance-2-fast',
+    'openart-video-pro': 'byte-plus-seedance-2',
+    'openart-wan2.1': 'wan2-7',
+    'openart-wan21': 'wan2-7',
+    'openart-veo2': 'veo3-1'
+  };
+  return aliasMap[clean] || clean;
+}
+
 const AUTHORITATIVE_PRICING_REGISTRY: ProviderPricing[] = [
   // Verified OpenArt Live MCP Image Models & Aliases
   { provider: 'OpenArt', model: 'kling-3-omni', operation: 'text-to-image', costUsd: 0.010, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
@@ -153,9 +169,29 @@ export class CreditService {
       };
     }
 
+    // Resolve canonical model and provider
+    const canonicalModelId = resolveCanonicalModelId(modelId);
+    let resolvedProvider = params?.provider;
+
+    if (!resolvedProvider) {
+      const knownOpenArtModels = [
+        'veo3-1', 'wan2-7', 'byte-plus-seedance-2', 'byte-plus-seedance-2-fast', 'byte-plus-seedance-2-5',
+        'kling-3-omni', 'nano-banana-2-lite', 'nano-banana-2', 'nano-banana-pro',
+        'byte-plus-seedream-5-lite', 'byte-plus-seedream-5-pro', 'gpt-image-2', 'wan2-7-image', 'gemini-omni-flash'
+      ];
+      if (
+        knownOpenArtModels.includes(canonicalModelId) || 
+        modelId.toLowerCase().startsWith('openart-') || 
+        modelId.toLowerCase().includes('openart')
+      ) {
+        resolvedProvider = 'OpenArt';
+      }
+    }
+
     // Check authoritative registry first for explicit providers
-    if (params?.provider && params?.operation) {
-      const explicitPricing = getProviderPricing(params.provider, modelId, params.operation);
+    if (resolvedProvider && params?.operation) {
+      const explicitPricing = getProviderPricing(resolvedProvider, canonicalModelId, params.operation) ||
+                              getProviderPricing(resolvedProvider, modelId, params.operation);
       if (explicitPricing) {
         const totalCostUsd = explicitPricing.costUsd;
         const idrCost = totalCostUsd * pricingConfig.marginMultiplier * pricingConfig.exchangeRate;
@@ -163,7 +199,7 @@ export class CreditService {
         const ceiledCredits = Math.ceil(rawCredits);
         const roundedCredits = Math.max(5, Math.ceil(ceiledCredits / 5) * 5);
         
-        console.log(`[CREDIT SERVICE] 💰 Using authoritative pricing for ${params.provider} -> ${modelId} (${params.operation}): $${totalCostUsd} -> ${roundedCredits} credits`);
+        console.log(`[CREDIT SERVICE] 💰 Using authoritative pricing for ${resolvedProvider} -> ${canonicalModelId} (${params.operation}): $${totalCostUsd} -> ${roundedCredits} credits`);
         return {
           credits: roundedCredits,
           costUsd: Number(totalCostUsd.toFixed(4)),
@@ -171,7 +207,7 @@ export class CreditService {
           marginMultiplier: pricingConfig.marginMultiplier,
           exchangeRate: pricingConfig.exchangeRate,
           creditValueIdr: pricingConfig.creditValueIdr,
-          model: modelId
+          model: canonicalModelId
         };
       }
     }
@@ -270,9 +306,29 @@ export class CreditService {
       };
     }
 
+    // Resolve canonical model and provider
+    const canonicalModelId = resolveCanonicalModelId(modelId);
+    let resolvedProvider = params?.provider;
+
+    if (!resolvedProvider) {
+      const knownOpenArtModels = [
+        'veo3-1', 'wan2-7', 'byte-plus-seedance-2', 'byte-plus-seedance-2-fast', 'byte-plus-seedance-2-5',
+        'kling-3-omni', 'nano-banana-2-lite', 'nano-banana-2', 'nano-banana-pro',
+        'byte-plus-seedream-5-lite', 'byte-plus-seedream-5-pro', 'gpt-image-2', 'wan2-7-image', 'gemini-omni-flash'
+      ];
+      if (
+        knownOpenArtModels.includes(canonicalModelId) || 
+        modelId.toLowerCase().startsWith('openart-') || 
+        modelId.toLowerCase().includes('openart')
+      ) {
+        resolvedProvider = 'OpenArt';
+      }
+    }
+
     // Check authoritative registry first for explicit providers
-    if (params?.provider && params?.operation) {
-      const explicitPricing = getProviderPricing(params.provider, modelId, params.operation);
+    if (resolvedProvider && params?.operation) {
+      const explicitPricing = getProviderPricing(resolvedProvider, canonicalModelId, params.operation) ||
+                              getProviderPricing(resolvedProvider, modelId, params.operation);
       if (explicitPricing) {
         const totalCostUsd = explicitPricing.costUsd;
         const idrCost = totalCostUsd * pricingConfig.marginMultiplier * pricingConfig.exchangeRate;
@@ -280,7 +336,7 @@ export class CreditService {
         const ceiledCredits = Math.ceil(rawCredits);
         const roundedCredits = Math.max(5, Math.ceil(ceiledCredits / 5) * 5);
         
-        console.log(`[CREDIT SERVICE] 💰 Using authoritative pricing for ${params.provider} -> ${modelId} (${params.operation}): $${totalCostUsd} -> ${roundedCredits} credits`);
+        console.log(`[CREDIT SERVICE] 💰 Using authoritative pricing for ${resolvedProvider} -> ${canonicalModelId} (${params.operation}): $${totalCostUsd} -> ${roundedCredits} credits`);
         return {
           credits: roundedCredits,
           costUsd: Number(totalCostUsd.toFixed(4)),
@@ -288,7 +344,7 @@ export class CreditService {
           marginMultiplier: pricingConfig.marginMultiplier,
           exchangeRate: pricingConfig.exchangeRate,
           creditValueIdr: pricingConfig.creditValueIdr,
-          model: modelId
+          model: canonicalModelId
         };
       }
     }

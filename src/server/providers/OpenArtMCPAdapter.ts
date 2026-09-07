@@ -586,7 +586,7 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
       'openart-flux-pro': 'nano-banana-pro',
       'openart-photoreal-v2': 'byte-plus-seedream-5-lite',
       'openart-video-fast': 'byte-plus-seedance-2-fast',
-      'openart-video-pro': 'byte-plus-seedance-2-fast',
+      'openart-video-pro': 'byte-plus-seedance-2',
       'openart-wan2.1': 'wan2-7',
       'openart-wan21': 'wan2-7',
       'openart-veo2': 'veo3-1'

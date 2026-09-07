@@ -52,11 +52,129 @@ export class MediaProviderRouter {
   static resolveRoute(operation: 'IMAGE' | 'VIDEO', options: {
     mode?: GenerationMode;
     preferredModelOrEngine?: string;
+    preferredProvider?: string;
     studio?: string;
     resolution?: string;
   }): RouteResolution {
     const mode = options.mode || 'AUTO';
-    const preferred = (options.preferredModelOrEngine || '').toLowerCase();
+    const preferredModel = (options.preferredModelOrEngine || '').trim();
+    const preferredModelLower = preferredModel.toLowerCase();
+    const preferredProvider = (options.preferredProvider || '').trim().toLowerCase();
+
+    // -------------------------------------------------------------
+    // EXACT MODEL/PROVIDER CONTEXT RESOLUTION (No heuristics first!)
+    // -------------------------------------------------------------
+    
+    // Check if the requested model is an EXACT known OpenArt Model ID or Alias
+    const knownOpenArtModels = [
+      'veo3-1', 'wan2-7', 'byte-plus-seedance-2', 'byte-plus-seedance-2-fast', 'byte-plus-seedance-2-5',
+      'kling-3-omni', 'nano-banana-2-lite', 'nano-banana-2', 'nano-banana-pro',
+      'byte-plus-seedream-5-lite', 'byte-plus-seedream-5-pro', 'gpt-image-2', 'wan2-7-image', 'gemini-omni-flash',
+      'openart-sdxl', 'openart-flux-schnell', 'openart-flux-pro', 'openart-photoreal-v2',
+      'openart-video-fast', 'openart-video-pro', 'openart-wan2.1', 'openart-wan21', 'openart-veo2'
+    ];
+
+    const isExplicitOpenArt = 
+      preferredProvider === 'openart' ||
+      knownOpenArtModels.includes(preferredModelLower) ||
+      preferredModelLower.startsWith('openart-') ||
+      preferredModelLower.includes('openart');
+
+    if (isExplicitOpenArt) {
+      const isImg = operation === 'IMAGE';
+      const resolvedModel = preferredModel || (isImg ? 'kling-3-omni' : 'byte-plus-seedance-2-fast');
+      return {
+        providerId: 'openart',
+        providerName: 'OpenArt MCP Media Provider',
+        model: resolvedModel,
+        tier: 'balanced',
+        estimatedCostUsd: isImg ? 0.010 : 0.050,
+        reason: 'Explicitly configured OpenArt MCP Provider (Exact Match)',
+        fallbackChain: [],
+        allowFallback: false
+      };
+    }
+
+    // Check if the requested model is Google Veo (direct)
+    const knownGoogleModels = [
+      'google-veo-2.0', 'google-veo', 'veo-2.0-generate-video', 'gemini-3.1-flash-image', 'veo-asli', 'google'
+    ];
+    const isExplicitGoogle = 
+      preferredProvider === 'google' || 
+      preferredProvider === 'google_veo' ||
+      knownGoogleModels.includes(preferredModelLower);
+
+    if (isExplicitGoogle) {
+      const isImg = operation === 'IMAGE';
+      const resolvedModel = preferredModel || (isImg ? 'gemini-3.1-flash-image' : 'veo-2.0-generate-video');
+      return {
+        providerId: 'google_veo',
+        providerName: 'Google Veo / Imagen 3',
+        model: resolvedModel,
+        tier: 'premium',
+        estimatedCostUsd: isImg ? 0.03 : 0.20,
+        reason: 'Selected Google Cinematic Veo / Imagen engine (Exact Match)',
+        fallbackChain: [],
+        allowFallback: false
+      };
+    }
+
+    // Check if the requested model/provider is Fal AI
+    const knownFalModels = [
+      'fal-ai/veo3.1/lite/image-to-video', 'fal-ai/flux/schnell'
+    ];
+    const isExplicitFal = 
+      preferredProvider === 'fal' || 
+      preferredProvider === 'fal-ai' ||
+      knownFalModels.includes(preferredModelLower) ||
+      preferredModelLower.startsWith('fal') ||
+      preferredModelLower.includes('fal-ai') ||
+      preferredModelLower.includes('fal.run') ||
+      preferredModelLower.includes('fal.ai');
+
+    if (isExplicitFal) {
+      const isImg = operation === 'IMAGE';
+      const resolvedModel = preferredModel || (isImg ? 'fal-ai/flux/schnell' : 'fal-ai/veo3.1/lite/image-to-video');
+      return {
+        providerId: 'fal',
+        providerName: 'Fal.ai Universal Media Engine',
+        model: resolvedModel,
+        tier: 'balanced',
+        estimatedCostUsd: isImg ? 0.01 : 0.12,
+        reason: 'Selected Fal.ai universal media pipeline (Exact Match)',
+        fallbackChain: [],
+        allowFallback: false
+      };
+    }
+
+    // Check if the requested model/provider is BytePlus
+    const knownBytePlusModels = [
+      'dreamina-seedance-2-0-mini-260615'
+    ];
+    const isExplicitBytePlus = 
+      preferredProvider === 'byteplus' ||
+      knownBytePlusModels.includes(preferredModelLower) ||
+      preferredModelLower.includes('byteplus') ||
+      preferredModelLower.includes('pixeldance') ||
+      preferredModelLower.includes('doubao');
+
+    if (isExplicitBytePlus) {
+      return {
+        providerId: 'byteplus',
+        providerName: 'BytePlus ModelArk',
+        model: preferredModel || 'dreamina-seedance-2-0-mini-260615',
+        tier: 'balanced',
+        estimatedCostUsd: 0.08,
+        reason: 'Selected BytePlus ModelArk seedance engine (Exact Match)',
+        fallbackChain: [],
+        allowFallback: false
+      };
+    }
+
+    // -------------------------------------------------------------
+    // HEURISTIC RESOLUTION / FALLBACK ROUTING (Only for non-explicit requests)
+    // -------------------------------------------------------------
+    const preferred = preferredModelLower;
     
     // Explicit provider / engine routing
     if (
@@ -202,12 +320,17 @@ export class MediaProviderRouter {
 
     // Check scene explicit preference or project model
     const scenePreferred = (scene as any)?.videoModel || (scene as any)?.metadata?.model;
+    const scenePreferredProvider = (scene as any)?.videoProvider || (scene as any)?.metadata?.provider || options.preferredProvider;
     const projectPreferred = project?.videoModel || FounderService.getPrimaryVideoEngine() || 'fal';
+    const projectPreferredProvider = (project as any)?.videoProvider || options.preferredProvider;
+
     const effectivePreferred = scenePreferred || projectPreferred;
+    const effectivePreferredProvider = scenePreferredProvider || projectPreferredProvider;
 
     const route = this.resolveRoute('VIDEO', {
       mode: options.mode,
       preferredModelOrEngine: effectivePreferred,
+      preferredProvider: effectivePreferredProvider,
       studio: project?.videoType
     });
 
