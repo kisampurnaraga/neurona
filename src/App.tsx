@@ -334,6 +334,7 @@ export default function App() {
   const [isEducationalModalOpen, setIsEducationalModalOpen] = useState(false);
   const [animationInitialValues, setAnimationInitialValues] = useState<any>(undefined);
   const [educationalInitialValues, setEducationalInitialValues] = useState<any>(undefined);
+  const [affiliateInitialValues, setAffiliateInitialValues] = useState<any>(undefined);
   const [isStoryboardMatrixOpen, setIsStoryboardMatrixOpen] = useState(false);
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
@@ -1162,6 +1163,7 @@ export default function App() {
         isOpen={isAffiliateModalOpen}
         onClose={() => setIsAffiliateModalOpen(false)}
         onSubmit={(config, assets, p) => handleInteract(p, assets, config, undefined, undefined, 'AFFILIATE')}
+        initialValues={affiliateInitialValues}
       />
 
       <AnimationConfigModal
@@ -1263,6 +1265,11 @@ export default function App() {
           {isContentCreatorOpen && (
             <ContentCreatorDashboard 
               onClose={() => setIsContentCreatorOpen(false)}
+              onOpenAffiliateStudio={(initialValues) => {
+                setIsContentCreatorOpen(false);
+                setAffiliateInitialValues(initialValues);
+                setIsAffiliateModalOpen(true);
+              }}
               onOpenAnimationStudio={(initialValues) => {
                 setIsContentCreatorOpen(false);
                 setAnimationInitialValues(initialValues);

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShoppingBag, 
   Upload, 
@@ -22,13 +22,25 @@ interface AffiliateConfigModalProps {
   onClose: () => void;
   onSubmit: (config: AffiliateConfig, assets: ProductAsset[], promptText: string) => void;
   initialAssets?: ProductAsset[];
+  initialValues?: {
+    productName?: string;
+    category?: string;
+    aspectRatio?: '16:9' | '9:16' | '1:1';
+    platform?: 'TikTok Shop' | 'Shopee Video' | 'Instagram Reels' | 'YouTube Shorts';
+    keyBenefits?: string;
+    pricePromo?: string;
+    callToAction?: string;
+    hookStyle?: 'PAIN_POINT' | 'CURIOSITY' | 'UNBOXING' | 'BEFORE_AFTER' | 'AESTHETIC_REVEAL';
+    productInfo?: string;
+  };
 }
 
 export default function AffiliateConfigModal({
   isOpen,
   onClose,
   onSubmit,
-  initialAssets = []
+  initialAssets = [],
+  initialValues
 }: AffiliateConfigModalProps) {
   const [productName, setProductName] = useState('');
   const [category, setCategory] = useState('Lainnya');
@@ -46,6 +58,20 @@ export default function AffiliateConfigModal({
   
   const [assets, setAssets] = useState<ProductAsset[]>(initialAssets);
   const [referenceVideoUrl, setReferenceVideoUrl] = useState('');
+
+  useEffect(() => {
+    if (isOpen && initialValues) {
+      if (initialValues.productName) setProductName(initialValues.productName);
+      if (initialValues.category) setCategory(initialValues.category);
+      if (initialValues.aspectRatio) setAspectRatio(initialValues.aspectRatio);
+      if (initialValues.platform) setPlatform(initialValues.platform);
+      if (initialValues.keyBenefits) setKeyBenefits(initialValues.keyBenefits);
+      if (initialValues.pricePromo) setPricePromo(initialValues.pricePromo);
+      if (initialValues.callToAction) setCallToAction(initialValues.callToAction);
+      if (initialValues.hookStyle) setHookStyle(initialValues.hookStyle);
+      if (initialValues.productInfo) setProductInfo(initialValues.productInfo);
+    }
+  }, [isOpen, initialValues]);
 
   if (!isOpen) return null;
 

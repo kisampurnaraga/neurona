@@ -209,6 +209,7 @@ export interface ProductionProject {
   affiliateConfig?: AffiliateConfig;
   animationConfig?: AnimationConfig;
   educationalConfig?: EducationalConfig;
+  productionContext?: ProductionContext;
   attachedAssets?: ProductAsset[];
   brief?: any;
   characterProfile?: CharacterProfile;
@@ -243,4 +244,117 @@ export interface ProductionProject {
   audioResponseUrl?: string;
   createdAt?: string | Date;
   updatedAt?: string | Date;
+}
+
+export interface ProductionContext {
+  source: 'YOUTUBE_INTELLIGENCE' | 'AI_STRATEGIST' | 'MANUAL';
+  channelId?: string;
+  channelTitle?: string;
+  targetNiche?: string;
+  strategicGoal?: 'MONETIZATION_SUBS' | 'MONETIZATION_WATCH_HOURS' | 'VIRAL_SHORTS' | 'AFFILIATE_CONVERSION';
+  animationInitialValues?: {
+    title?: string;
+    targetGenre?: any;
+    artStyle?: any;
+    characterDescription?: string;
+    worldSetting?: string;
+    aspectRatio?: '9:16' | '16:9' | '1:1';
+    voiceTone?: any;
+  };
+  educationalInitialValues?: {
+    subjectTitle?: string;
+    category?: string;
+    visualStyle?: any;
+    targetAudience?: any;
+    keyTakeaways?: string;
+    aspectRatio?: '9:16' | '16:9' | '1:1';
+    narratorTone?: any;
+  };
+  affiliateInitialValues?: {
+    productName?: string;
+    productInfo?: string;
+    keyBenefits?: string;
+    callToAction?: string;
+    hookStyle?: any;
+    platform?: any;
+    aspectRatio?: '9:16' | '16:9' | '1:1';
+    category?: string;
+  };
+}
+
+export interface ContentIdea {
+  id: string;
+  day?: string;
+  title: string;
+  hook3s: string;
+  concept: string;
+  niche: string;
+  format: 'SHORTS' | 'LONG_FORM';
+  aspectRatio: '9:16' | '16:9' | '1:1';
+  targetDuration: string;
+  retentionTip: string;
+  recommendedStudio: 'ANIMATION' | 'EDUCATIONAL' | 'AFFILIATE';
+  productionContext: ProductionContext;
+}
+
+export interface YouTubeChannelMetrics {
+  channelId?: string;
+  channelTitle?: string;
+  subscriberCount: number;
+  videoCount: number;
+  viewCount: number;
+  thumbnailUrl?: string;
+}
+
+export interface YouTubeAnalytics28d {
+  views: number;
+  estimatedMinutesWatched: number;
+  watchHours: number;
+  averageViewDurationSeconds: number;
+  subscribersGained: number;
+}
+
+export interface YPPMonetizationRoadmap {
+  subscribersCurrent: number;
+  subscribersTarget: number;
+  subscribersProgress: number;
+  subscribersRemaining: number;
+  subscribersStatus: 'ACHIEVED' | 'IN_PROGRESS';
+
+  watchHoursCurrent: number;
+  watchHoursTarget: number;
+  watchHoursProgress: number;
+  watchHoursRemaining: number;
+  watchHoursStatus: 'ACHIEVED' | 'IN_PROGRESS';
+
+  shortsViewsCurrent: number;
+  shortsViewsTarget: number;
+  shortsViewsProgress: number;
+  shortsViewsRemaining: number;
+  shortsViewsStatus: 'ACHIEVED' | 'IN_PROGRESS';
+
+  isEligibleYPP: boolean;
+  recommendedTrack: 'SHORTS_VELOCITY' | 'LONG_FORM_WATCH_TIME' | 'HYBRID_GROWTH';
+  recommendedTrackReasoning: string;
+}
+
+export interface AudienceRetentionDiagnosis {
+  averageViewDurationSeconds: number;
+  retentionRating: 'NEEDS_IMPROVEMENT' | 'MODERATE' | 'STRONG' | 'EXCEPTIONAL' | 'NO_DATA';
+  diagnosisSummary: string;
+  prescribedTactics: string[];
+}
+
+export interface YouTubeChannelIntelligenceReport {
+  timestamp: string;
+  authenticated: boolean;
+  channelMetrics: YouTubeChannelMetrics;
+  analytics28d: YouTubeAnalytics28d;
+  yppRoadmap: YPPMonetizationRoadmap;
+  retentionDiagnosis: AudienceRetentionDiagnosis;
+  nicheDiagnosis: {
+    primaryNiche: string;
+    growthOpportunity: string;
+    recommendedStudioFocus: 'ANIMATION' | 'EDUCATIONAL' | 'AFFILIATE' | 'BALANCED';
+  };
 }

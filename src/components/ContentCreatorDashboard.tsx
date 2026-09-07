@@ -3,13 +3,15 @@ import {
   X, Youtube, BarChart2, MessageSquare, Zap, TrendingUp, Users, Video, 
   LogOut, Calendar, Sparkles, Clock, Target, DollarSign, CheckCircle2, 
   ArrowRight, ShieldCheck, Flame, Play, Film, BookOpen, Layers, RefreshCw,
-  HelpCircle, ChevronRight, AlertCircle, Compass, Award, ExternalLink
+  HelpCircle, ChevronRight, AlertCircle, Compass, Award, ExternalLink, ShoppingBag
 } from 'lucide-react';
 import { googleSignIn, initAuth, getAccessToken, logout } from '../utils/googleAuth';
 import type { User } from 'firebase/auth';
+import type { YouTubeChannelIntelligenceReport, ContentIdea, ProductionContext } from '../shared/types';
 
 interface ContentCreatorDashboardProps {
   onClose: () => void;
+  onOpenAffiliateStudio?: (initialValues?: any) => void;
   onOpenAnimationStudio?: (initialValues?: any) => void;
   onOpenEducationalStudio?: (initialValues?: any) => void;
 }
@@ -18,17 +20,19 @@ interface ScheduleItem {
   id: string;
   day: string;
   format: 'SHORTS' | 'LONG_FORM';
-  preferredStudio: 'ANIMATION' | 'EDUCATIONAL';
+  preferredStudio?: 'ANIMATION' | 'EDUCATIONAL' | 'AFFILIATE';
+  recommendedStudio?: 'ANIMATION' | 'EDUCATIONAL' | 'AFFILIATE';
   title: string;
   hook3s: string;
   concept: string;
   niche: string;
   targetDuration: string;
   retentionTip: string;
-  aspectRatio: '9:16' | '16:9';
+  aspectRatio: '9:16' | '16:9' | '1:1';
   characterDescription?: string;
   worldSetting?: string;
   category?: string;
+  productionContext?: ProductionContext;
 }
 
 const DEFAULT_SCHEDULE: ScheduleItem[] = [
@@ -137,6 +141,7 @@ const DEFAULT_SCHEDULE: ScheduleItem[] = [
 
 export const ContentCreatorDashboard: React.FC<ContentCreatorDashboardProps> = ({ 
   onClose,
+  onOpenAffiliateStudio,
   onOpenAnimationStudio,
   onOpenEducationalStudio
 }) => {
@@ -146,11 +151,14 @@ export const ContentCreatorDashboard: React.FC<ContentCreatorDashboardProps> = (
   const [user, setUser] = useState<User | null>(null);
   const [channelData, setChannelData] = useState<any>(null);
   const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [intelligenceReport, setIntelligenceReport] = useState<YouTubeChannelIntelligenceReport | null>(null);
+  const [aiContentIdeas, setAiContentIdeas] = useState<ContentIdea[]>([]);
+  const [isGeneratingStrategy, setIsGeneratingStrategy] = useState(false);
   const [loadingStats, setLoadingStats] = useState(false);
-  const [filterFormat, setFilterFormat] = useState<'ALL' | 'SHORTS' | 'LONG_FORM' | 'ANIMATION' | 'EDUCATIONAL'>('ALL');
+  const [filterFormat, setFilterFormat] = useState<'ALL' | 'SHORTS' | 'LONG_FORM' | 'ANIMATION' | 'EDUCATIONAL' | 'AFFILIATE'>('ALL');
 
   // Studio Selection Modal State for Direct Execution
-  const [selectedPlanForExecution, setSelectedPlanForExecution] = useState<ScheduleItem | null>(null);
+  const [selectedPlanForExecution, setSelectedPlanForExecution] = useState<any>(null);
   const [showStudioChooser, setShowStudioChooser] = useState(false);
 
   // Chat State
@@ -165,6 +173,9 @@ export const ContentCreatorDashboard: React.FC<ContentCreatorDashboardProps> = (
   const [isAiThinking, setIsAiThinking] = useState(false);
 
   useEffect(() => {
+    // Initial intelligence analysis and strategy load
+    generateIntelligenceAndStrategy();
+
     const unsubscribe = initAuth(
       (user, token) => {
         setUser(user);
@@ -179,16 +190,64 @@ export const ContentCreatorDashboard: React.FC<ContentCreatorDashboardProps> = (
     return () => unsubscribe();
   }, []);
 
+  const generateIntelligenceAndStrategy = async (cData?: any, aData?: any) => {
+    setIsGeneratingStrategy(true);
+    try {
+      const activeCData = cData || channelData;
+      const activeAData = aData || analyticsData;
+
+      const intelRes = await fetch('/api/youtube/intelligence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelData: activeCData, analyticsData: activeAData })
+      });
+
+      let report: YouTubeChannelIntelligenceReport | null = null;
+      if (intelRes.ok) {
+        const intelJson = await intelRes.json();
+        if (intelJson.success && intelJson.report) {
+          report = intelJson.report;
+          setIntelligenceReport(report);
+        }
+      }
+
+      const stratRes = await fetch('/api/youtube/strategy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          intelligence: report,
+          channelTitle: activeCData?.snippet?.title || 'Kreator YouTube',
+          niche: report?.nicheDiagnosis?.primaryNiche || 'Edukasi & Animasi Populer'
+        })
+      });
+
+      if (stratRes.ok) {
+        const stratJson = await stratRes.json();
+        if (stratJson.success && Array.isArray(stratJson.ideas)) {
+          setAiContentIdeas(stratJson.ideas);
+        }
+      }
+    } catch (err) {
+      console.warn('[Dashboard] Intelligence/Strategy error:', err);
+    } finally {
+      setIsGeneratingStrategy(false);
+    }
+  };
+
   const fetchYouTubeData = async (token: string) => {
     setLoadingStats(true);
     try {
+      let fetchedChannel: any = null;
+      let fetchedAnalytics: any = null;
+
       // Fetch Channel Info
       const channelRes = await fetch('https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true', {
         headers: { Authorization: `Bearer ${token}` }
       });
       const channelJson = await channelRes.json();
       if (channelJson.items && channelJson.items.length > 0) {
-        setChannelData(channelJson.items[0]);
+        fetchedChannel = channelJson.items[0];
+        setChannelData(fetchedChannel);
       }
 
       // Fetch Analytics (Last 28 days)
@@ -205,13 +264,16 @@ export const ContentCreatorDashboard: React.FC<ContentCreatorDashboardProps> = (
       });
       const analyticsJson = await analyticsRes.json();
       if (analyticsJson.rows && analyticsJson.rows.length > 0) {
-        setAnalyticsData({
+        fetchedAnalytics = {
           views: Number(analyticsJson.rows[0][0]) || 0,
           estimatedMinutesWatched: Number(analyticsJson.rows[0][1]) || 0,
           averageViewDuration: Number(analyticsJson.rows[0][2]) || 0,
           subscribersGained: Number(analyticsJson.rows[0][3]) || 0,
-        });
+        };
+        setAnalyticsData(fetchedAnalytics);
       }
+
+      await generateIntelligenceAndStrategy(fetchedChannel, fetchedAnalytics);
     } catch (error) {
       console.error('Error fetching YouTube data:', error);
     } finally {
@@ -295,33 +357,49 @@ export const ContentCreatorDashboard: React.FC<ContentCreatorDashboardProps> = (
     setChat(prev => [...prev, { role: 'ai', msg: reply, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
   };
 
-  const executePlan = (item: ScheduleItem) => {
+  const executePlan = (item: any) => {
     setSelectedPlanForExecution(item);
     setShowStudioChooser(true);
   };
 
-  const handleConfirmStudioExecution = (studio: 'ANIMATION' | 'EDUCATIONAL') => {
+  const handleConfirmStudioExecution = (studio: 'ANIMATION' | 'EDUCATIONAL' | 'AFFILIATE') => {
     if (!selectedPlanForExecution) return;
     setShowStudioChooser(false);
     onClose();
 
-    if (studio === 'ANIMATION') {
+    const plan = selectedPlanForExecution;
+    const ctx = plan.productionContext as ProductionContext | undefined;
+
+    if (studio === 'AFFILIATE') {
+      if (onOpenAffiliateStudio) {
+        onOpenAffiliateStudio(ctx?.affiliateInitialValues || {
+          productName: plan.title,
+          productInfo: plan.concept,
+          keyBenefits: plan.hook3s || 'Inovasi produk dengan manfaat luar biasa',
+          callToAction: 'Klik keranjang kuning / deskripsi sebelum promo berakhir!',
+          hookStyle: 'PAIN_POINT',
+          platform: 'YouTube Shorts',
+          aspectRatio: plan.aspectRatio || '9:16'
+        });
+      }
+    } else if (studio === 'ANIMATION') {
       if (onOpenAnimationStudio) {
-        onOpenAnimationStudio({
-          title: selectedPlanForExecution.title,
-          targetGenre: selectedPlanForExecution.format === 'SHORTS' ? 'ACTION' : 'ADVENTURE',
-          characterDescription: selectedPlanForExecution.characterDescription || 'Karakter utama visual ekspresif dengan pencahayaan sinematik',
-          worldSetting: selectedPlanForExecution.worldSetting || 'Latar dunia dinamis dengan atmosfer visual memukau',
-          aspectRatio: selectedPlanForExecution.aspectRatio
+        onOpenAnimationStudio(ctx?.animationInitialValues || {
+          title: plan.title,
+          targetGenre: plan.format === 'SHORTS' ? 'ACTION' : 'ADVENTURE',
+          artStyle: 'ANIME_SHINKAI',
+          characterDescription: plan.characterDescription || 'Karakter utama visual ekspresif dengan pencahayaan sinematik',
+          worldSetting: plan.worldSetting || 'Latar dunia dinamis dengan atmosfer visual memukau',
+          aspectRatio: plan.aspectRatio || '9:16'
         });
       }
     } else {
       if (onOpenEducationalStudio) {
-        onOpenEducationalStudio({
-          subjectTitle: selectedPlanForExecution.title,
-          category: selectedPlanForExecution.category || 'Sains & Teknologi (STEM)',
-          aspectRatio: selectedPlanForExecution.aspectRatio,
-          keyTakeaways: selectedPlanForExecution.concept,
+        onOpenEducationalStudio(ctx?.educationalInitialValues || {
+          subjectTitle: plan.title,
+          category: plan.category || 'Sains & Teknologi (STEM)',
+          aspectRatio: plan.aspectRatio || '9:16',
+          keyTakeaways: plan.concept,
           characterDescription: 'Profesor Robot AI ramah bernama Dr. Byte dengan visual interaktif'
         });
       }
@@ -354,12 +432,15 @@ export const ContentCreatorDashboard: React.FC<ContentCreatorDashboardProps> = (
 
   const isMonetized = rawSubs >= 1000 && (rawWatchHours >= 4000 || rawViews >= 10000000);
 
-  const filteredSchedule = DEFAULT_SCHEDULE.filter(item => {
+  const activePlanItems = aiContentIdeas.length > 0 ? aiContentIdeas : DEFAULT_SCHEDULE;
+
+  const filteredSchedule = activePlanItems.filter((item: any) => {
     if (filterFormat === 'ALL') return true;
     if (filterFormat === 'SHORTS') return item.format === 'SHORTS';
     if (filterFormat === 'LONG_FORM') return item.format === 'LONG_FORM';
-    if (filterFormat === 'ANIMATION') return item.preferredStudio === 'ANIMATION';
-    if (filterFormat === 'EDUCATIONAL') return item.preferredStudio === 'EDUCATIONAL';
+    if (filterFormat === 'ANIMATION') return (item.recommendedStudio || item.preferredStudio) === 'ANIMATION';
+    if (filterFormat === 'EDUCATIONAL') return (item.recommendedStudio || item.preferredStudio) === 'EDUCATIONAL';
+    if (filterFormat === 'AFFILIATE') return (item.recommendedStudio || item.preferredStudio) === 'AFFILIATE';
     return true;
   });
 
@@ -740,12 +821,30 @@ export const ContentCreatorDashboard: React.FC<ContentCreatorDashboardProps> = (
                   >
                     📚 Edukasi
                   </button>
+                  <button
+                    onClick={() => setFilterFormat('AFFILIATE')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                      filterFormat === 'AFFILIATE' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    🛍️ Affiliate
+                  </button>
+                  <button
+                    onClick={() => generateIntelligenceAndStrategy()}
+                    disabled={isGeneratingStrategy}
+                    className="px-3 py-1 rounded-lg text-xs font-bold bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white flex items-center gap-1 transition shadow-md disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={isGeneratingStrategy ? 'animate-spin' : ''} />
+                    <span>{isGeneratingStrategy ? 'Menyusun Strategy...' : 'Regenerasi AI'}</span>
+                  </button>
                 </div>
               </div>
 
               {/* Schedule Item Cards */}
               <div className="grid grid-cols-1 gap-3.5">
-                {filteredSchedule.map((item, idx) => (
+                {filteredSchedule.map((item, idx) => {
+                  const studioType = (item as any).recommendedStudio || (item as any).preferredStudio || 'ANIMATION';
+                  return (
                   <div 
                     key={item.id}
                     className="bg-slate-900/90 border border-slate-800 hover:border-pink-500/40 rounded-xl p-4 transition-all space-y-3"
@@ -773,11 +872,17 @@ export const ContentCreatorDashboard: React.FC<ContentCreatorDashboardProps> = (
                           <Clock size={12} /> {item.targetDuration}
                         </span>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          item.preferredStudio === 'ANIMATION'
+                          studioType === 'AFFILIATE'
+                            ? 'bg-amber-950/80 text-amber-300 border border-amber-500/30'
+                            : studioType === 'ANIMATION'
                             ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-500/30'
                             : 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/30'
                         }`}>
-                          {item.preferredStudio === 'ANIMATION' ? '🎨 Rekomendasi: Studio Animasi' : '📚 Rekomendasi: Studio Edukasi'}
+                          {studioType === 'AFFILIATE'
+                            ? '🛍️ Rekomendasi: Studio Affiliate'
+                            : studioType === 'ANIMATION'
+                            ? '🎨 Rekomendasi: Studio Animasi'
+                            : '📚 Rekomendasi: Studio Edukasi'}
                         </span>
                       </div>
                     </div>
@@ -822,7 +927,8 @@ export const ContentCreatorDashboard: React.FC<ContentCreatorDashboardProps> = (
                       </button>
                     </div>
                   </div>
-                ))}
+                );
+                })}
               </div>
 
             </div>
@@ -1087,6 +1193,25 @@ export const ContentCreatorDashboard: React.FC<ContentCreatorDashboardProps> = (
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">
                     Cocok untuk visual sains, fakta menarik, diagram teknologi, dan pembahasan materi berbobot.
+                  </p>
+                </div>
+              </button>
+
+              {/* Option 3: Affiliate Studio */}
+              <button
+                onClick={() => handleConfirmStudioExecution('AFFILIATE')}
+                className="w-full text-left p-3.5 rounded-xl border border-amber-500/30 bg-amber-950/20 hover:bg-amber-900/30 hover:border-amber-400 transition flex items-start gap-3 group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shrink-0 group-hover:scale-105 transition">
+                  <ShoppingBag size={20} />
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-amber-300 flex items-center gap-1.5">
+                    <span>Studio Affiliate</span>
+                    <span className="text-[9px] font-bold px-1.5 py-0.2 bg-amber-500/30 rounded text-amber-200">TikTok Shop / Shopee / Produk</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Cocok untuk showcase produk komersial, promosi berkonversi tinggi, unboxing, dan hook sales.
                   </p>
                 </div>
               </button>

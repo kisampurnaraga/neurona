@@ -28,6 +28,8 @@ import videoStudioRouter from "./server/routes/videoStudio";
 import workerRouter from "./server/routes/workerRoute";
 import founderPaymentRouter from "./server/routes/founderPayment";
 import { OpenArtOAuthService } from "./server/services/openartOAuthService";
+import { YouTubeChannelIntelligence } from "./server/services/YouTubeChannelIntelligence";
+import { AIContentStrategist } from "./server/services/AIContentStrategist";
 
 // === INJECT FFMPEG-STATIC INTO GLOBAL PATH ===
 import ffmpegStatic from 'ffmpeg-static';
@@ -135,6 +137,40 @@ async function startServer() {
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // YouTube Channel Intelligence Endpoint (Strictly authentic, non-simulated analytics audit)
+  app.post('/api/youtube/intelligence', (req, res) => {
+    try {
+      const { channelData, analyticsData, nicheHint } = req.body || {};
+      const report = YouTubeChannelIntelligence.analyze({
+        channelData,
+        analyticsData,
+        nicheHint
+      });
+      res.json({ success: true, report });
+    } catch (e: any) {
+      console.error('[YouTubeChannelIntelligence Error]', e);
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // AI Content Strategy & ProductionContext Generator
+  app.post('/api/youtube/strategy', async (req, res) => {
+    try {
+      const { intelligence, channelTitle, niche, preferredStudio, planLengthDays } = req.body || {};
+      const ideas = await AIContentStrategist.generatePlan({
+        intelligence,
+        channelTitle,
+        niche,
+        preferredStudio,
+        planLengthDays
+      });
+      res.json({ success: true, ideas });
+    } catch (e: any) {
+      console.error('[AIContentStrategist Error]', e);
+      res.status(500).json({ success: false, error: e.message });
     }
   });
 
