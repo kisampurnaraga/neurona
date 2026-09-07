@@ -76,7 +76,22 @@ interface StoryboardMatrixModalProps {
   onResetProject?: () => void;
 }
 
-export type ImageModelId = 'standard' | 'precision' | 'draft' | 'chatgpt-image-2' | 'gemini-imagen-3' | 'flux-diffusion' | 'nano-asli-lite' | 'nano-asli' | 'nano-asli-pro' | 'nano-asli-premium' | 'nano-asli-ultra';
+export type ImageModelId = 
+  | 'standard' 
+  | 'precision' 
+  | 'draft' 
+  | 'chatgpt-image-2' 
+  | 'gemini-imagen-3' 
+  | 'flux-diffusion' 
+  | 'nano-asli-lite' 
+  | 'nano-asli' 
+  | 'nano-asli-pro' 
+  | 'nano-asli-premium' 
+  | 'nano-asli-ultra'
+  | 'kling-3-omni'
+  | 'nano-banana-pro'
+  | 'byte-plus-seedream-5-pro'
+  | 'gpt-image-2';
 
 export interface ImageModelOption {
   id: ImageModelId;
@@ -90,8 +105,44 @@ export interface ImageModelOption {
 
 export const IMAGE_MODEL_OPTIONS: ImageModelOption[] = [
   {
+    id: 'kling-3-omni',
+    name: 'OpenArt Kling 3 Omni (MCP Cepat - 10 Kredit)',
+    shortName: 'OpenArt Kling 3 (10 Cr)',
+    costPerImage: 10,
+    badge: 'OpenArt AI',
+    badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+    desc: 'OpenArt MCP kling-3-omni — Render fotorealistik kilat via OpenArt Direct MCP'
+  },
+  {
+    id: 'nano-banana-pro',
+    name: 'OpenArt Nano Banana Pro (MCP Presisi - 30 Kredit)',
+    shortName: 'OpenArt Nano Banana (30 Cr)',
+    costPerImage: 30,
+    badge: 'OpenArt AI',
+    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+    desc: 'OpenArt MCP nano-banana-pro — Spesialis tipografi produk & poster e-commerce'
+  },
+  {
+    id: 'byte-plus-seedream-5-pro',
+    name: 'OpenArt Seedream 5 Pro (MCP HDR - 30 Kredit)',
+    shortName: 'OpenArt Seedream (30 Cr)',
+    costPerImage: 30,
+    badge: 'OpenArt AI',
+    badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
+    desc: 'OpenArt MCP byte-plus-seedream-5-pro — Visual sinematik HDR resolusi tinggi'
+  },
+  {
+    id: 'gpt-image-2',
+    name: 'OpenArt GPT Image 2 (MCP Konsep - 30 Kredit)',
+    shortName: 'OpenArt GPT Image (30 Cr)',
+    costPerImage: 30,
+    badge: 'OpenArt AI',
+    badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+    desc: 'OpenArt MCP gpt-image-2 — Pemahaman prompt multi-instruksi kompleks'
+  },
+  {
     id: 'standard',
-    name: 'Nano Banana 2 & Edit (Standar - 15 Kredit)',
+    name: 'Nano Banana 2 & Edit (Standar Fal - 15 Kredit)',
     shortName: 'Nano Banana 2 (15 Cr)',
     costPerImage: 15,
     badge: '15 Kredit',
@@ -100,7 +151,7 @@ export const IMAGE_MODEL_OPTIONS: ImageModelOption[] = [
   },
   {
     id: 'precision',
-    name: 'Nano Banana Pro Edit (Presisi 4K - 25 Kredit)',
+    name: 'Nano Banana Pro Edit (Presisi Fal 4K - 25 Kredit)',
     shortName: 'Nano Banana Pro 4K (25 Cr)',
     costPerImage: 25,
     badge: '25 Kredit',
@@ -109,7 +160,7 @@ export const IMAGE_MODEL_OPTIONS: ImageModelOption[] = [
   },
   {
     id: 'draft',
-    name: 'FLUX.1 Schnell (Draft Cepat - 5 Kredit)',
+    name: 'FLUX.1 Schnell (Draft Cepat Fal - 5 Kredit)',
     shortName: 'FLUX.1 Schnell (5 Cr)',
     costPerImage: 5,
     badge: '5 Kredit',
@@ -163,22 +214,25 @@ export interface VideoModelOption {
 }
 
 export const VIDEO_MODEL_OPTIONS: VideoModelOption[] = [
+  { id: 'byte-plus-seedance-2-fast', name: 'OpenArt SeaDance 2.0 Fast (MCP - 50 Cr)', shortName: 'OpenArt SeaDance (50 Cr)', desc: 'OpenArt MCP byte-plus-seedance-2-fast — Video gerak dinamis', costPerVideo: 50 },
+  { id: 'veo3-1', name: 'OpenArt Google Veo 3.1 Cinematic (MCP - 100 Cr)', shortName: 'OpenArt Veo 3.1 (100 Cr)', desc: 'OpenArt MCP veo3-1 — Video 1080p sinematik Google via OpenArt', costPerVideo: 100 },
+  { id: 'wan2-7', name: 'OpenArt Wan 2.7 Ultra Motion (MCP - 50 Cr)', shortName: 'OpenArt Wan 2.7 (50 Cr)', desc: 'OpenArt MCP wan2-7 — Video ultra motion 720p', costPerVideo: 50 },
   { id: 'veo-asli-lite', name: 'Google Veo Asli Lite (Budget - 10 Cr)', shortName: 'Veo Asli Lite (10 Cr)', desc: 'Google Veo Resmi — Hemat & Cepat', costPerVideo: 10 },
   { id: 'veo-asli', name: 'Google Veo Asli Standard (Balanced - 15 Cr)', shortName: 'Veo Asli Std (15 Cr)', desc: 'Google Veo Resmi — Kualitas Standar Sinematik', costPerVideo: 15 },
   { id: 'veo-asli-pro', name: 'Google Veo Asli Pro (Premium - 25 Cr)', shortName: 'Veo Asli Pro (25 Cr)', desc: 'Google Veo Resmi — Resolusi & Gerak Ultra Pro', costPerVideo: 25 },
-  { id: 'fal-ai/veo3.1/lite/image-to-video', name: 'Veo 3.1 Lite Bisu (Budget - 20 Cr)', shortName: 'Veo 3.1 Lite (20 Cr)', desc: 'Termurah dari Google. Tanpa Audio.', costPerVideo: 20 },
-  { id: 'fal-ai/bytedance/seedance/v1/lite/image-to-video', name: 'Seedance 1.0 Lite (Budget - 25 Cr)', shortName: 'Seedance 1.0 (25 Cr)', desc: 'Budget Bytedance. Native Audio.', costPerVideo: 25 },
-  { id: 'fal-ai/wan-i2v', name: 'Wan 2.1 (Budget - 45 Cr)', shortName: 'Wan 2.1 (45 Cr)', desc: 'Wan 2.1 14B I2V 720p — Sangat efisien & stabil', costPerVideo: 45 },
-  { id: 'bytedance/seedance-2.0/fast/image-to-video', name: 'SeaDance 2.0 Fast (Budget - 10 Cr)', shortName: 'SeaDance Fast (10 Cr)', desc: 'ByteDance SeaDance 2.0 Fast — Render kilat', costPerVideo: 10 },
-  { id: 'fal-ai/hunyuan-video-image-to-video', name: 'Hunyuan Video (Budget - 10 Cr)', shortName: 'Hunyuan Video (10 Cr)', desc: 'Tencent Hunyuan Video — Stabil & efisien', costPerVideo: 10 },
-  { id: 'bytedance/seedance-2.0/image-to-video', name: 'SeaDance 2.0 Standard (Balanced - 15 Cr)', shortName: 'SeaDance 2.0 Std (15 Cr)', desc: 'ByteDance SeaDance 2.0 Standard — Kualitas 720p', costPerVideo: 15 },
-  { id: 'fal-ai/kling-video/v2.1/standard/image-to-video', name: 'Kling 2.1 Standard (Balanced - 15 Cr)', shortName: 'Kling 2.1 Std (15 Cr)', desc: 'Kling 2.1 Standard I2V — Sinematik & halus', costPerVideo: 15 },
-  { id: 'fal-ai/kling-video/o3/standard/image-to-video', name: 'Kling O3 Standard (Balanced - 15 Cr)', shortName: 'Kling O3 Std (15 Cr)', desc: 'Kling O3 Standard — Pencahayaan presisi', costPerVideo: 15 },
-  { id: 'fal-ai/minimax/video-01/image-to-video', name: 'MiniMax Video 01 (Balanced - 15 Cr)', shortName: 'MiniMax Video 01 (15 Cr)', desc: 'MiniMax Video 01 — Konsistensi karakter tinggi', costPerVideo: 15 },
-  { id: 'fal-ai/minimax/video-01-live/image-to-video', name: 'MiniMax Video 01 Live (Balanced - 15 Cr)', shortName: 'MiniMax Live (15 Cr)', desc: 'MiniMax Video 01 Live — Dinamika gerak natural', costPerVideo: 15 },
-  { id: 'fal-ai/minimax/hailuo-02/standard/image-to-video', name: 'Hailuo 02 Standard (Balanced - 15 Cr)', shortName: 'Hailuo 02 (15 Cr)', desc: 'MiniMax Hailuo 02 — Gerakan ekspresif', costPerVideo: 15 },
-  { id: 'bytedance/seedance-2.5/image-to-video', name: 'SeaDance 2.5 (Premium Native 30s - 20 Cr)', shortName: 'SeaDance 2.5 (20 Cr)', desc: 'ByteDance SeaDance 2.5 — Native 30s sinematik', costPerVideo: 20 },
-  { id: 'fal-ai/kling-video/v3/pro/image-to-video', name: 'Kling 3.0 Pro 1080p (Premium - 25 Cr)', shortName: 'Kling 3.0 Pro (25 Cr)', desc: 'Kling 3.0 Pro 1080p — Resolusi ultra jernih', costPerVideo: 25 },
+  { id: 'fal-ai/veo3.1/lite/image-to-video', name: 'Veo 3.1 Lite Bisu (Budget Fal - 20 Cr)', shortName: 'Veo 3.1 Lite (20 Cr)', desc: 'Termurah dari Google via Fal.ai. Tanpa Audio.', costPerVideo: 20 },
+  { id: 'fal-ai/bytedance/seedance/v1/lite/image-to-video', name: 'Seedance 1.0 Lite (Budget Fal - 25 Cr)', shortName: 'Seedance 1.0 (25 Cr)', desc: 'Budget Bytedance via Fal.ai. Native Audio.', costPerVideo: 25 },
+  { id: 'fal-ai/wan-i2v', name: 'Wan 2.1 (Budget Fal - 45 Cr)', shortName: 'Wan 2.1 (45 Cr)', desc: 'Wan 2.1 14B I2V 720p via Fal.ai — Sangat efisien & stabil', costPerVideo: 45 },
+  { id: 'bytedance/seedance-2.0/fast/image-to-video', name: 'SeaDance 2.0 Fast (Budget Fal - 10 Cr)', shortName: 'SeaDance Fast (10 Cr)', desc: 'ByteDance SeaDance 2.0 Fast via Fal.ai — Render kilat', costPerVideo: 10 },
+  { id: 'fal-ai/hunyuan-video-image-to-video', name: 'Hunyuan Video (Budget Fal - 10 Cr)', shortName: 'Hunyuan Video (10 Cr)', desc: 'Tencent Hunyuan Video via Fal.ai — Stabil & efisien', costPerVideo: 10 },
+  { id: 'bytedance/seedance-2.0/image-to-video', name: 'SeaDance 2.0 Standard (Balanced Fal - 15 Cr)', shortName: 'SeaDance 2.0 Std (15 Cr)', desc: 'ByteDance SeaDance 2.0 Standard via Fal.ai — Kualitas 720p', costPerVideo: 15 },
+  { id: 'fal-ai/kling-video/v2.1/standard/image-to-video', name: 'Kling 2.1 Standard (Balanced Fal - 15 Cr)', shortName: 'Kling 2.1 Std (15 Cr)', desc: 'Kling 2.1 Standard I2V via Fal.ai — Sinematik & halus', costPerVideo: 15 },
+  { id: 'fal-ai/kling-video/o3/standard/image-to-video', name: 'Kling O3 Standard (Balanced Fal - 15 Cr)', shortName: 'Kling O3 Std (15 Cr)', desc: 'Kling O3 Standard via Fal.ai — Pencahayaan presisi', costPerVideo: 15 },
+  { id: 'fal-ai/minimax/video-01/image-to-video', name: 'MiniMax Video 01 (Balanced Fal - 15 Cr)', shortName: 'MiniMax Video 01 (15 Cr)', desc: 'MiniMax Video 01 via Fal.ai — Konsistensi karakter tinggi', costPerVideo: 15 },
+  { id: 'fal-ai/minimax/video-01-live/image-to-video', name: 'MiniMax Video 01 Live (Balanced Fal - 15 Cr)', shortName: 'MiniMax Live (15 Cr)', desc: 'MiniMax Video 01 Live via Fal.ai — Dinamika gerak natural', costPerVideo: 15 },
+  { id: 'fal-ai/minimax/hailuo-02/standard/image-to-video', name: 'Hailuo 02 Standard (Balanced Fal - 15 Cr)', shortName: 'Hailuo 02 (15 Cr)', desc: 'MiniMax Hailuo 02 via Fal.ai — Gerakan ekspresif', costPerVideo: 15 },
+  { id: 'bytedance/seedance-2.5/image-to-video', name: 'SeaDance 2.5 (Premium Native 30s Fal - 20 Cr)', shortName: 'SeaDance 2.5 (20 Cr)', desc: 'ByteDance SeaDance 2.5 via Fal.ai — Native 30s sinematik', costPerVideo: 20 },
+  { id: 'fal-ai/kling-video/v3/pro/image-to-video', name: 'Kling 3.0 Pro 1080p (Premium Fal - 25 Cr)', shortName: 'Kling 3.0 Pro (25 Cr)', desc: 'Kling 3.0 Pro 1080p via Fal.ai — Resolusi ultra jernih', costPerVideo: 25 },
   { id: 'byteplus', name: 'BytePlus PixelDance (15 Cr)', shortName: 'BytePlus PixelDance (15 Cr)', desc: 'BytePlus PixelDance — Komersial dinamis', costPerVideo: 15 }
 ];
 

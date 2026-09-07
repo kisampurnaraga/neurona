@@ -133,6 +133,7 @@ export interface AnimationConfig {
   aspectRatio: '16:9' | '9:16' | '1:1';
   sceneCount?: number;
   imageEngine?: string;
+  videoEngine?: string;
   characterVisualAnalysis?: string;
   characterReferenceUrl?: string;
   characterReferenceUrls?: string[];
@@ -151,6 +152,8 @@ export interface EducationalConfig {
   characterDescription?: string;
   worldSetting?: string;
   sceneCount?: number;
+  imageEngine?: string;
+  videoEngine?: string;
 }
 
 export interface AgentTelemetry {

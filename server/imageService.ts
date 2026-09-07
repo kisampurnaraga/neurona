@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import { CharacterProfile, Scene, VideoType } from "../src/shared/types";
 import { FounderService } from "../src/server/fcc/FounderService";
+import { OpenArtMCPAdapter } from "../src/server/providers/OpenArtMCPAdapter";
 import { keyRotator } from "./keyRotator";
 import { validateCredentialFormat, logCredentialAudit } from "./utils/credentialValidator";
 import { 
@@ -967,9 +968,14 @@ export class ImageGenerationService {
 
     // Determine target engine route
     const rawEngine = (engine || FounderService.getImageEngine() || 'fal').toLowerCase();
-    const isGoogleEngine = rawEngine.includes('gemini') || rawEngine.includes('imagen') || rawEngine.startsWith('nano-asli') || rawEngine === 'nano-asli';
-    const isOpenAiEngine = rawEngine.includes('chatgpt') || rawEngine.includes('dall-e') || rawEngine.includes('openai') || rawEngine.includes('gpt');
-    const isFalEngine = !isGoogleEngine && !isOpenAiEngine;
+    const isOpenArtEngine = rawEngine.includes('openart') || 
+      rawEngine === 'kling-3-omni' || 
+      rawEngine === 'nano-banana-pro' || 
+      rawEngine === 'byte-plus-seedream-5-pro' || 
+      rawEngine === 'gpt-image-2';
+    const isGoogleEngine = !isOpenArtEngine && (rawEngine.includes('gemini') || rawEngine.includes('imagen') || rawEngine.startsWith('nano-asli') || rawEngine === 'nano-asli');
+    const isOpenAiEngine = !isOpenArtEngine && (rawEngine.includes('chatgpt') || rawEngine.includes('dall-e') || rawEngine.includes('openai') || (rawEngine.includes('gpt') && rawEngine !== 'gpt-image-2'));
+    const isFalEngine = !isOpenArtEngine && !isGoogleEngine && !isOpenAiEngine;
 
     // Helper: Convert local path / URL / base64 into an inlineData part for Gemini multimodal image models
     const loadAsBase64Part = async (imgStr: string): Promise<{ inlineData: { data: string; mimeType: string } } | null> => {
@@ -1448,10 +1454,48 @@ export class ImageGenerationService {
       return null;
     };
 
+    let lastOpenArtError = '';
+    const runOpenArtImage = async (): Promise<string | null> => {
+      try {
+        if (onLog) onLog(`Generating keyframe image Scene ${sceneIndex + 1} via OpenArt MCP Adapter...`, 'INFO');
+        const openArtAdapter = new OpenArtMCPAdapter();
+        let artModel = 'openart-sdxl';
+        if (rawEngine.includes('kling')) artModel = 'kling-3-omni';
+        else if (rawEngine.includes('banana')) artModel = 'nano-banana-pro';
+        else if (rawEngine.includes('seedream')) artModel = 'byte-plus-seedream-5-pro';
+        else if (rawEngine.includes('gpt')) artModel = 'gpt-image-2';
+        else if (rawEngine.includes('flux')) artModel = 'openart-flux-pro';
+        else if (rawEngine.includes('openart')) artModel = rawEngine;
+        const imgResult = await openArtAdapter.generateImage({
+          prompt: finalPrompt,
+          model: artModel,
+          aspectRatio: cleanAspect,
+          resolution: typeof resolution === 'string' ? resolution : '1K',
+          sceneId: scene.id,
+          referenceImageUrls: masterCharacterImageUrl ? [masterCharacterImageUrl] : []
+        });
+
+        if (imgResult && imgResult.success && imgResult.assetUrl) {
+          if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate via OpenArt MCP [${artModel}]!`, 'SUCCESS');
+          return imgResult.assetUrl;
+        }
+      } catch (openArtErr: any) {
+        lastOpenArtError = openArtErr?.message || String(openArtErr);
+        console.warn(`[ImageGenerationService] OpenArt MCP Error:`, lastOpenArtError);
+      }
+      return null;
+    };
+
     // -----------------------------------------------------------------------
     // STRICT ENGINE DISPATCH: Respect User Selection without Cross-Provider Fallback
     // -----------------------------------------------------------------------
-    if (isGoogleEngine) {
+    if (isOpenArtEngine) {
+      const openArtResult = await runOpenArtImage();
+      if (openArtResult) return openArtResult;
+      const errMsg = `[OPENART_ERROR] Gagal generate gambar dengan OpenArt MCP Provider. Detail: ${lastOpenArtError || 'OpenArt MCP error'}`;
+      if (onLog) onLog(`[ERROR] ${errMsg}`, 'ERROR');
+      throw new Error(errMsg);
+    } else if (isGoogleEngine) {
       const bananaResult = await runGeminiBanana();
       if (bananaResult) return bananaResult;
       const errMsg = `[NANO_ASLI_ERROR] Gagal generate gambar dengan model Google Nano Asli / Gemini. Token API server pusat Google mengalami kendala atau habis kuota. Detail: ${lastGeminiError || 'API token error'}`;

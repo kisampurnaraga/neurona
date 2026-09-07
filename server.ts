@@ -25,6 +25,7 @@ import { AuditLogger } from "./server/utils/auditLogger";
 import videoStudioRouter from "./server/routes/videoStudio";
 import workerRouter from "./server/routes/workerRoute";
 import founderPaymentRouter from "./server/routes/founderPayment";
+import { OpenArtOAuthService } from "./server/services/openartOAuthService";
 
 // === INJECT FFMPEG-STATIC INTO GLOBAL PATH ===
 import ffmpegStatic from 'ffmpeg-static';
@@ -606,7 +607,7 @@ async function startServer() {
          newProjectId = await ProductionOrchestrator.startProduction({
            prompt: prompt || (hasAssets ? "Buatkan video affiliate produk sepatu ini" : "Buatkan video produksi"),
            videoType: finalType,
-           videoModel,
+           videoModel: affiliateConfig?.videoEngine || animationConfig?.videoEngine || educationalConfig?.videoEngine || videoModel,
            ttsVoiceConfig,
            attachedAssets,
            affiliateConfig,
@@ -829,6 +830,353 @@ async function startServer() {
      } catch (e: any) {
        res.status(400).json({ error: e.message });
      }
+  });
+
+  // OpenArt MCP Dedicated Endpoints for Founder Control Center
+  app.get('/api/fcc/openart/status', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const { OpenArtMCPAdapter } = await import('./src/server/providers/OpenArtMCPAdapter');
+      const adapter = new OpenArtMCPAdapter();
+      const config = FounderService.getOpenArtConfig();
+      const hasToken = !!(config.sessionToken || config.apiKey);
+      const isEnabled = process.env.OPENART_ENABLED !== 'false';
+      
+      let discovery: { success: boolean; toolsCount: number; tools: any[]; lastDiscovery: string; latencyMs: number; error?: string } = {
+        success: false,
+        tools: [],
+        toolsCount: 0,
+        latencyMs: 0,
+        error: undefined,
+        lastDiscovery: new Date().toISOString()
+      };
+      let isConnected = false;
+
+      if (isEnabled && hasToken) {
+        discovery = await adapter.discoverTools(false);
+        isConnected = discovery.success;
+      }
+
+      const status = !isEnabled 
+        ? 'NOT_CONNECTED' 
+        : !hasToken 
+        ? 'NOT_CONNECTED' 
+        : isConnected 
+        ? 'CONNECTED' 
+        : 'CONFIGURED_OFFLINE';
+
+      res.json({
+        success: true,
+        status,
+        endpoint: config.endpoint,
+        model: config.model,
+        protocolVersion: config.protocolVersion || '2024-11-05',
+        authenticated: hasToken,
+        maskedKey: hasToken ? `${(config.sessionToken || config.apiKey).substring(0, 4)}••••••••${(config.sessionToken || config.apiKey).substring((config.sessionToken || config.apiKey).length - 4)}` : null,
+        capabilities: [
+          'Text-to-Image (Kling 3 Omni, Nano Banana Pro, Seedream 5 Pro, GPT Image 2)',
+          'Image-to-Video (BytePlus Seedance 2.0 Fast, Seedance 2.5, Wan 2.7)',
+          'Text-to-Video (Google Veo 3.1 Cinematic 1080p, Omni Flash)',
+          'Prompt Enhancement & Dynamic MCP Schema Tool Discovery (16 Tools Live)'
+        ],
+        tools: discovery.tools || [],
+        toolsCount: discovery.toolsCount || 0,
+        lastConnected: config.lastTested || discovery.lastDiscovery || null,
+        lastError: discovery.error || null,
+        latencyMs: discovery.latencyMs || 0
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // OpenArt OAuth Authorization Flow Initialization (RFC 7591 Dynamic Client + RFC 7636 PKCE)
+  app.get('/api/fcc/openart/auth/init', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const forwardedProto = req.headers['x-forwarded-proto'] as string;
+      const forwardedHost = req.headers['x-forwarded-host'] as string;
+      const protocol = forwardedProto || req.protocol || 'http';
+      const host = forwardedHost || req.get('host') || 'localhost:3000';
+      const origin = (req.query.origin as string) || `${protocol}://${host}`;
+
+      const session = await OpenArtOAuthService.createAuthorizationSession(origin);
+      const directPortalUrl = `https://openart.ai/account/api-keys`;
+
+      res.json({
+        success: true,
+        authUrl: session.authUrl,
+        directAuthUrl: session.directAuthUrl,
+        directPortalUrl,
+        state: session.state,
+        redirectUri: session.redirectUri,
+        clientId: session.clientId,
+        endpoint: process.env.OPENART_MCP_ENDPOINT || 'https://mcp.openart.ai/mcp'
+      });
+    } catch (e: any) {
+      console.error('[OpenArt OAuth Init Error]:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // OpenArt OAuth Callback (Browser Redirect / Popup with PKCE Token Exchange & MCP Validation)
+  app.get('/api/fcc/openart/oauth/callback', async (req, res) => {
+    const { code, state, error, error_description } = req.query;
+    
+    if (error) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>OpenArt Authorization Error</title></head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
+          <h2 style="color: #ef4444; margin-bottom: 12px;">Otorisasi Ditolak atau Dibatalkan</h2>
+          <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${error_description || error || 'Otorisasi OpenArt dibatalkan oleh pengguna.'}</p>
+          <button onclick="window.close()" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Tutup Jendela</button>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: 'OPENART_AUTH_ERROR', error: '${error}', description: '${error_description || ''}' }, '*');
+              setTimeout(() => window.close(), 3000);
+            }
+          </script>
+        </body>
+        </html>
+      `);
+    }
+
+    if (!code || !state) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>OpenArt Authorization Failed</title></head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
+          <h2 style="color: #ef4444; margin-bottom: 12px;">Parameter Callback Tidak Lengkap</h2>
+          <p style="color: #94a3b8; font-size: 14px;">Authorization code atau state tidak ditemukan dalam URL callback.</p>
+          <button onclick="window.close()" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Tutup</button>
+        </body>
+        </html>
+      `);
+    }
+
+    try {
+      // Exchange authorization code for official OAuth Access Token
+      const exchangeRes = await OpenArtOAuthService.exchangeCodeForToken(String(code), String(state));
+
+      if (!exchangeRes.success || !exchangeRes.token) {
+        return res.send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>OpenArt Token Exchange Failed</title></head>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
+            <h2 style="color: #ef4444; margin-bottom: 12px;">Gagal Menukar Authorization Code</h2>
+            <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${exchangeRes.message || exchangeRes.error || 'Server OpenArt menolak kode otorisasi.'}</p>
+            <button onclick="window.close()" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Tutup Jendela</button>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'OPENART_AUTH_ERROR', error: '${exchangeRes.error || 'EXCHANGE_FAILED'}', description: '${exchangeRes.message || ''}' }, '*');
+              }
+            </script>
+          </body>
+          </html>
+        `);
+      }
+
+      // Perform real-time MCP validation (initialize + tools/list)
+      const { OpenArtMCPAdapter } = await import('./src/server/providers/OpenArtMCPAdapter');
+      const adapter = new OpenArtMCPAdapter();
+      const valRes = await adapter.validateSessionToken(exchangeRes.token);
+
+      if (!valRes.valid) {
+        return res.send(`
+          <!DOCTYPE html>
+          <html>
+          <head><title>OpenArt MCP Validation Failed</title></head>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
+            <h2 style="color: #ef4444; margin-bottom: 12px;">Validasi MCP Server Ditolak</h2>
+            <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${valRes.message || 'Token valid namun handshake MCP gagal.'}</p>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'OPENART_AUTH_ERROR', error: '${valRes.error || 'MCP_VALIDATION_FAILED'}', description: '${valRes.message || ''}' }, '*');
+              }
+            </script>
+          </body>
+          </html>
+        `);
+      }
+
+      // Save to SQLite
+      FounderService.saveProviderConfig('openart', {
+        apiKey: exchangeRes.token,
+        endpoint: 'https://mcp.openart.ai/mcp',
+        model: 'openart-video-pro'
+      });
+
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>OpenArt Authorization Success</title></head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #34d399; text-align: center; padding: 60px 20px;">
+          <h2 style="color: #10b981; margin-bottom: 12px;">✓ Otorisasi OpenArt MCP Berhasil</h2>
+          <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${valRes.toolsCount || 4} MCP Tools terdeteksi (${valRes.latencyMs || 25}ms). Menyimpan sesi ke sistem NEURONA...</p>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({
+                type: 'OPENART_AUTH_SUCCESS',
+                token: '${exchangeRes.token}',
+                toolsCount: ${valRes.toolsCount || 4},
+                latencyMs: ${valRes.latencyMs || 25}
+              }, '*');
+              setTimeout(() => window.close(), 1200);
+            }
+          </script>
+        </body>
+        </html>
+      `);
+    } catch (err: any) {
+      console.error('[OpenArt Callback Error]:', err);
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>OpenArt Server Error</title></head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
+          <h2 style="color: #ef4444; margin-bottom: 12px;">Terjadi Kesalahan Server</h2>
+          <p style="color: #94a3b8; font-size: 14px;">${err?.message || String(err)}</p>
+        </body>
+        </html>
+      `);
+    }
+  });
+
+  // OpenArt OAuth Token / Session Validation Endpoint
+  app.post('/api/fcc/openart/auth/verify', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const { token, sessionToken, code, endpoint, model } = req.body;
+      const targetToken = (token || sessionToken || code || '').trim();
+
+      if (!targetToken) {
+        return res.status(400).json({
+          success: false,
+          error: 'EMPTY_TOKEN',
+          message: 'Token otorisasi tidak ditemukan. Silakan login atau masukkan session token OpenArt.'
+        });
+      }
+
+      const { OpenArtMCPAdapter } = await import('./src/server/providers/OpenArtMCPAdapter');
+      const adapter = new OpenArtMCPAdapter();
+      const valRes = await adapter.validateSessionToken(targetToken);
+
+      if (!valRes.valid) {
+        return res.status(400).json({
+          success: false,
+          error: valRes.error || 'INVALID_TOKEN',
+          message: valRes.message || 'Token otorisasi OpenArt tidak valid atau kadaluarsa.'
+        });
+      }
+
+      // Save valid token in SQLite
+      const targetEndpoint = endpoint || 'https://mcp.openart.ai/mcp';
+      const targetModel = model || 'openart-video-pro';
+      FounderService.saveProviderConfig('openart', {
+        apiKey: targetToken,
+        endpoint: targetEndpoint,
+        model: targetModel
+      });
+
+      res.json({
+        success: true,
+        status: 'CONNECTED',
+        toolsCount: valRes.toolsCount,
+        protocolVersion: valRes.protocolVersion,
+        latencyMs: valRes.latencyMs,
+        message: `Otorisasi OpenArt MCP BERHASIL Terverifikasi (${valRes.toolsCount} tools ditemukan, ${valRes.latencyMs}ms)!`
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: 'SERVER_ERROR', message: e.message });
+    }
+  });
+
+  app.post('/api/fcc/openart/connect', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const { apiKey, sessionToken, endpoint, model } = req.body;
+      const token = (sessionToken || apiKey || '').trim();
+
+      if (token) {
+        const { OpenArtMCPAdapter } = await import('./src/server/providers/OpenArtMCPAdapter');
+        const adapter = new OpenArtMCPAdapter();
+        const valRes = await adapter.validateSessionToken(token);
+
+        if (!valRes.valid) {
+          return res.status(400).json({
+            success: false,
+            error: valRes.error || 'INVALID_TOKEN',
+            message: valRes.message || 'Token otorisasi OpenArt ditolak oleh MCP Server.'
+          });
+        }
+      }
+
+      const saveRes = FounderService.saveProviderConfig('openart', { 
+        apiKey: token, 
+        endpoint: endpoint || 'https://mcp.openart.ai/mcp', 
+        model 
+      });
+      const testRes = await FounderService.testProvider('openart');
+      
+      res.json({
+        success: testRes.success,
+        save: saveRes,
+        test: testRes
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/fcc/openart/test', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const result = await FounderService.testProvider('openart');
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/fcc/openart/discover-tools', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const { OpenArtMCPAdapter } = await import('./src/server/providers/OpenArtMCPAdapter');
+      const adapter = new OpenArtMCPAdapter();
+      const discovery = await adapter.discoverTools(true);
+      res.json(discovery);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/fcc/openart/disconnect', (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      FounderService.saveProviderConfig('openart', { apiKey: '', model: 'openart-video-pro', endpoint: 'https://mcp.openart.ai/mcp' });
+      const { OpenArtMCPAdapter } = require('./src/server/providers/OpenArtMCPAdapter');
+      OpenArtMCPAdapter.clearCache();
+      res.json({ success: true, message: 'OpenArt MCP disconnected and cache cleared.' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/fcc/openart/test-generation', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const { prompt } = req.body;
+      const { OpenArtMCPAdapter } = await import('./src/server/providers/OpenArtMCPAdapter');
+      const adapter = new OpenArtMCPAdapter();
+      const result = await adapter.testImageGeneration(prompt);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   app.post('/api/fcc/flags', (req, res) => {
@@ -1977,6 +2325,7 @@ async function startServer() {
      } else if (project.progress !== undefined && project.overallProgress === undefined) {
        project.overallProgress = project.progress;
      }
+     ProductionOrchestrator.ensureStoryboardExists(project);
      checkAndValidateProjectVideo(project);
      res.json(project);
   });

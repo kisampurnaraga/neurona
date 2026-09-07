@@ -22,7 +22,7 @@ import {
   AgentTelemetry, 
   TerminalLog 
 } from "../src/shared/types";
-import { getVideoProvider } from "../src/server/providers";
+import { getVideoProvider, MediaProviderRouter } from "../src/server/providers";
 import { FalVideoAdapter } from "../src/server/providers/FalVideoAdapter";
 import { BytePlusAdapter } from "../src/server/providers/BytePlusAdapter";
 import { getSampleVideoForScene } from "../src/server/providers/VideoProvider";
@@ -35,41 +35,15 @@ export async function renderSceneVideoWithFallback(
   sceneIdx: number,
   onProgress?: (msg: string) => void
 ): Promise<string> {
-  const context = (project.brief || '') + ' TYPE:' + (project.videoType || '');
-  const preferredModel = project.videoModel || 'fal';
-  
-  // Attempt 1: Preferred Provider (Fal.ai / ByteDance)
-  try {
-    const provider = getVideoProvider(preferredModel);
-    console.log(`[Video Engine Multi-Stage] Scene ${sceneIdx + 1}: Attempting preferred provider ${provider.name}...`);
-    const resultUrl = await provider.generateScene(scene, context, onProgress);
-    if (resultUrl) return resultUrl;
-  } catch (err: any) {
-    console.warn(`[Video Engine Multi-Stage] Scene ${sceneIdx + 1} preferred provider (${preferredModel}) failed:`, err?.message || err);
-    appendLog(project, 'GATOTKACA', `Provider utama (${preferredModel}) mengalami kendala: ${err?.message || err}. Mengalihkan ke engine Fal.ai cadangan...`, 'WARN');
-  }
-
-  // Attempt 2: FalVideoAdapter fallback (if preferred was not Fal default)
-  if (!preferredModel.toLowerCase().includes('fal')) {
-    try {
-      const falProvider = new FalVideoAdapter();
-      console.log(`[Video Engine Multi-Stage] Scene ${sceneIdx + 1}: Failover to Fal.ai Video Engine...`);
-      onProgress?.('Mengalihkan ke engine cadangan Fal.ai...');
-      const resultUrl = await falProvider.generateScene(scene, context, onProgress);
-      if (resultUrl) {
-        appendLog(project, 'GATOTKACA', `Berhasil render adegan ${sceneIdx + 1} dengan Fal.ai Video Engine`, 'SUCCESS');
-        return resultUrl;
-      }
-    } catch (falErr: any) {
-      console.warn(`[Video Engine Multi-Stage] Scene ${sceneIdx + 1} Fal.ai failover failed:`, falErr?.message || falErr);
+  return await MediaProviderRouter.renderSceneVideoWithRouter({
+    project,
+    scene,
+    sceneIdx,
+    onProgress,
+    onLog: (agent, msg, level) => {
+      appendLog(project, agent as any, msg, level || 'INFO');
     }
-  }
-
-  // Attempt 3: If all video providers fail, throw actual error instead of fake sample
-  const failMsg = `Gagal me-render video untuk adegan ${sceneIdx + 1}. Silakan periksa saldo token API atau coba engine lain.`;
-  console.error(`[Video Engine Multi-Stage] Scene ${sceneIdx + 1} render failed on all engines.`);
-  appendLog(project, 'GATOTKACA', `Adegan ${sceneIdx + 1} gagal di-render oleh engine video.`, 'ERROR');
-  throw new Error(failMsg);
+  });
 }
 import { LLMService } from "./llmService";
 import { ImageGenerationService } from "./imageService";
@@ -491,6 +465,18 @@ export function ensureCompleteMarketingCopy(project: ProductionProject) {
 }
 
 export function ensureStoryboardExists(project: ProductionProject): void {
+  // Fix missing IDs for any existing scenes
+  if (project.storyboard?.scenes?.length) {
+    project.storyboard.scenes.forEach(s => {
+      if (!s.id) s.id = "s_" + Math.random().toString(36).substr(2, 9);
+    });
+  }
+  if ((project as any).scenes?.length) {
+    (project as any).scenes.forEach((s: any) => {
+      if (!s.id) s.id = "s_" + Math.random().toString(36).substr(2, 9);
+    });
+  }
+
   if (project.storyboard && project.storyboard.scenes && project.storyboard.scenes.length > 0) {
     return;
   }
@@ -1132,6 +1118,10 @@ export interface ProductionStartOptions {
 }
 
 export class ProductionOrchestrator {
+  static ensureStoryboardExists(project: ProductionProject): void {
+    ensureStoryboardExists(project);
+  }
+
   static async startProduction(input: string | ProductionStartOptions) {
     const options: ProductionStartOptions = typeof input === 'string' ? { prompt: input } : input;
     const { prompt, videoType, videoModel, ttsVoiceConfig, attachedAssets, affiliateConfig, animationConfig, educationalConfig, userRole } = options;

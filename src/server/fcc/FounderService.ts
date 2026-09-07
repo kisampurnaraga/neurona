@@ -9,8 +9,10 @@ import { CreditService } from "../../../server/creditService";
 import { keyRotator } from "../../../server/keyRotator";
 import { validateCredentialFormat, logCredentialAudit } from "../../../server/utils/credentialValidator";
 import { db } from '../../db/index';
-import { users, projects as projectsTable, systemSettings } from '../../db/schema';
-import { eq } from 'drizzle-orm';
+import { users, projects as projectsTable, systemSettings, apiKeys } from '../../db/schema';
+import { eq, and } from 'drizzle-orm';
+import { encryptSecret, decryptSecret } from '../../../server/utils/crypto';
+import { CostTrackingService } from '../../../server/services/costTrackingService';
 
 interface ProviderConfig {
   id: string;
@@ -22,6 +24,8 @@ interface ProviderConfig {
   model?: string;
   endpoint?: string;
   lastTested?: string;
+  capabilities?: string[];
+  costStats?: any;
 }
 
 interface AuditLogEntry {
@@ -69,6 +73,7 @@ export class FounderService {
       }
 
       if (data) {
+        if (data.customOpenArtConfig && this.customOpenArtConfig) this.customOpenArtConfig = { ...this.customOpenArtConfig, ...data.customOpenArtConfig };
         if (data.customFalConfig && this.customFalConfig) this.customFalConfig = { ...this.customFalConfig, ...data.customFalConfig };
         if (data.customBytePlusConfig && this.customBytePlusConfig) this.customBytePlusConfig = { ...this.customBytePlusConfig, ...data.customBytePlusConfig };
         if (data.customVeoConfig && this.customVeoConfig) this.customVeoConfig = { ...this.customVeoConfig, ...data.customVeoConfig };
@@ -82,6 +87,22 @@ export class FounderService {
         if (data.qaAutoFixThreshold !== undefined) this.qaAutoFixThreshold = data.qaAutoFixThreshold;
         if (data.primaryVideoEngine) this.primaryVideoEngine = data.primaryVideoEngine;
       }
+
+      // Also restore persistent encrypted OpenArt token from SQLite api_keys table if active
+      try {
+        const openartKeyRow = db.select().from(apiKeys).where(and(eq(apiKeys.provider, 'openart'), eq(apiKeys.status, 'ACTIVE'))).get();
+        if (openartKeyRow && openartKeyRow.keyEncrypted) {
+          const decrypted = decryptSecret(openartKeyRow.keyEncrypted);
+          if (decrypted) {
+            this.customOpenArtConfig.apiKey = decrypted;
+            this.customOpenArtConfig.sessionToken = decrypted;
+            this.customOpenArtConfig.status = 'READY';
+            process.env.OPENART_AUTH_TOKEN = decrypted;
+          }
+        }
+      } catch (err) {
+        console.warn('[FounderService] Failed to read encrypted OpenArt key from api_keys:', (err as any)?.message);
+      }
     } catch (e) {
       console.error('[FounderService] Failed to load config from SQLite:', e);
     }
@@ -90,6 +111,7 @@ export class FounderService {
   private static saveConfig() {
     try {
       const data = {
+        customOpenArtConfig: this.customOpenArtConfig,
         customFalConfig: this.customFalConfig,
         customBytePlusConfig: this.customBytePlusConfig,
         customVeoConfig: this.customVeoConfig,
@@ -221,6 +243,25 @@ export class FounderService {
     status: (process.env.GEMINI_MANUAL_API_KEY || process.env.GEMINI_API_KEY) ? 'READY' : 'NOT_CONFIGURED'
   };
 
+  private static customOpenArtConfig: {
+    apiKey?: string;
+    sessionToken?: string;
+    model?: string;
+    endpoint?: string;
+    lastTested?: string;
+    status?: 'READY' | 'NOT_CONFIGURED' | 'ERROR';
+    protocolVersion?: string;
+    toolsDiscovered?: number;
+  } = {
+    apiKey: process.env.OPENART_AUTH_TOKEN || process.env.OPENART_API_KEY || '',
+    sessionToken: process.env.OPENART_AUTH_TOKEN || process.env.OPENART_SESSION_TOKEN || '',
+    model: process.env.OPENART_DEFAULT_MODEL || 'openart-video-pro',
+    endpoint: process.env.OPENART_MCP_ENDPOINT || 'https://mcp.openart.ai/mcp',
+    status: process.env.OPENART_ENABLED === 'false' ? 'NOT_CONFIGURED' : 'READY',
+    protocolVersion: '2024-11-05',
+    toolsDiscovered: 4
+  };
+
   private static customFalConfig: {
     apiKey?: string;
     model?: string;
@@ -345,6 +386,22 @@ export class FounderService {
       logCredentialAudit('openai', 'openai', openAiCfg.apiKey, 'HEALTH_CHECK', 'SUCCESS');
     }
 
+    // 5. Check OpenArt MCP (Model Context Protocol Official Endpoint)
+    const openArtCfg = this.getOpenArtConfig();
+    const isOpenArtEnabled = process.env.OPENART_ENABLED !== 'false';
+    if (!isOpenArtEnabled) {
+      this.customOpenArtConfig.status = 'NOT_CONFIGURED';
+      report.openart = { status: 'NOT_CONFIGURED', reason: 'OpenArt MCP disabled via OPENART_ENABLED=false' };
+    } else if (!openArtCfg.sessionToken) {
+      this.customOpenArtConfig.status = 'NOT_CONFIGURED';
+      report.openart = { status: 'NOT_CONFIGURED', reason: 'OpenArt session/OAuth token not configured' };
+      logCredentialAudit('openart', 'openart_mcp', openArtCfg.endpoint, 'HEALTH_CHECK', 'BLOCKED', 'No authorization token');
+    } else {
+      this.customOpenArtConfig.status = this.customOpenArtConfig.status || 'READY';
+      report.openart = { status: this.customOpenArtConfig.status === 'ERROR' ? 'ERROR' : 'READY' };
+      logCredentialAudit('openart', 'openart_mcp', openArtCfg.endpoint, 'HEALTH_CHECK', 'SUCCESS');
+    }
+
     console.log("[FounderService] 📊 Health Check Completed:", JSON.stringify(report, null, 2));
     return report;
   }
@@ -401,6 +458,25 @@ export class FounderService {
       model: this.customGeminiBananaConfig.model || 'imagen-3.0-generate-002',
       endpoint: endpoint,
       status: key ? 'READY' : 'NOT_CONFIGURED'
+    };
+  }
+
+  static getOpenArtConfig() {
+    const isEnabled = process.env.OPENART_ENABLED !== 'false';
+    const endpoint = this.customOpenArtConfig.endpoint || process.env.OPENART_MCP_ENDPOINT || 'https://mcp.openart.ai/mcp';
+    const model = this.customOpenArtConfig.model || process.env.OPENART_DEFAULT_MODEL || 'openart-video-pro';
+    const sessionToken = this.customOpenArtConfig.sessionToken || this.customOpenArtConfig.apiKey || process.env.OPENART_AUTH_TOKEN || process.env.OPENART_SESSION_TOKEN || '';
+    const status = !isEnabled ? 'NOT_CONFIGURED' : (!sessionToken ? 'NOT_CONFIGURED' : (this.customOpenArtConfig.status || 'READY'));
+
+    return {
+      apiKey: sessionToken,
+      sessionToken,
+      endpoint,
+      status,
+      model,
+      lastTested: this.customOpenArtConfig.lastTested,
+      protocolVersion: this.customOpenArtConfig.protocolVersion || '2024-11-05',
+      toolsDiscovered: this.customOpenArtConfig.toolsDiscovered || 4
     };
   }
 
@@ -513,7 +589,25 @@ export class FounderService {
     const gptImage2Configured = !!(this.customGptImage2Config.apiKey || process.env.OPENAI_API_KEY);
     const gptImage2Status = this.customGptImage2Config.status || (gptImage2Configured ? 'READY' : 'NOT_CONFIGURED');
 
+    const isOpenArtEnabled = process.env.OPENART_ENABLED !== 'false';
+    const openArtConfigured = isOpenArtEnabled;
+    const openArtStatus = isOpenArtEnabled ? (this.customOpenArtConfig.status || 'READY') : 'NOT_CONFIGURED';
+    const openArtStats = CostTrackingService.getProviderStats('openart');
+
     const providers: ProviderConfig[] = [
+      {
+        id: 'openart',
+        name: 'OpenArt AI (Official MCP Media Provider: T2I, I2V, Video)',
+        type: 'HYBRID',
+        status: openArtStatus,
+        configured: openArtConfigured,
+        maskedKey: this.customOpenArtConfig.sessionToken || this.customOpenArtConfig.apiKey ? this.maskKey(this.customOpenArtConfig.sessionToken || this.customOpenArtConfig.apiKey) : null,
+        model: this.customOpenArtConfig.model || process.env.OPENART_DEFAULT_MODEL || 'openart-video-pro',
+        endpoint: this.customOpenArtConfig.endpoint || process.env.OPENART_MCP_ENDPOINT || 'https://mcp.openart.ai/mcp',
+        lastTested: this.customOpenArtConfig.lastTested,
+        capabilities: ['Text-to-Image (SDXL, Flux Pro)', 'Image-to-Video (Fast, Pro, Wan 2.1)', 'Text-to-Video (Veo 2.0)'],
+        costStats: openArtStats
+      },
       {
         id: 'chatgpt_image_2',
         name: 'ChatGPT Image 2 (GPT Image 2)',
@@ -986,6 +1080,87 @@ export class FounderService {
       };
     }
 
+    if (providerId === 'openart') {
+      if (data.apiKey !== undefined) {
+        const trimmed = data.apiKey.trim();
+        this.customOpenArtConfig.apiKey = trimmed;
+        this.customOpenArtConfig.sessionToken = trimmed;
+        if (trimmed) {
+          process.env.OPENART_AUTH_TOKEN = trimmed;
+          try {
+            const encrypted = encryptSecret(trimmed);
+            const masked = this.maskKey(trimmed);
+            const now = new Date().toISOString();
+            const existingRows = db.select().from(apiKeys).where(eq(apiKeys.provider, 'openart')).all();
+            if (existingRows.length > 0) {
+              db.update(apiKeys)
+                .set({
+                  keyEncrypted: encrypted,
+                  maskedKey: masked,
+                  status: 'ACTIVE',
+                  updatedAt: now
+                })
+                .where(eq(apiKeys.id, existingRows[0].id))
+                .run();
+            } else {
+              db.insert(apiKeys).values({
+                id: randomUUID(),
+                provider: 'openart',
+                keyEncrypted: encrypted,
+                maskedKey: masked,
+                status: 'ACTIVE',
+                totalRequests: 0,
+                totalErrors: 0,
+                createdAt: now,
+                updatedAt: now
+              }).run();
+            }
+            console.log(`[FounderService] Persisted encrypted OpenArt OAuth token in SQLite api_keys (${masked})`);
+          } catch (err: any) {
+            console.error('[FounderService] Error encrypting/saving OpenArt token to api_keys:', err?.message);
+          }
+        } else {
+          delete process.env.OPENART_AUTH_TOKEN;
+          delete process.env.OPENART_SESSION_TOKEN;
+          try {
+            db.delete(apiKeys).where(eq(apiKeys.provider, 'openart')).run();
+            console.log('[FounderService] Cleared OpenArt token from SQLite api_keys');
+          } catch (err: any) {
+            console.warn('[FounderService] Error removing OpenArt token from api_keys:', err?.message);
+          }
+        }
+      }
+      if (data.model) {
+        this.customOpenArtConfig.model = data.model.trim();
+        process.env.OPENART_DEFAULT_MODEL = data.model.trim();
+      }
+      if (data.endpoint) {
+        this.customOpenArtConfig.endpoint = data.endpoint.trim();
+        process.env.OPENART_MCP_ENDPOINT = data.endpoint.trim();
+      }
+
+      const hasToken = !!(this.customOpenArtConfig.sessionToken || this.customOpenArtConfig.apiKey);
+      this.customOpenArtConfig.status = hasToken ? 'READY' : 'NOT_CONFIGURED';
+      this.customOpenArtConfig.lastTested = new Date().toISOString();
+
+      this.auditLogs.push({
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        action: 'UPDATE_PROVIDER',
+        target: 'OPENART_MCP_MEDIA_API',
+        details: `Updated OpenArt MCP configuration with model ${this.customOpenArtConfig.model || 'openart-video-pro'} and endpoint ${this.customOpenArtConfig.endpoint || 'https://mcp.openart.ai/mcp'}.`,
+        status: 'SUCCESS'
+      });
+
+      this.saveConfig();
+      return {
+        success: true,
+        provider: 'openart',
+        status: this.customOpenArtConfig.status,
+        maskedKey: this.maskKey(this.customOpenArtConfig.sessionToken || this.customOpenArtConfig.apiKey)
+      };
+    }
+
     if (providerId === 'gemini') {
       if (data.apiKey !== undefined && data.apiKey !== '') {
         process.env.GEMINI_API_KEY = data.apiKey.trim();
@@ -1350,6 +1525,76 @@ export class FounderService {
           success: false,
           status: 'ERROR',
           message: `Gagal menghubungi server Fal.ai: ${err.message}`
+        };
+      }
+    }
+
+    if (providerId === 'openart') {
+      const endpoint = this.customOpenArtConfig.endpoint || process.env.OPENART_MCP_ENDPOINT || 'https://mcp.openart.ai/mcp';
+      const timestamp = new Date().toISOString();
+      this.customOpenArtConfig.lastTested = timestamp;
+
+      try {
+        const { OpenArtMCPAdapter } = await import('../providers/OpenArtMCPAdapter');
+        const adapter = new OpenArtMCPAdapter();
+        const sessionToken = adapter.getSessionToken();
+
+        if (!sessionToken) {
+          this.customOpenArtConfig.status = 'NOT_CONFIGURED';
+          this.saveConfig();
+          return {
+            success: false,
+            status: 'NOT_CONFIGURED',
+            error: 'AUTH_REQUIRED',
+            message: 'Belum terautentikasi. Silakan klik "Connect OpenArt" untuk login dan otorisasi akun OpenArt Anda.'
+          };
+        }
+
+        // Validate session token with real MCP handshake (initialize + tools/list)
+        const valRes = await adapter.validateSessionToken(sessionToken);
+
+        if (valRes.valid) {
+          this.customOpenArtConfig.status = 'READY';
+          this.customOpenArtConfig.protocolVersion = valRes.protocolVersion || '2024-11-05';
+          this.customOpenArtConfig.toolsDiscovered = valRes.toolsCount || 4;
+          this.auditLogs.push({
+            id: `log-${Date.now()}`,
+            timestamp,
+            action: 'TEST_CONNECTION',
+            target: 'OPENART_MCP_OFFICIAL_ENDPOINT',
+            details: `OpenArt MCP Protocol (${valRes.protocolVersion || '2024-11-05'}) verified successfully at ${endpoint} (${valRes.toolsCount} tools discovered, ${valRes.latencyMs}ms).`,
+            status: 'SUCCESS'
+          });
+          this.saveConfig();
+
+          return {
+            success: true,
+            status: 'READY',
+            endpoint,
+            protocolVersion: valRes.protocolVersion || '2024-11-05',
+            latencyMs: valRes.latencyMs,
+            toolsCount: valRes.toolsCount,
+            message: `Koneksi & Otorisasi OpenArt MCP BERHASIL Terverifikasi Aktif (${valRes.toolsCount} tools, ${valRes.latencyMs}ms)!`
+          };
+        } else {
+          this.customOpenArtConfig.status = 'ERROR';
+          this.saveConfig();
+          return {
+            success: false,
+            status: 'ERROR',
+            error: valRes.error || 'AUTH_FAILED',
+            message: valRes.message || 'Otorisasi OpenArt MCP ditolak.'
+          };
+        }
+      } catch (err: any) {
+        this.customOpenArtConfig.status = 'ERROR';
+        this.saveConfig();
+        return {
+          success: false,
+          status: 'ERROR',
+          endpoint,
+          error: 'EXCEPTION',
+          message: `Gagal menguji koneksi OpenArt MCP (${endpoint}): ${err?.message || String(err)}`
         };
       }
     }

@@ -882,6 +882,7 @@ CRITICAL RULES FOR QA COMPLIANCE:
             const scenes = rawScenes.map((s: any, idx: number) => {
               const subText = resolveSceneSubtitle(s, idx);
               return {
+                id: s.id || "s_" + Math.random().toString(36).substr(2, 9),
                 scene_number: s.scene_number || idx + 1,
                 duration: s.duration || '3s',
                 visualDirection: s.visual_direction || s.visualDirection || '',
@@ -1062,6 +1063,7 @@ CRITICAL RULES FOR QA COMPLIANCE:
           const scenes = rawScenes.map((s: any, idx: number) => {
             const subText = resolveSceneSubtitle(s, idx);
             return {
+              id: s.id || "s_" + Math.random().toString(36).substr(2, 9),
               scene_number: s.scene_number || idx + 1,
               duration: s.duration || '3s',
               visualDirection: s.visual_direction || s.visualDirection || '',
@@ -1161,6 +1163,7 @@ CRITICAL RULES FOR QA COMPLIANCE:
                 const scenes = rawScenes.map((s: any, idx: number) => {
                   const subText = resolveSceneSubtitle(s, idx);
                   return {
+                    id: s.id || "s_" + Math.random().toString(36).substr(2, 9),
                     scene_number: s.scene_number || idx + 1,
                     duration: s.duration || '3s',
                     visualDirection: s.visualDirection || s.visual_direction || '',

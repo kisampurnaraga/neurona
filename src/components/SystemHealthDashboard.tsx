@@ -41,6 +41,11 @@ export const SystemHealthDashboard: React.FC<SystemHealthDashboardProps> = ({ on
   }, []);
 
   const formatModelName = (path: string) => {
+    if (path.includes('openart-video-pro')) return 'OpenArt Video Pro (MCP Router)';
+    if (path.includes('openart-sdxl')) return 'OpenArt SDXL Photoreal (MCP)';
+    if (path.includes('openart-flux-pro')) return 'OpenArt Flux Pro (MCP)';
+    if (path.includes('openart-veo2')) return 'OpenArt Veo 2.0 HD (MCP)';
+    if (path.includes('openart')) return 'OpenArt MCP Media Router';
     if (path.includes('wan')) return 'Wan v2.1 (Image/Text to Video)';
     if (path.includes('kling')) return 'Kling 1.5 Pro';
     if (path.includes('minimax')) return 'Minimax H3';

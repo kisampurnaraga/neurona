@@ -82,6 +82,8 @@ export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
   const [sceneCount, setSceneCount] = useState(4);
   const [narratorTone, setNarratorTone] = useState<EducationalConfig['narratorTone']>('FRIENDLY_EXPLAINER');
   const [aspectRatio, setAspectRatio] = useState<EducationalConfig['aspectRatio']>('16:9');
+  const [imageEngine, setImageEngine] = useState<string>('kling-3-omni');
+  const [videoEngine, setVideoEngine] = useState<string>('fal-ai/kling-video/v2.1/standard/image-to-video');
 
   if (!isOpen) return null;
 
@@ -99,7 +101,9 @@ export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
       aspectRatio,
       characterDescription,
       worldSetting,
-      sceneCount
+      sceneCount,
+      imageEngine,
+      videoEngine
     };
 
     const prompt = `Buatkan video pembelajaran edukatif ${visualStyle.replace(/_/g, ' ')} tentang "${subjectTitle}" untuk audiens ${targetAudience} kategori ${category}. Karakter presenter/maskot: ${characterDescription}. Latar visual: ${worldSetting}. Poin inti: ${keyTakeaways}. Bahasa: ${language}.`;
@@ -477,6 +481,72 @@ export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+
+          {/* AI Production Engine Selector */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-slate-950/80 border border-emerald-500/20 rounded-xl">
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-emerald-400" />
+                <span>Model AI Visual Edukasi (Image Engine)</span>
+              </label>
+              <select
+                id="select-edu-image-engine"
+                value={imageEngine}
+                onChange={(e) => setImageEngine(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-emerald-500 cursor-pointer"
+              >
+                <optgroup label="🎨 OpenArt AI MCP (Tersedia)">
+                  <option value="kling-3-omni">🎨 OpenArt Kling 3 Omni (10 CR)</option>
+                  <option value="nano-banana-pro">🍌 OpenArt Nano Banana Pro (30 CR)</option>
+                  <option value="byte-plus-seedream-5-pro">💎 OpenArt Seedream 5 Pro (30 CR)</option>
+                  <option value="gpt-image-2">🤖 OpenArt GPT Image 2 (30 CR)</option>
+                </optgroup>
+                <optgroup label="⚡ Fal.ai Engine (Standar)">
+                  <option value="standard">⚡ Fal.ai Nano Banana 2 (15 CR)</option>
+                  <option value="precision">🎯 Fal.ai Nano Banana Pro 4K (25 CR)</option>
+                  <option value="draft">⚡ Fal.ai FLUX.1 Schnell (5 CR)</option>
+                </optgroup>
+                <optgroup label="🔷 Google Imagen Direct">
+                  <option value="nano-asli-lite">✨ Google Imagen 3 Lite (5 CR)</option>
+                  <option value="nano-asli">🔷 Google Gemini Imagen 3 (10 CR)</option>
+                  <option value="nano-asli-pro">🌟 Google Gemini Imagen 3 Pro (15 CR)</option>
+                  <option value="nano-asli-premium">👑 Google Gemini Imagen 3 Ultra (25 CR)</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-teal-400 flex items-center gap-1">
+                <Video className="w-3 h-3 text-teal-400" />
+                <span>Model AI Video Edukasi (Video Engine)</span>
+              </label>
+              <select
+                id="select-edu-video-engine"
+                value={videoEngine}
+                onChange={(e) => setVideoEngine(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-teal-500 cursor-pointer"
+              >
+                <optgroup label="🎬 OpenArt AI MCP Video">
+                  <option value="byte-plus-seedance-2-fast">⚡ OpenArt SeaDance 2.0 Fast (50 CR)</option>
+                  <option value="veo3-1">🎬 OpenArt Google Veo 3.1 Cinematic (100 CR)</option>
+                  <option value="wan2-7">🌊 OpenArt Wan 2.7 Ultra Motion (50 CR)</option>
+                </optgroup>
+                <optgroup label="⚡ Fal.ai Video Engine (Standar)">
+                  <option value="fal-ai/kling-video/v2.1/standard/image-to-video">Kling 2.1 Standard Explainer (15 CR)</option>
+                  <option value="bytedance/seedance-2.0/fast/image-to-video">ByteDance SeaDance 2.0 Fast (10 CR)</option>
+                  <option value="bytedance/seedance-2.0/image-to-video">ByteDance SeaDance 2.0 Std (15 CR)</option>
+                  <option value="fal-ai/veo3.1/lite/image-to-video">Google Veo 3.1 Lite Fal (20 CR)</option>
+                  <option value="fal-ai/wan-i2v">Wan 2.1 14B I2V (45 CR)</option>
+                  <option value="fal-ai/minimax/video-01/image-to-video">MiniMax Video 01 (15 CR)</option>
+                </optgroup>
+                <optgroup label="🔷 Google Veo Direct">
+                  <option value="veo-asli-lite">⚡ Google Veo Asli Lite (10 CR/Scene)</option>
+                  <option value="veo-asli">🎬 Google Veo Asli Standard (15 CR/Scene)</option>
+                  <option value="veo-asli-pro">🌟 Google Veo Asli Pro (25 CR/Scene)</option>
+                </optgroup>
+              </select>
             </div>
           </div>
 

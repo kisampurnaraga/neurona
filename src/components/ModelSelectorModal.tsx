@@ -96,6 +96,96 @@ export const VIDEO_MODELS = [
     color: 'border-purple-500/60 bg-purple-950/40 text-purple-300 font-bold',
     description: 'Engine video MiniMax Hailuo untuk simulasi fisik presisi dan ekspresi karakter yang hidup.',
     capabilities: ['Hailuo Motion Engine', 'Organic Movement', 'Facial Fidelity', 'Commercial Quality']
+  },
+  {
+    id: 'kling-3-omni',
+    name: 'Kling 3 Omni (Official OpenArt MCP)',
+    tag: 'Ultra Fast & High Realism (10 Credits)',
+    badge: 'OPENART MCP LIVE',
+    disabled: false,
+    color: 'border-rose-500/60 bg-rose-950/40 text-rose-300 font-bold',
+    description: 'Model Text-to-Image unggulan OpenArt MCP. Generasi kilat, detail fotorealistik luar biasa, dan konsumsi kredit hemat.',
+    capabilities: ['OpenArt MCP Native', 'Photoreal 8K', 'Lightning Fast', 'Ultra Low Cost (10 Cr)']
+  },
+  {
+    id: 'nano-banana-pro',
+    name: 'Nano Banana Pro (Official OpenArt MCP)',
+    tag: 'Commercial Typography & Product Ads',
+    badge: 'OPENART MCP ADS',
+    disabled: false,
+    color: 'border-amber-500/60 bg-amber-950/40 text-amber-300 font-bold',
+    description: 'Model OpenArt MCP spesialis render teks tipografi produk, kemasan, label, dan poster visual affiliate tanpa distorsi.',
+    capabilities: ['OpenArt MCP Native', 'Legible Text & Labels', 'Studio Product Lighting', 'Affiliate Ready']
+  },
+  {
+    id: 'byte-plus-seedream-5-pro',
+    name: 'Seedream 5 Pro (Official OpenArt MCP)',
+    tag: 'Cinematic Visuals & HDR Quality',
+    badge: 'OPENART MCP CINEMATIC',
+    disabled: false,
+    color: 'border-fuchsia-500/60 bg-fuchsia-950/40 text-fuchsia-300 font-bold',
+    description: 'Model generasi visual sinematik dengan rentang dinamis warna tinggi, tekstur kulit halus, dan atmosfer dramatis.',
+    capabilities: ['OpenArt MCP Native', 'Volumetric Lighting', 'Cinematic Color Grade', 'Master Texture']
+  },
+  {
+    id: 'byte-plus-seedance-2-fast',
+    name: 'BytePlus Seedance 2.0 Fast (OpenArt MCP)',
+    tag: 'High Dynamic Camera & Fluid Motion',
+    badge: 'OPENART MCP VIDEO',
+    disabled: false,
+    color: 'border-violet-500/60 bg-violet-950/40 text-violet-300 font-bold',
+    description: 'Engine video resmi OpenArt MCP dengan akselerasi tinggi untuk konversi Image-to-Video dinamis dan sinematik.',
+    capabilities: ['OpenArt MCP Native', 'Fluid Dynamics', 'Fast Camera Pan', 'Action Movement']
+  },
+  {
+    id: 'veo3-1',
+    name: 'Google Veo 3.1 Cinematic (OpenArt MCP)',
+    tag: 'Next-Gen Ultra 1080p Video',
+    badge: 'OPENART MCP VEO',
+    disabled: false,
+    color: 'border-cyan-500/60 bg-cyan-950/40 text-cyan-300 font-bold',
+    description: 'Model difusi video tercanggih yang diakses via OpenArt MCP dengan resolusi tinggi dan pemahaman sinematografi kompleks.',
+    capabilities: ['OpenArt MCP Native', 'Deep Cinematic Motion', 'Complex Prompts', 'Broadcast Quality']
+  },
+  {
+    id: 'openart-video-pro',
+    name: 'OpenArt AI Video Pro (Official MCP Router)',
+    tag: 'Commercial Grade & Fast Motion',
+    badge: 'OPENART MCP AUTO',
+    disabled: false,
+    color: 'border-rose-500/60 bg-rose-950/40 text-rose-300 font-bold',
+    description: 'Engine Image-to-Video & Text-to-Video resmi OpenArt MCP. Sangat tajam untuk video affiliate komersial dan visual media viral.',
+    capabilities: ['OpenArt MCP Engine', 'Fluid Motion', 'High Dynamic Contrast', 'Cost Efficient']
+  },
+  {
+    id: 'openart-flux-pro',
+    name: 'OpenArt Flux 1.1 Pro (Official MCP Router)',
+    tag: 'Ultra Realistic Visuals',
+    badge: 'OPENART MCP T2I',
+    disabled: false,
+    color: 'border-pink-500/60 bg-pink-950/40 text-pink-300 font-bold',
+    description: 'Model Text-to-Image terunggul dari OpenArt MCP dengan detail fotorealistik maksimal dan pemahaman prompt presisi.',
+    capabilities: ['OpenArt MCP Engine', 'Flux 1.1 Pro', 'Photorealism', 'Product Showcase']
+  },
+  {
+    id: 'wan2-7',
+    name: 'Wan 2.7 Ultra Motion (Official OpenArt MCP)',
+    tag: 'Ultra Motion & Physics (50 Credits)',
+    badge: 'OPENART MCP VIDEO',
+    disabled: false,
+    color: 'border-emerald-500/60 bg-emerald-950/40 text-emerald-300 font-bold',
+    description: 'Model video generasi Wan 2.7 via OpenArt MCP dengan dinamika gerak ultra halus dan simulasi fisika presisi.',
+    capabilities: ['OpenArt MCP Native', 'Ultra Motion', 'Natural Physics', 'Cost Efficient (50 Cr)']
+  },
+  {
+    id: 'gpt-image-2',
+    name: 'OpenArt GPT Image 2 (Official OpenArt MCP)',
+    tag: 'Advanced Multi-Prompt Logic (30 Credits)',
+    badge: 'OPENART MCP T2I',
+    disabled: false,
+    color: 'border-blue-500/60 bg-blue-950/40 text-blue-300 font-bold',
+    description: 'Model image generasi OpenArt MCP dengan pemahaman instruksi prompt multi-lapisan yang sangat cerdas.',
+    capabilities: ['OpenArt MCP Native', 'Complex Prompts', 'Accurate Scene Logic', 'High Definition (30 Cr)']
   }
 ];
 

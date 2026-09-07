@@ -21,11 +21,13 @@ import { Settings, Film, CreditCard, Video,
   ArrowRight,
   Trash2,
   RotateCcw,
-  Plus
+  Plus,
+  Server
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FounderVideoInspector } from './FounderVideoInspector';
 import { KeyRotatorModal } from './KeyRotatorModal';
+import { FounderOpenArtPanel } from './FounderOpenArtPanel';
 import { AVAILABLE_VOICES } from '../utils/speechSynthesis';
 
 export interface ActivatedUser {
@@ -307,7 +309,7 @@ const FounderChangePasswordPanel = () => {
 };
 
 export const FounderDashboard: React.FC<FounderDashboardProps> = ({ onBack }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'activation_form' | 'stats' | 'payment' | 'inspector' | 'settings' | 'change_password'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'activation_form' | 'stats' | 'payment' | 'inspector' | 'openart' | 'settings' | 'change_password'>('users');
   const [isRotatorModalOpen, setIsRotatorModalOpen] = useState(false);
   
   // Form State for Manual Activation
@@ -712,6 +714,18 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
           >
             <Shield size={15} />
             <span>Ubah Password</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('openart')}
+            className={`shrink-0 flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
+              activeTab === 'openart'
+                ? 'border-cyan-400 text-cyan-300 font-bold bg-cyan-950/20'
+                : 'border-transparent text-gray-400 hover:text-white'
+            }`}
+          >
+            <Server size={15} />
+            <span>OpenArt MCP</span>
           </button>
 
           <button
@@ -1211,6 +1225,12 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
                 </div>
               )}
             </div>
+          </div>
+        )}
+        {/* TAB 8: OPENART MCP MEDIA PROVIDER */}
+        {activeTab === 'openart' && (
+          <div className="pt-2">
+            <FounderOpenArtPanel />
           </div>
         )}
       </div>

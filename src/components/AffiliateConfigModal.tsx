@@ -518,13 +518,23 @@ export default function AffiliateConfigModal({
                 onChange={(e) => setImageEngine(e.target.value)}
                 className="w-full bg-black/60 border border-[#27272a] rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-teal-500"
               >
-                <option value="nano-asli-lite">✨ Google Imagen 3 Lite (Nano Asli Lite - 5 CR)</option>
-                <option value="nano-asli">🔷 Google Gemini Imagen 3 (Nano Asli Std - 10 CR)</option>
-                <option value="nano-asli-pro">🌟 Google Gemini Imagen 3 Pro (Nano Asli Pro - 15 CR)</option>
-                <option value="nano-asli-premium">👑 Google Gemini Imagen 3 Ultra (Nano Asli Ultra - 25 CR)</option>
-                <option value="standard">⚡ Fal.ai Nano Banana 2 (15 CR)</option>
-                <option value="precision">🎯 Fal.ai Nano Banana Pro 4K (25 CR)</option>
-                <option value="draft">⚡ Fal.ai FLUX.1 Schnell (5 CR)</option>
+                <optgroup label="🎨 OpenArt AI MCP (Tersedia)">
+                  <option value="kling-3-omni">🎨 OpenArt Kling 3 Omni (10 CR)</option>
+                  <option value="nano-banana-pro">🍌 OpenArt Nano Banana Pro (30 CR)</option>
+                  <option value="byte-plus-seedream-5-pro">💎 OpenArt Seedream 5 Pro (30 CR)</option>
+                  <option value="gpt-image-2">🤖 OpenArt GPT Image 2 (30 CR)</option>
+                </optgroup>
+                <optgroup label="⚡ Fal.ai Engine (Standar)">
+                  <option value="standard">⚡ Fal.ai Nano Banana 2 (15 CR)</option>
+                  <option value="precision">🎯 Fal.ai Nano Banana Pro 4K (25 CR)</option>
+                  <option value="draft">⚡ Fal.ai FLUX.1 Schnell (5 CR)</option>
+                </optgroup>
+                <optgroup label="🔷 Google Imagen Direct">
+                  <option value="nano-asli-lite">✨ Google Imagen 3 Lite (5 CR)</option>
+                  <option value="nano-asli">🔷 Google Gemini Imagen 3 (10 CR)</option>
+                  <option value="nano-asli-pro">🌟 Google Gemini Imagen 3 Pro (15 CR)</option>
+                  <option value="nano-asli-premium">👑 Google Gemini Imagen 3 Ultra (25 CR)</option>
+                </optgroup>
               </select>
             </div>
 
@@ -538,14 +548,24 @@ export default function AffiliateConfigModal({
                 onChange={(e) => setVideoEngine(e.target.value)}
                 className="w-full bg-black/60 border border-[#27272a] rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-purple-500"
               >
-                <option value="veo-asli-lite">⚡ Google Veo Asli Lite (10 CR/Scene)</option>
-                <option value="veo-asli">🎬 Google Veo Asli Standard (15 CR/Scene)</option>
-                <option value="veo-asli-pro">🌟 Google Veo Asli Pro (25 CR/Scene)</option>
-                <option value="bytedance/seedance-2.0/fast/image-to-video">ByteDance SeaDance 2.0 Fast (10 CR)</option>
-                <option value="bytedance/seedance-2.0/image-to-video">ByteDance SeaDance 2.0 Std (15 CR)</option>
-                <option value="fal-ai/wan-i2v">Wan 2.1 14B I2V (45 CR)</option>
-                <option value="fal-ai/kling-video/v2.1/standard/image-to-video">Kling 2.1 Standard (15 CR)</option>
-                <option value="fal-ai/minimax/video-01/image-to-video">MiniMax Video 01 (15 CR)</option>
+                <optgroup label="🎬 OpenArt AI MCP Video">
+                  <option value="byte-plus-seedance-2-fast">⚡ OpenArt SeaDance 2.0 Fast (50 CR)</option>
+                  <option value="veo3-1">🎬 OpenArt Google Veo 3.1 Cinematic (100 CR)</option>
+                  <option value="wan2-7">🌊 OpenArt Wan 2.7 Ultra Motion (50 CR)</option>
+                </optgroup>
+                <optgroup label="⚡ Fal.ai Video Engine (Standar)">
+                  <option value="bytedance/seedance-2.0/fast/image-to-video">ByteDance SeaDance 2.0 Fast (10 CR)</option>
+                  <option value="bytedance/seedance-2.0/image-to-video">ByteDance SeaDance 2.0 Std (15 CR)</option>
+                  <option value="fal-ai/veo3.1/lite/image-to-video">Google Veo 3.1 Lite Fal (20 CR)</option>
+                  <option value="fal-ai/wan-i2v">Wan 2.1 14B I2V (45 CR)</option>
+                  <option value="fal-ai/kling-video/v2.1/standard/image-to-video">Kling 2.1 Standard (15 CR)</option>
+                  <option value="fal-ai/minimax/video-01/image-to-video">MiniMax Video 01 (15 CR)</option>
+                </optgroup>
+                <optgroup label="🔷 Google Veo Direct">
+                  <option value="veo-asli-lite">⚡ Google Veo Asli Lite (10 CR/Scene)</option>
+                  <option value="veo-asli">🎬 Google Veo Asli Standard (15 CR/Scene)</option>
+                  <option value="veo-asli-pro">🌟 Google Veo Asli Pro (25 CR/Scene)</option>
+                </optgroup>
               </select>
             </div>
           </div>

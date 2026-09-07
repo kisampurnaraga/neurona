@@ -187,7 +187,8 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
   const [voiceTone, setVoiceTone] = useState<AnimationConfig['voiceTone']>('EPIC_HEROIC');
   const [aspectRatio, setAspectRatio] = useState<AnimationConfig['aspectRatio']>('16:9');
   const [sceneCount, setSceneCount] = useState(4);
-  const [imageEngine, setImageEngine] = useState<string>('standard');
+  const [imageEngine, setImageEngine] = useState<string>('kling-3-omni');
+  const [videoEngine, setVideoEngine] = useState<string>('fal-ai/kling-video/v2.1/standard/image-to-video');
 
   // Text-to-Image Character Sheet Generator State
   const [isGeneratingChar, setIsGeneratingChar] = useState(false);
@@ -313,6 +314,7 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
       aspectRatio,
       sceneCount,
       imageEngine,
+      videoEngine,
       characterVisualAnalysis: characterVisualAnalysis || (referenceImageUrls.length > 0 ? `Karakter referensi: ${characterDescription}` : undefined),
       characterReferenceUrl: referenceImageUrls[0] || undefined,
       characterReferenceUrls: referenceImageUrls
@@ -500,13 +502,23 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
                     onChange={(e) => setImageEngine(e.target.value)}
                     className="bg-transparent text-xs text-cyan-300 font-semibold outline-none cursor-pointer pr-1"
                   >
-                    <option value="standard" className="bg-slate-900 text-slate-200">🍌 Nano Banana 2 (Standard Fal - 15 CR)</option>
-                    <option value="draft" className="bg-slate-900 text-slate-200">⚡ FLUX.1 Schnell (Draft Fal - 5 CR)</option>
-                    <option value="precision" className="bg-slate-900 text-slate-200">💎 Nano Banana Pro Edit (Precision Fal - 25 CR)</option>
-                    <option value="nano-asli-lite" className="bg-slate-900 text-slate-200">✨ Google Imagen 3 Lite (Nano Asli Lite - 5 CR)</option>
-                    <option value="nano-asli" className="bg-slate-900 text-slate-200">🔷 Google Gemini Imagen 3 (Nano Asli Std - 10 CR)</option>
-                    <option value="nano-asli-pro" className="bg-slate-900 text-slate-200">🌟 Google Gemini Imagen 3 Pro (Nano Asli Pro - 15 CR)</option>
-                    <option value="nano-asli-premium" className="bg-slate-900 text-slate-200">👑 Google Gemini Imagen 3 Ultra (Nano Asli Ultra - 25 CR)</option>
+                    <optgroup label="🎨 OpenArt AI MCP (Tersedia)">
+                      <option value="kling-3-omni" className="bg-slate-900 text-slate-200">🎨 OpenArt Kling 3 Omni (10 CR)</option>
+                      <option value="nano-banana-pro" className="bg-slate-900 text-slate-200">🍌 OpenArt Nano Banana Pro (30 CR)</option>
+                      <option value="byte-plus-seedream-5-pro" className="bg-slate-900 text-slate-200">💎 OpenArt Seedream 5 Pro (30 CR)</option>
+                      <option value="gpt-image-2" className="bg-slate-900 text-slate-200">🤖 OpenArt GPT Image 2 (30 CR)</option>
+                    </optgroup>
+                    <optgroup label="⚡ Fal.ai Engine (Standar)">
+                      <option value="standard" className="bg-slate-900 text-slate-200">🍌 Nano Banana 2 (Fal - 15 CR)</option>
+                      <option value="draft" className="bg-slate-900 text-slate-200">⚡ FLUX.1 Schnell (Fal - 5 CR)</option>
+                      <option value="precision" className="bg-slate-900 text-slate-200">💎 Nano Banana Pro Edit (Fal - 25 CR)</option>
+                    </optgroup>
+                    <optgroup label="🔷 Google Imagen Direct">
+                      <option value="nano-asli-lite" className="bg-slate-900 text-slate-200">✨ Google Imagen 3 Lite (5 CR)</option>
+                      <option value="nano-asli" className="bg-slate-900 text-slate-200">🔷 Google Gemini Imagen 3 (10 CR)</option>
+                      <option value="nano-asli-pro" className="bg-slate-900 text-slate-200">🌟 Google Gemini Imagen 3 Pro (15 CR)</option>
+                      <option value="nano-asli-premium" className="bg-slate-900 text-slate-200">👑 Google Gemini Imagen 3 Ultra (25 CR)</option>
+                    </optgroup>
                   </select>
                 </div>
 
@@ -1038,6 +1050,72 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
                   <span>9:16 Vertikal (TikTok / Reels)</span>
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* AI Production Engine Selector */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-slate-950/80 border border-cyan-500/20 rounded-xl">
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-cyan-400 flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-cyan-400" />
+                <span>Model AI Visual Animasi (Image Engine)</span>
+              </label>
+              <select
+                id="select-anim-image-engine-bottom"
+                value={imageEngine}
+                onChange={(e) => setImageEngine(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-cyan-500 cursor-pointer"
+              >
+                <optgroup label="🎨 OpenArt AI MCP (Tersedia)">
+                  <option value="kling-3-omni">🎨 OpenArt Kling 3 Omni (10 CR)</option>
+                  <option value="nano-banana-pro">🍌 OpenArt Nano Banana Pro (30 CR)</option>
+                  <option value="byte-plus-seedream-5-pro">💎 OpenArt Seedream 5 Pro (30 CR)</option>
+                  <option value="gpt-image-2">🤖 OpenArt GPT Image 2 (30 CR)</option>
+                </optgroup>
+                <optgroup label="⚡ Fal.ai Engine (Standar)">
+                  <option value="standard">⚡ Fal.ai Nano Banana 2 (15 CR)</option>
+                  <option value="precision">🎯 Fal.ai Nano Banana Pro 4K (25 CR)</option>
+                  <option value="draft">⚡ Fal.ai FLUX.1 Schnell (5 CR)</option>
+                </optgroup>
+                <optgroup label="🔷 Google Imagen Direct">
+                  <option value="nano-asli-lite">✨ Google Imagen 3 Lite (5 CR)</option>
+                  <option value="nano-asli">🔷 Google Gemini Imagen 3 (10 CR)</option>
+                  <option value="nano-asli-pro">🌟 Google Gemini Imagen 3 Pro (15 CR)</option>
+                  <option value="nano-asli-premium">👑 Google Gemini Imagen 3 Ultra (25 CR)</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-purple-400 flex items-center gap-1">
+                <Clapperboard className="w-3 h-3 text-purple-400" />
+                <span>Model AI Video Animasi (Video Engine)</span>
+              </label>
+              <select
+                id="select-anim-video-engine"
+                value={videoEngine}
+                onChange={(e) => setVideoEngine(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-purple-500 cursor-pointer"
+              >
+                <optgroup label="🎬 OpenArt AI MCP Video">
+                  <option value="byte-plus-seedance-2-fast">⚡ OpenArt SeaDance 2.0 Fast (50 CR)</option>
+                  <option value="veo3-1">🎬 OpenArt Google Veo 3.1 Cinematic (100 CR)</option>
+                  <option value="wan2-7">🌊 OpenArt Wan 2.7 Ultra Motion (50 CR)</option>
+                </optgroup>
+                <optgroup label="⚡ Fal.ai Video Engine (Standar)">
+                  <option value="fal-ai/kling-video/v2.1/standard/image-to-video">Kling 2.1 Standard Anime (15 CR)</option>
+                  <option value="bytedance/seedance-2.0/fast/image-to-video">ByteDance SeaDance 2.0 Fast (10 CR)</option>
+                  <option value="bytedance/seedance-2.0/image-to-video">ByteDance SeaDance 2.0 Std (15 CR)</option>
+                  <option value="fal-ai/veo3.1/lite/image-to-video">Google Veo 3.1 Lite Fal (20 CR)</option>
+                  <option value="fal-ai/wan-i2v">Wan 2.1 14B I2V (45 CR)</option>
+                  <option value="fal-ai/minimax/video-01/image-to-video">MiniMax Video 01 (15 CR)</option>
+                </optgroup>
+                <optgroup label="🔷 Google Veo Direct">
+                  <option value="veo-asli-lite">⚡ Google Veo Asli Lite (10 CR/Scene)</option>
+                  <option value="veo-asli">🎬 Google Veo Asli Standard (15 CR/Scene)</option>
+                  <option value="veo-asli-pro">🌟 Google Veo Asli Pro (25 CR/Scene)</option>
+                </optgroup>
+              </select>
             </div>
           </div>
 
