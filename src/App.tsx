@@ -1725,7 +1725,7 @@ export default function App() {
 
                   <div className="pt-2 flex flex-wrap justify-end gap-2">
                     <button
-                      onClick={handleGenerateAllImages}
+                      onClick={() => handleGenerateAllImages()}
                       className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold text-xs shadow-lg flex items-center gap-1.5 transition cursor-pointer"
                     >
                       <ImageIcon size={13} />
@@ -1870,7 +1870,7 @@ export default function App() {
               <VideoPreviewPlayer
                 src={activeVideoSrc}
                 posterImage={currentScene?.imageUrl || currentScene?.assetUrl}
-                title={currentScene?.title || `Adegan ${(selectedSceneIndex || 0) + 1}`}
+                title={(currentScene as any)?.title || currentScene?.visualDirection?.slice(0, 30) || `Adegan ${(selectedSceneIndex || 0) + 1}`}
                 subtitle={currentScene?.subtitle || currentScene?.textOverlay}
                 voiceoverText={currentScene?.voiceOver}
                 status={project?.status}

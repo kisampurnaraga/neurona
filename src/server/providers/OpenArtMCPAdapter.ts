@@ -8,9 +8,10 @@ import { FounderService } from '../fcc/FounderService';
 import { CostTrackingService } from '../../../server/services/costTrackingService';
 import { resolveToDataUriOrPublic } from '../../../server/falModelConfig';
 import { db } from '../../db/index';
-import { apiKeys } from '../../db/schema';
+import { apiKeys, systemSettings } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { decryptSecret } from '../../../server/utils/crypto';
+import { OpenArtOAuthService } from '../../../server/services/openartOAuthService';
 
 export interface OpenArtModelInfo {
   id: string;
@@ -344,6 +345,33 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
   }
 
   /**
+   * Get valid session token, auto-refreshing expired OAuth token if refresh token is available
+   */
+  public async getValidSessionToken(): Promise<string | null> {
+    let token = this.getSessionToken();
+    if (!token) return null;
+
+    try {
+      const row = db.select().from(systemSettings).where(eq(systemSettings.key, 'openart_oauth_token_meta')).get();
+      if (row && row.value) {
+        const meta = JSON.parse(row.value);
+        // If expired or expires within 60 seconds and refresh token is available, refresh it
+        if (meta.expiresAt && (Date.now() + 60000 > meta.expiresAt) && meta.hasRefreshToken) {
+          console.log('[OpenArt MCP] Access token expired or expiring soon, auto-refreshing...');
+          const refreshRes = await OpenArtOAuthService.refreshAccessToken();
+          if (refreshRes.success && refreshRes.token) {
+            token = refreshRes.token;
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('[OpenArt MCP] Could not verify/refresh token metadata:', err?.message);
+    }
+
+    return token;
+  }
+
+  /**
    * Returns provider capabilities
    */
   capabilities(): ProviderCapabilities {
@@ -360,7 +388,7 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
    * Execute low-level JSON-RPC request to OpenArt MCP endpoint
    */
   private async sendJsonRpc(method: string, params: Record<string, any> = {}, timeoutMs = 15000): Promise<{ result?: any; error?: any; status: number; text: string }> {
-    const sessionToken = this.getSessionToken();
+    const sessionToken = await this.getValidSessionToken();
     const endpoint = this.getEndpoint();
     const requestId = `neurona_mcp_${Date.now()}_${randomUUID().substring(0, 6)}`;
 
@@ -428,10 +456,16 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
           name: 'NEURONA-Production-Pipeline',
           version: '2.5.0'
         }
-      }, 10000);
+      }, 12000);
 
-      if (resp.error && resp.status !== 200) {
-        console.warn('[OpenArt MCP] Server initialize notice:', resp.error?.message || JSON.stringify(resp.error));
+      if (resp.status !== 200 || resp.error) {
+        const errMsg = resp.error?.message || `OpenArt MCP HTTP ${resp.status}: ${resp.text || 'Initialize failed'}`;
+        console.warn('[OpenArt MCP] Server initialize failed:', errMsg);
+        OpenArtMCPAdapter.isInitialized = false;
+        return {
+          success: false,
+          error: errMsg
+        };
       }
 
       OpenArtMCPAdapter.isInitialized = true;
@@ -441,18 +475,19 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
         capabilities: resp.result?.capabilities || { tools: {} }
       };
     } catch (err: any) {
-      // If endpoint is reachable or local fallback
-      OpenArtMCPAdapter.isInitialized = true;
+      OpenArtMCPAdapter.isInitialized = false;
+      const errMsg = `Gagal terhubung ke OpenArt MCP initialize: ${err?.message || String(err)}`;
+      console.warn('[OpenArt MCP] Initialize network error:', errMsg);
       return {
-        success: true,
-        protocolVersion: '2024-11-05',
-        capabilities: { tools: {} }
+        success: false,
+        error: errMsg
       };
     }
   }
 
   /**
    * Perform live discovery of available tools via MCP `tools/list`
+   * Never fabricates fake or mock tools when OpenArt returns an error.
    */
   async discoverTools(forceRefresh = false): Promise<{
     success: boolean;
@@ -462,8 +497,6 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
     latencyMs: number;
     error?: string;
   }> {
-    const endpoint = this.getEndpoint();
-
     // Return cache if available and refreshed recently (within 5 minutes)
     const now = Date.now();
     if (!forceRefresh && OpenArtMCPAdapter.cachedTools && (now - OpenArtMCPAdapter.lastToolsDiscovery < 300000)) {
@@ -472,7 +505,7 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
         toolsCount: OpenArtMCPAdapter.cachedTools.length,
         tools: OpenArtMCPAdapter.cachedTools,
         lastDiscovery: new Date(OpenArtMCPAdapter.lastToolsDiscovery).toISOString(),
-        latencyMs: 15
+        latencyMs: 10
       };
     }
 
@@ -481,24 +514,39 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
       const resp = await this.sendJsonRpc('tools/list', {}, 12000);
       const latencyMs = Date.now() - startTime;
 
-      let rawTools = resp.result?.tools || resp.result;
-      let toolsList: any[] = [];
-
-      if (Array.isArray(rawTools) && rawTools.length > 0) {
-        toolsList = rawTools.map((t: any) => ({
-          name: t.name || t.id || 'unnamed_tool',
-          description: t.description || 'OpenArt Media Generation Tool',
-          inputSchema: t.inputSchema || t.parameters || {}
-        }));
-      } else {
-        // Standard OpenArt official MCP tool signatures
-        toolsList = [
-          { name: 'generate_image', description: 'Text-to-Image Generation (Flux, SDXL, Photoreal)', inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, model: { type: 'string' } } } },
-          { name: 'image_to_video', description: 'Image-to-Video Animation (Fast, Pro, Wan 2.1)', inputSchema: { type: 'object', properties: { image_url: { type: 'string' }, prompt: { type: 'string' } } } },
-          { name: 'generate_video', description: 'Text-to-Video Synthesis (Veo 2.0 HD)', inputSchema: { type: 'object', properties: { prompt: { type: 'string' }, duration: { type: 'number' } } } },
-          { name: 'enhance_prompt', description: 'Dynamic Prompt Optimization for Media Quality', inputSchema: { type: 'object', properties: { prompt: { type: 'string' } } } }
-        ];
+      if (resp.status !== 200 || resp.error) {
+        const errMsg = resp.error?.message || `OpenArt MCP HTTP ${resp.status}: ${resp.text || 'Gagal mengambil daftar tools'}`;
+        console.warn('[OpenArt MCP] tools/list rejected:', errMsg);
+        OpenArtMCPAdapter.lastDiscoveryError = errMsg;
+        return {
+          success: false,
+          toolsCount: 0,
+          tools: [],
+          lastDiscovery: new Date().toISOString(),
+          latencyMs,
+          error: errMsg
+        };
       }
+
+      const rawTools = resp.result?.tools || resp.result;
+      if (!Array.isArray(rawTools)) {
+        const errMsg = 'OpenArt MCP server did not return a valid tools array';
+        OpenArtMCPAdapter.lastDiscoveryError = errMsg;
+        return {
+          success: false,
+          toolsCount: 0,
+          tools: [],
+          lastDiscovery: new Date().toISOString(),
+          latencyMs,
+          error: errMsg
+        };
+      }
+
+      const toolsList = rawTools.map((t: any) => ({
+        name: t.name || t.id || 'unnamed_tool',
+        description: t.description || 'OpenArt Media Generation Tool',
+        inputSchema: t.inputSchema || t.parameters || {}
+      }));
 
       OpenArtMCPAdapter.cachedTools = toolsList;
       OpenArtMCPAdapter.lastToolsDiscovery = Date.now();
@@ -513,26 +561,16 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
       };
     } catch (err: any) {
       const latencyMs = Date.now() - startTime;
-      
-      // Fallback default discovered tools matching real OpenArt MCP schema
-      const defaultTools = [
-        { name: 'openart_generate_image', description: 'Create image generations with Kling 3 Omni, Nano Banana, Seedream, etc.', inputSchema: {} },
-        { name: 'openart_generate_video', description: 'Create video generations with Seedance, Veo 3.1, Wan 2.7, etc.', inputSchema: {} },
-        { name: 'openart_creation_wait', description: 'Wait for generation completion and retrieve final media assets', inputSchema: {} },
-        { name: 'openart_creation_get', description: 'Get status and details of a generation by historyId', inputSchema: {} },
-        { name: 'openart_model_list', description: 'List available generation models with capabilities and pricing', inputSchema: {} },
-        { name: 'openart_account_get', description: 'Retrieve user account info, credits balance, and subscription tier', inputSchema: {} }
-      ];
-
-      OpenArtMCPAdapter.cachedTools = defaultTools;
-      OpenArtMCPAdapter.lastToolsDiscovery = Date.now();
-
+      const errMsg = `Gagal menghubungi OpenArt MCP tools/list: ${err?.message || String(err)}`;
+      console.warn('[OpenArt MCP] discoverTools network error:', errMsg);
+      OpenArtMCPAdapter.lastDiscoveryError = errMsg;
       return {
-        success: true,
-        toolsCount: defaultTools.length,
-        tools: defaultTools,
-        lastDiscovery: new Date(OpenArtMCPAdapter.lastToolsDiscovery).toISOString(),
-        latencyMs: latencyMs || 35
+        success: false,
+        toolsCount: 0,
+        tools: [],
+        lastDiscovery: new Date().toISOString(),
+        latencyMs,
+        error: errMsg
       };
     }
   }
@@ -661,6 +699,14 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
         };
       }
 
+      if (!initResp.ok) {
+        return {
+          valid: false,
+          error: `HTTP_${initStatus}`,
+          message: `OpenArt MCP Server mengembalikan HTTP ${initStatus}: ${initText.substring(0, 120)}`
+        };
+      }
+
       // Step 2: tools/list discovery
       const toolsResp = await fetch(endpoint, {
         method: 'POST',
@@ -691,6 +737,14 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
         };
       }
 
+      if (!toolsResp.ok) {
+        return {
+          valid: false,
+          error: `HTTP_${toolsStatus}`,
+          message: `OpenArt MCP tools/list mengembalikan HTTP ${toolsStatus}`
+        };
+      }
+
       let parsed: any = null;
       try {
         parsed = JSON.parse(toolsText);
@@ -703,12 +757,18 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
         }
       }
 
-      const rawTools = parsed?.result?.tools || parsed?.result || [];
-      const toolsCount = Array.isArray(rawTools) && rawTools.length > 0 ? rawTools.length : 4;
+      const rawTools = parsed?.result?.tools || parsed?.result;
+      if (!Array.isArray(rawTools)) {
+        return {
+          valid: false,
+          error: 'MALFORMED_RESPONSE',
+          message: 'OpenArt MCP server tidak mengembalikan daftar tools yang valid.'
+        };
+      }
 
       return {
         valid: true,
-        toolsCount,
+        toolsCount: rawTools.length,
         protocolVersion: '2024-11-05',
         latencyMs
       };
@@ -727,7 +787,75 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
   async getStatus(): Promise<ProviderStatus> {
     const isEnabled = process.env.OPENART_ENABLED !== 'false';
     if (!isEnabled) return 'UNAVAILABLE';
+
+    const token = this.getSessionToken();
+    if (!token || !token.trim()) {
+      return 'NOT_CONFIGURED';
+    }
+
+    // Check token metadata in SQLite to detect expiration
+    try {
+      const metaRow = db.select().from(systemSettings).where(eq(systemSettings.key, 'openart_oauth_token_meta')).get();
+      if (metaRow && metaRow.value) {
+        const meta = JSON.parse(metaRow.value);
+        if (meta.expiresAt && Date.now() > meta.expiresAt) {
+          if (meta.hasRefreshToken) {
+            const refreshRes = await OpenArtOAuthService.refreshAccessToken();
+            if (!refreshRes.success) {
+              return 'AUTH_ERROR';
+            }
+          } else {
+            return 'AUTH_ERROR';
+          }
+        }
+      }
+    } catch {}
+
     return 'READY';
+  }
+
+  /**
+   * Forensic verification: Verify that generated image or video asset exists and is accessible
+   */
+  private async verifyAssetReachability(assetUrl: string, mediaType: 'IMAGE' | 'VIDEO'): Promise<void> {
+    if (assetUrl.startsWith('data:image/') || assetUrl.startsWith('data:video/')) {
+      if (assetUrl.length < 128) {
+        throw new Error(`OpenArt MCP mengembalikan inline data URI ${mediaType} yang kosong atau korup.`);
+      }
+      return;
+    }
+
+    if (!assetUrl.startsWith('http://') && !assetUrl.startsWith('https://')) {
+      throw new Error(`OpenArt MCP mengembalikan format URL aset tidak valid: ${assetUrl}`);
+    }
+
+    try {
+      const headRes = await fetch(assetUrl, {
+        method: 'HEAD',
+        headers: { 'User-Agent': 'NEURONA-Asset-Validator/1.0' },
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (headRes.ok || headRes.status === 304) {
+        return;
+      }
+
+      // If CDN blocks HEAD (405 or 403), verify with byte-range GET
+      if (headRes.status === 405 || headRes.status === 403) {
+        const getRes = await fetch(assetUrl, {
+          headers: { 'Range': 'bytes=0-1024', 'User-Agent': 'NEURONA-Asset-Validator/1.0' },
+          signal: AbortSignal.timeout(10000)
+        });
+        if (getRes.ok || getRes.status === 206 || getRes.status === 304) {
+          return;
+        }
+        throw new Error(`Verifikasi aset gagal dengan HTTP ${getRes.status}`);
+      }
+
+      throw new Error(`Endpoint aset mengembalikan HTTP ${headRes.status}`);
+    } catch (err: any) {
+      throw new Error(`Aset ${mediaType} OpenArt tidak dapat diakses: ${err?.message || String(err)}`);
+    }
   }
 
   /**
@@ -735,7 +863,7 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
    */
   private async callMCPTool(toolName: string, args: Record<string, any>, maxRetries = 3): Promise<any> {
     const endpoint = this.getEndpoint();
-    const sessionToken = this.getSessionToken();
+    const sessionToken = await this.getValidSessionToken();
 
     let lastError: Error | null = null;
     const timeoutMs = Number(process.env.OPENART_TIMEOUT) || 90000;
@@ -1069,6 +1197,9 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
         throw new Error(`OpenArt MCP returned empty image result for model [${modelId}].`);
       }
 
+      // Strict forensic verification: ensure the generated asset exists and is accessible
+      await this.verifyAssetReachability(assetUrl, 'IMAGE');
+
       CostTrackingService.completeGeneration(generationId, {
         status: 'SUCCESS',
         actualCost: estimatedCost
@@ -1167,6 +1298,9 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
         throw new Error(`OpenArt MCP returned empty video result for model [${modelId}].`);
       }
 
+      // Strict forensic verification: ensure the generated video asset exists and is accessible
+      await this.verifyAssetReachability(assetUrl, 'VIDEO');
+
       CostTrackingService.completeGeneration(generationId, {
         status: 'SUCCESS',
         actualCost: estimatedCost
@@ -1254,6 +1388,9 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
       if (!assetUrl) {
         throw new Error(`OpenArt MCP returned empty video result for model [${modelId}].`);
       }
+
+      // Strict forensic verification: ensure the generated video asset exists and is accessible
+      await this.verifyAssetReachability(assetUrl, 'VIDEO');
 
       CostTrackingService.completeGeneration(generationId, {
         status: 'SUCCESS',

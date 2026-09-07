@@ -116,7 +116,7 @@ export const RenderGalleryModal: React.FC<RenderGalleryModalProps> = ({ onClose 
                       src={proj.finalVideoUrl} 
                       controls 
                       className="w-full h-full object-cover"
-                      poster={proj.thumbnail}
+                      poster={(proj as any).thumbnail || proj.storyboard?.scenes?.[0]?.imageUrl}
                     />
                     <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 backdrop-blur rounded text-[10px] text-white font-bold border border-white/10">
                       {proj.videoType || 'AI VIDEO'}

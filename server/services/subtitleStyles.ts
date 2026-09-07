@@ -12,7 +12,9 @@ export interface SubtitlePresetConfig {
   name: string;
   description: string;
   fontName: string;
-  baseFontSize: number;
+  baseFontSize: number;     // Reference font size for standard 1080p frame (~60-80px on 1080x1920)
+  maxFontSize?: number;     // Hard upper ceiling to prevent subtitles from overflowing
+  minFontSize?: number;     // Floor to maintain legibility on lower resolutions
   primaryColor: string;     // ASS BGR color: &HAABBGGRR (AA=00 is 100% opaque)
   secondaryColor: string;
   outlineColor: string;
@@ -30,15 +32,17 @@ export const SUBTITLE_PRESETS: Record<string, SubtitlePresetConfig> = {
     name: 'Bold Pop',
     description: 'Teks tebal kuning khas TikTok/Shorts dengan outline hitam pekat dan drop shadow kontras tinggi.',
     fontName: 'Anton',           // Heavy display font specifically designed for punchy viral captions
-    baseFontSize: 52,            // Scaled dynamically by targetH / 720 (yields ~138px on 1080x1920)
+    baseFontSize: 70,            // Yields 70px on 1080x1920 (target range 60-80px)
+    maxFontSize: 80,             // Strict upper cap: maximum 80px
+    minFontSize: 28,
     primaryColor: '&H0000FFFF',  // Vibrant TikTok Yellow (BGR: 00FFFF = RGB FFFF00)
     secondaryColor: '&H000000FF',
     outlineColor: '&H00000000',  // Deep pitch black stroke
     backColor: '&H00000000',     // 100% solid opaque black drop shadow (no transparency)
     bold: 0,                     // Anton is natively heavy/black weight
     borderStyle: 1,              // Outline with drop shadow
-    outline: 5.5,                // Scaled dynamically: ~15px on 1080x1920 (target ratio: 12-16px)
-    shadow: 3.5,                 // Scaled dynamically: ~9px on 1080x1920 (target ratio: 8-12px)
+    outline: 3.5,                // Scaled: ~3.5px on 1080p
+    shadow: 2.5,                 // Scaled: ~2.5px on 1080p
     marginVPercent: 0.12         // 12% from bottom
   },
   'Clean Minimal': {
@@ -46,14 +50,16 @@ export const SUBTITLE_PRESETS: Record<string, SubtitlePresetConfig> = {
     name: 'Clean Minimal',
     description: 'Sederhana dan elegan ala film bioskop / dokumenter, teks putih bersih dengan kotak latar semi-transparan.',
     fontName: 'Montserrat',      // Clean modern geometric aesthetic
-    baseFontSize: 36,            // ~96px on 1080x1920
+    baseFontSize: 56,            // Yields 56px on 1080x1920
+    maxFontSize: 64,             // Strict upper cap: 64px
+    minFontSize: 24,
     primaryColor: '&H00FFFFFF',  // Pure crisp white
     secondaryColor: '&H000000FF',
     outlineColor: '&H00000000',
     backColor: '&H80141414',     // Semi-transparent dark background box (~50% alpha)
     bold: 0,                     // Clean regular weight
     borderStyle: 3,              // Background box mode (renders backdrop behind text)
-    outline: 4.5,                // Scaled box padding (~12px on 1080x1920)
+    outline: 3.5,                // Scaled box padding
     shadow: 0,                   // No drop shadow needed with background box
     marginVPercent: 0.12
   },
@@ -62,14 +68,16 @@ export const SUBTITLE_PRESETS: Record<string, SubtitlePresetConfig> = {
     name: 'Neon Glow',
     description: 'Teks bercahaya neon futuristik ala Cyberpunk dengan multi-layer aura magenta-cyan dan inti berpendar.',
     fontName: 'Montserrat',      // Clean heavy weight for neon tubes
-    baseFontSize: 46,            // ~122px on 1080x1920
+    baseFontSize: 64,            // Yields 64px on 1080x1920 (target range 60-80px)
+    maxFontSize: 74,             // Strict upper cap: 74px
+    minFontSize: 26,
     primaryColor: '&H00FFFFFF',  // Brilliant white-hot incandescent core
     secondaryColor: '&H000000FF',
     outlineColor: '&H00FF00FF',  // Electric Neon Magenta (BGR: FF00FF)
     backColor: '&H00FFFF00',     // Electric Neon Cyan (BGR: FFFF00)
     bold: 1,
     borderStyle: 1,
-    outline: 2.5,                // Scaled stroke width
+    outline: 2.0,                // Scaled stroke width
     shadow: 0,                   // Multi-layer glow replaces flat shadow
     marginVPercent: 0.12
   }
@@ -89,12 +97,29 @@ export function formatAssTime(seconds: number): string {
 export function getAssHeader(styleName: string = 'Bold Pop', targetW: number = 720, targetH: number = 1280): string {
   const config = SUBTITLE_PRESETS[styleName] || SUBTITLE_PRESETS['Bold Pop'];
   
-  const scale = targetH / 720;
-  const fontSize = Math.floor(config.baseFontSize * scale);
-  const outline = Math.max(0, Math.round(config.outline * scale));
-  const shadow = Math.max(0, Math.round(config.shadow * scale));
+  // Calculate adaptive scale anchored to standard 1080p dimension
+  const minDim = Math.min(targetW, targetH);
+  const isLandscape = targetW > targetH;
+  const isSquare = targetW === targetH;
+  
+  // Aspect ratio adjustment factor
+  // In 9:16 portrait (e.g. 1080x1920): minDim is 1080 -> scale = 1.0 -> Bold Pop = 70px (within 60-80px target)
+  // In 16:9 landscape (e.g. 1920x1080): minDim is 1080 -> aspect factor 0.85 -> Bold Pop = 60px
+  // In 1:1 square (e.g. 1080x1080): minDim is 1080 -> aspect factor 0.90 -> Bold Pop = 63px
+  const aspectFactor = isLandscape ? 0.85 : isSquare ? 0.90 : 1.0;
+  const scale = (minDim / 1080) * aspectFactor;
+  
+  const rawFontSize = Math.round(config.baseFontSize * scale);
+  const maxCap = config.maxFontSize || 80;
+  const minFloor = config.minFontSize || 24;
+  const fontSize = Math.min(maxCap, Math.max(minFloor, rawFontSize));
+
+  const dimScale = minDim / 1080;
+  const outline = Math.max(1, Math.round(config.outline * dimScale));
+  const shadow = Math.max(0, Math.round(config.shadow * dimScale));
   const marginV = Math.floor(targetH * config.marginVPercent);
-  const marginH = Math.max(20, Math.round(30 * scale));
+  // Safe horizontal margin (8% of width, minimum 28px) ensures long text wraps comfortably
+  const marginH = Math.max(28, Math.round(targetW * 0.08));
   
   return `[Script Info]
 ScriptType: v4.00+
@@ -132,11 +157,12 @@ export function getAssDialogueEvents(
   const normalizedStyle = SUBTITLE_PRESETS[styleName] ? styleName : 'Bold Pop';
 
   if (normalizedStyle === 'Neon Glow') {
-    // True multi-layer neon sign simulation using 3 overlapping layers with gaussian blur scaled to targetH
-    const scale = targetH / 720;
-    const b1 = (12 * scale).toFixed(1);
-    const b2 = (5 * scale).toFixed(1);
-    const b3 = (1.5 * scale).toFixed(1);
+    // Multi-layer neon sign simulation scaled to frame dimensions
+    const minDim = Math.min(targetH, 1080);
+    const scale = minDim / 1080;
+    const b1 = Math.max(1, Math.round(5 * scale)).toFixed(1);
+    const b2 = Math.max(1, Math.round(2.5 * scale)).toFixed(1);
+    const b3 = Math.max(0.5, (1 * scale)).toFixed(1);
     return `Dialogue: 0,${start},${end},Default,,0,0,0,,{\\blur${b1}\\bord${b1}\\1c&H00FF00FF&\\3c&H00FF00FF&\\fad(80,80)}${cleanText}
 Dialogue: 1,${start},${end},Default,,0,0,0,,{\\blur${b2}\\bord${b2}\\1c&H00FFFF00&\\3c&H00FFFF00&\\fad(80,80)}${cleanText}
 Dialogue: 2,${start},${end},Default,,0,0,0,,{\\blur${b3}\\bord${b3}\\1c&H00FFFFFF&\\3c&H00FF00FF&\\fad(80,80)}${cleanText}

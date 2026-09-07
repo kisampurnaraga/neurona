@@ -86,7 +86,7 @@ export const FounderOpenArtPanel: React.FC = () => {
       if (event.data?.type === 'OPENART_AUTH_SUCCESS') {
         setIsVerifyingAuth(false);
         setIsAuthModalOpen(false);
-        showFeedback('success', `✓ Otorisasi OpenArt MCP Berhasil! (${event.data.toolsCount || 4} tools terhubung)`);
+        showFeedback('success', `✓ Otorisasi OpenArt MCP Berhasil! (${event.data.toolsCount ?? 0} tools terhubung)`);
         setSessionTokenInput('');
         setAuthStep('INITIAL');
         await fetchStatus();

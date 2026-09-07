@@ -253,7 +253,7 @@ export const VideoPreviewPlayer: React.FC<VideoPreviewPlayerProps> = ({
             muted={isMuted}
             playsInline
             crossOrigin="anonymous"
-            referrerPolicy="no-referrer"
+            {...({ referrerPolicy: 'no-referrer' } as any)}
             onError={() => setVideoError(true)}
             onEnded={() => {
               if (status === 'COMPLETED' && scenes && scenes.length > 1) {

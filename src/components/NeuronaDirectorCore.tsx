@@ -46,7 +46,8 @@ interface NeuronaDirectorCoreProps {
   isThinking: boolean;
   onInteract: (customPrompt?: string) => void;
   onUploadAssets: (files: FileList | null) => void;
-  handleOpenStoryboard: () => void;
+  handleOpenStoryboard?: () => void;
+  onOpenStoryboard?: () => void;
   onOpenStudioSelector?: () => void;
   onOpenVisualStudio: () => void;
   onOpenScriptWriter: () => void;
@@ -153,7 +154,7 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
   const isStoryboardReady = !isCompleted && (project?.status === 'AWAITING_APPROVAL' || currentProgress >= 50 || Boolean(project?.storyboard?.scenes && project.storyboard.scenes.length > 0));
   const isVisualGenerating = project?.storyboard?.scenes?.some((s: any) => s.imageStatus === 'GENERATING') || false;
   const isVideoGenerating = project?.storyboard?.scenes?.some((s: any) => s.videoStatus === 'GENERATING') || false;
-  const isRendering = (project?.status === 'IN_PROGRESS' && currentProgress >= 50) || isVideoGenerating;
+  const isRendering = ((project?.status as string) === 'IN_PROGRESS' || project?.status === 'PRODUCING' || project?.status === 'PROCESSING') || isVideoGenerating;
 
   // Show banner when storyboard is ready
   useEffect(() => {

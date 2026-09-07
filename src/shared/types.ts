@@ -117,8 +117,12 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'founder' | 'user' | 'vip';
+  role: 'founder' | 'user' | 'vip' | 'admin' | 'creator';
   phone?: string;
+  phoneWa?: string;
+  phone_wa?: string;
+  packageTier?: string;
+  package_tier?: string;
   credits?: number;
 }
 
@@ -193,6 +197,8 @@ export interface ProductionProject {
   masterCharacterImageUrl?: string;
   masterProductImageUrl?: string;
   title: string;
+  thumbnail?: string;
+  scenes?: Scene[];
   status: ProductionState;
   videoType: VideoType;
   videoModel?: 'kling' | 'seedance' | 'wan' | 'hunyuan' | 'minimax' | string;

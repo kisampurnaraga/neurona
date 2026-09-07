@@ -19,7 +19,7 @@ import type { User as UserType } from '../shared/types';
 interface UserProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
-  currentUser?: UserType | null;
+  currentUser?: any;
   userCredits?: number;
   onOpenTopUp: () => void;
   onLogout?: () => void;
@@ -40,7 +40,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const isFounder = currentUser?.role === 'founder';
   const userName = currentUser?.name || 'Kreator Neuronna';
   const userEmail = currentUser?.email || 'kreator@neuronna.ai';
-  const userPhone = currentUser?.phoneWa || currentUser?.phone_wa || '0812-3456-7890';
+  const userPhone = currentUser?.phoneWa || currentUser?.phone_wa || currentUser?.phone || '0812-3456-7890';
   const isEarlyBird = currentUser?.packageTier === 'early_bird_lifetime' || currentUser?.package_tier === 'early_bird_lifetime';
 
   return (

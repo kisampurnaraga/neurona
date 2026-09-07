@@ -62,8 +62,11 @@ interface FCCConfig {
   metrics?: {
     totalUsers: number;
     totalRevenueUSD: number;
+    totalRevenueIDR?: number;
     apiCostGeminiUSD: number;
+    apiCostFalUSD?: number;
     activeRenderJobs: number;
+    userGrowthPercent?: number;
   };
   agentConfigs?: Array<{
     agent_name: string;

@@ -72,7 +72,7 @@ interface StoryboardMatrixModalProps {
   onGenerateAllImages?: (totalCost: number, imageEngine?: string, allowFallbackToFlux?: boolean) => Promise<void>;
   onGenerateSceneVideo?: (sceneId: string, cost: number, videoModel?: string) => Promise<void>;
   onChooseStoryboardOnly?: () => Promise<void>;
-  onResyncScene?: (action: 'ADD' | 'REMOVE', targetIndex: number) => Promise<void>;
+  onResyncScene?: (action: 'ADD' | 'REMOVE' | 'REGENERATE', targetIndex: number) => Promise<void>;
   onResetProject?: () => void;
 }
 
@@ -1663,7 +1663,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   if (e.target.files && e.target.files[0]) {
                     const reader = new FileReader();
                     reader.onload = (event) => {
-                       if (project) project.brandLogoUrl = event.target?.result;
+                       if (project) project.brandLogoUrl = event.target?.result as string;
                     };
                     reader.readAsDataURL(e.target.files[0]);
                   }
@@ -1684,7 +1684,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   if (e.target.files && e.target.files[0]) {
                     const reader = new FileReader();
                     reader.onload = (event) => {
-                       if (project) project.extraVideoUrl = event.target?.result;
+                       if (project) project.extraVideoUrl = event.target?.result as string;
                     };
                     reader.readAsDataURL(e.target.files[0]);
                   }

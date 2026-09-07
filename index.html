@@ -9,6 +9,53 @@
     <meta property="og:description" content="NEURONA AI Operating System - Production Workspace" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      (function() {
+        function isIgnoredError(msg, source) {
+          var text = ((msg || '') + ' ' + (source || '')).toLowerCase();
+          return (
+            text.indexOf('metamask') !== -1 ||
+            text.indexOf('failed to connect to metamask') !== -1 ||
+            text.indexOf('ethereum') !== -1 ||
+            text.indexOf('chrome-extension://') !== -1 ||
+            text.indexOf('moz-extension://') !== -1 ||
+            text.indexOf('safari-web-extension://') !== -1 ||
+            text.indexOf('inpage.js') !== -1 ||
+            text.indexOf('resizeobserver loop') !== -1
+          );
+        }
+
+        window.addEventListener('error', function(event) {
+          var msg = event.message || (event.error && event.error.message) || '';
+          var src = event.filename || '';
+          if (isIgnoredError(msg, src)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return true;
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(event) {
+          var reason = event.reason;
+          var msg = (reason && (reason.message || reason.stack || String(reason))) || '';
+          if (isIgnoredError(msg, '')) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+
+        var prevOnError = window.onerror;
+        window.onerror = function(message, source, lineno, colno, error) {
+          if (isIgnoredError(message, source)) {
+            return true;
+          }
+          if (typeof prevOnError === 'function') {
+            return prevOnError.apply(this, arguments);
+          }
+          return false;
+        };
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

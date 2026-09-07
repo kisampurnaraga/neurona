@@ -1,3 +1,5 @@
+import dns from 'dns';
+try { dns.setDefaultResultOrder('ipv4first'); } catch {}
 import { validateProxyUrl } from './server/utils/ssrf.ts';
 import "dotenv/config";
 import { NeuronaChatService } from './server/neuronaChatService';
@@ -75,7 +77,26 @@ async function startServer() {
   });
 
   app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
+    const origin = req.headers.origin as string | undefined;
+    if (origin) {
+      try {
+        const u = new URL(origin);
+        const host = req.get('host') || '';
+        const isLocalhost = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+        const isAllowedDomain = u.hostname.endsWith('.run.app') || u.hostname.endsWith('.web.app') || u.hostname.endsWith('.google.com') || u.host === host;
+        if (isLocalhost || isAllowedDomain) {
+          res.header('Access-Control-Allow-Origin', origin);
+          res.header('Access-Control-Allow-Credentials', 'true');
+          res.header('Vary', 'Origin');
+        } else {
+          res.header('Access-Control-Allow-Origin', origin);
+        }
+      } catch {
+        res.header('Access-Control-Allow-Origin', '*');
+      }
+    } else {
+      res.header('Access-Control-Allow-Origin', '*');
+    }
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-role, x-custom-api-key');
     if (req.method === 'OPTIONS') {
@@ -922,6 +943,11 @@ async function startServer() {
   // OpenArt OAuth Callback (Browser Redirect / Popup with PKCE Token Exchange & MCP Validation)
   app.get('/api/fcc/openart/oauth/callback', async (req, res) => {
     const { code, state, error, error_description } = req.query;
+    const forwardedProto = req.headers['x-forwarded-proto'] as string;
+    const forwardedHost = req.headers['x-forwarded-host'] as string;
+    const protocol = forwardedProto || req.protocol || 'http';
+    const host = forwardedHost || req.get('host') || 'localhost:3000';
+    const fallbackOrigin = `${protocol}://${host}`;
     
     if (error) {
       return res.send(`
@@ -934,7 +960,7 @@ async function startServer() {
           <button onclick="window.close()" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Tutup Jendela</button>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OPENART_AUTH_ERROR', error: '${error}', description: '${error_description || ''}' }, '*');
+              window.opener.postMessage({ type: 'OPENART_AUTH_ERROR', error: '${error}', description: '${error_description || ''}' }, ${JSON.stringify(fallbackOrigin)});
               setTimeout(() => window.close(), 3000);
             }
           </script>
@@ -960,6 +986,7 @@ async function startServer() {
     try {
       // Exchange authorization code for official OAuth Access Token
       const exchangeRes = await OpenArtOAuthService.exchangeCodeForToken(String(code), String(state));
+      const targetOrigin = exchangeRes?.origin || fallbackOrigin;
 
       if (!exchangeRes.success || !exchangeRes.token) {
         return res.send(`
@@ -972,7 +999,7 @@ async function startServer() {
             <button onclick="window.close()" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Tutup Jendela</button>
             <script>
               if (window.opener) {
-                window.opener.postMessage({ type: 'OPENART_AUTH_ERROR', error: '${exchangeRes.error || 'EXCHANGE_FAILED'}', description: '${exchangeRes.message || ''}' }, '*');
+                window.opener.postMessage({ type: 'OPENART_AUTH_ERROR', error: '${exchangeRes.error || 'EXCHANGE_FAILED'}', description: '${exchangeRes.message || ''}' }, ${JSON.stringify(targetOrigin)});
               }
             </script>
           </body>
@@ -995,7 +1022,7 @@ async function startServer() {
             <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${valRes.message || 'Token valid namun handshake MCP gagal.'}</p>
             <script>
               if (window.opener) {
-                window.opener.postMessage({ type: 'OPENART_AUTH_ERROR', error: '${valRes.error || 'MCP_VALIDATION_FAILED'}', description: '${valRes.message || ''}' }, '*');
+                window.opener.postMessage({ type: 'OPENART_AUTH_ERROR', error: '${valRes.error || 'MCP_VALIDATION_FAILED'}', description: '${valRes.message || ''}' }, ${JSON.stringify(targetOrigin)});
               }
             </script>
           </body>
@@ -1003,7 +1030,7 @@ async function startServer() {
         `);
       }
 
-      // Save to SQLite
+      // Save encrypted token to SQLite
       FounderService.saveProviderConfig('openart', {
         apiKey: exchangeRes.token,
         endpoint: 'https://mcp.openart.ai/mcp',
@@ -1016,15 +1043,15 @@ async function startServer() {
         <head><title>OpenArt Authorization Success</title></head>
         <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #34d399; text-align: center; padding: 60px 20px;">
           <h2 style="color: #10b981; margin-bottom: 12px;">✓ Otorisasi OpenArt MCP Berhasil</h2>
-          <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${valRes.toolsCount || 4} MCP Tools terdeteksi (${valRes.latencyMs || 25}ms). Menyimpan sesi ke sistem NEURONA...</p>
+          <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${valRes.toolsCount || 0} MCP Tools terdeteksi (${valRes.latencyMs || 25}ms). Menyimpan sesi ke sistem NEURONA...</p>
           <script>
             if (window.opener) {
               window.opener.postMessage({
                 type: 'OPENART_AUTH_SUCCESS',
-                token: '${exchangeRes.token}',
-                toolsCount: ${valRes.toolsCount || 4},
+                success: true,
+                toolsCount: ${valRes.toolsCount || 0},
                 latencyMs: ${valRes.latencyMs || 25}
-              }, '*');
+              }, ${JSON.stringify(targetOrigin)});
               setTimeout(() => window.close(), 1200);
             }
           </script>
@@ -1154,13 +1181,14 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/openart/disconnect', (req, res) => {
+  app.post('/api/fcc/openart/disconnect', async (req, res) => {
     if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
     try {
+      await OpenArtOAuthService.revokeToken();
       FounderService.saveProviderConfig('openart', { apiKey: '', model: 'openart-video-pro', endpoint: 'https://mcp.openart.ai/mcp' });
-      const { OpenArtMCPAdapter } = require('./src/server/providers/OpenArtMCPAdapter');
+      const { OpenArtMCPAdapter } = await import('./src/server/providers/OpenArtMCPAdapter');
       OpenArtMCPAdapter.clearCache();
-      res.json({ success: true, message: 'OpenArt MCP disconnected and cache cleared.' });
+      res.json({ success: true, message: 'OpenArt MCP disconnected, token dicabut, dan cache dibersihkan.' });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
