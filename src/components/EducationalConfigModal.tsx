@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BookOpen, X, GraduationCap, Layers, Globe, Lightbulb, Users, Video, Volume2, Check, UserCheck, MapPin, Sparkles } from 'lucide-react';
 import { EducationalConfig } from '../shared/types';
 import { neuronaVoice } from '../utils/speechSynthesis';
@@ -7,6 +7,17 @@ interface EducationalConfigModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (config: EducationalConfig, prompt: string) => void;
+  initialValues?: {
+    subjectTitle?: string;
+    category?: string;
+    targetAudience?: EducationalConfig['targetAudience'];
+    visualStyle?: EducationalConfig['visualStyle'];
+    characterDescription?: string;
+    worldSetting?: string;
+    keyTakeaways?: string;
+    aspectRatio?: EducationalConfig['aspectRatio'];
+    narratorTone?: EducationalConfig['narratorTone'];
+  };
 }
 
 const VISUAL_STYLES: { id: EducationalConfig['visualStyle']; title: string; desc: string; icon: string; tag: string }[] = [
@@ -68,7 +79,8 @@ const WORLD_PRESETS = [
 export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
   isOpen,
   onClose,
-  onSubmit
+  onSubmit,
+  initialValues
 }) => {
   const [subjectTitle, setSubjectTitle] = useState('Bagaimana Komputer Kuantum Bekerja?');
   const [category, setCategory] = useState('Sains & Teknologi (STEM)');
@@ -84,6 +96,21 @@ export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
   const [aspectRatio, setAspectRatio] = useState<EducationalConfig['aspectRatio']>('16:9');
   const [imageEngine, setImageEngine] = useState<string>('kling-3-omni');
   const [videoEngine, setVideoEngine] = useState<string>('fal-ai/kling-video/v2.1/standard/image-to-video');
+
+  // Sync initial values when opened
+  useEffect(() => {
+    if (isOpen && initialValues) {
+      if (initialValues.subjectTitle) setSubjectTitle(initialValues.subjectTitle);
+      if (initialValues.category) setCategory(initialValues.category);
+      if (initialValues.targetAudience) setTargetAudience(initialValues.targetAudience);
+      if (initialValues.visualStyle) setVisualStyle(initialValues.visualStyle);
+      if (initialValues.characterDescription) setCharacterDescription(initialValues.characterDescription);
+      if (initialValues.worldSetting) setWorldSetting(initialValues.worldSetting);
+      if (initialValues.keyTakeaways) setKeyTakeaways(initialValues.keyTakeaways);
+      if (initialValues.aspectRatio) setAspectRatio(initialValues.aspectRatio);
+      if (initialValues.narratorTone) setNarratorTone(initialValues.narratorTone);
+    }
+  }, [isOpen, initialValues]);
 
   if (!isOpen) return null;
 

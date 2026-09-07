@@ -332,6 +332,8 @@ export default function App() {
   const [isAffiliateModalOpen, setIsAffiliateModalOpen] = useState(false);
   const [isAnimationModalOpen, setIsAnimationModalOpen] = useState(false);
   const [isEducationalModalOpen, setIsEducationalModalOpen] = useState(false);
+  const [animationInitialValues, setAnimationInitialValues] = useState<any>(undefined);
+  const [educationalInitialValues, setEducationalInitialValues] = useState<any>(undefined);
   const [isStoryboardMatrixOpen, setIsStoryboardMatrixOpen] = useState(false);
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
@@ -1166,12 +1168,14 @@ export default function App() {
         isOpen={isAnimationModalOpen}
         onClose={() => setIsAnimationModalOpen(false)}
         onSubmit={(config, p) => handleInteract(p, undefined, undefined, config, undefined, 'ANIMATION')}
+        initialValues={animationInitialValues}
       />
 
       <EducationalConfigModal
         isOpen={isEducationalModalOpen}
         onClose={() => setIsEducationalModalOpen(false)}
         onSubmit={(config, p) => handleInteract(p, undefined, undefined, undefined, config, 'EDUCATIONAL')}
+        initialValues={educationalInitialValues}
       />
 
       {/* Drag & Drop Visual Overlay */}
@@ -1257,7 +1261,19 @@ export default function App() {
           )}
           {/* Content Creator Dashboard */}
           {isContentCreatorOpen && (
-            <ContentCreatorDashboard onClose={() => setIsContentCreatorOpen(false)} />
+            <ContentCreatorDashboard 
+              onClose={() => setIsContentCreatorOpen(false)}
+              onOpenAnimationStudio={(initialValues) => {
+                setIsContentCreatorOpen(false);
+                setAnimationInitialValues(initialValues);
+                setIsAnimationModalOpen(true);
+              }}
+              onOpenEducationalStudio={(initialValues) => {
+                setIsContentCreatorOpen(false);
+                setEducationalInitialValues(initialValues);
+                setIsEducationalModalOpen(true);
+              }}
+            />
           )}
 
           {/* System Health Dashboard */}

@@ -28,6 +28,15 @@ interface AnimationConfigModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (config: AnimationConfig, prompt: string, attachedAssets?: any[]) => void;
+  initialValues?: {
+    title?: string;
+    artStyle?: AnimationConfig['artStyle'];
+    targetGenre?: AnimationConfig['targetGenre'];
+    characterDescription?: string;
+    worldSetting?: string;
+    aspectRatio?: AnimationConfig['aspectRatio'];
+    voiceTone?: AnimationConfig['voiceTone'];
+  };
 }
 
 const ART_STYLES: { id: AnimationConfig['artStyle']; title: string; desc: string; icon: string; tag: string }[] = [
@@ -176,7 +185,8 @@ const GF_WORLD_OPTIONS = [
 export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
   isOpen,
   onClose,
-  onSubmit
+  onSubmit,
+  initialValues
 }) => {
   const [title, setTitle] = useState('Anime Championship Match: Kisah Kemenangan Voli');
   const [artStyle, setArtStyle] = useState<AnimationConfig['artStyle']>('ANIME_SHINKAI');
@@ -189,6 +199,22 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
   const [sceneCount, setSceneCount] = useState(4);
   const [imageEngine, setImageEngine] = useState<string>('kling-3-omni');
   const [videoEngine, setVideoEngine] = useState<string>('fal-ai/kling-video/v2.1/standard/image-to-video');
+
+  // Sync initial values when opened
+  useEffect(() => {
+    if (isOpen && initialValues) {
+      if (initialValues.title) setTitle(initialValues.title);
+      if (initialValues.artStyle) setArtStyle(initialValues.artStyle);
+      if (initialValues.targetGenre) setTargetGenre(initialValues.targetGenre);
+      if (initialValues.characterDescription) {
+        setCharacterDescription(initialValues.characterDescription);
+        setIsGoogleFlowMode(false);
+      }
+      if (initialValues.worldSetting) setWorldSetting(initialValues.worldSetting);
+      if (initialValues.aspectRatio) setAspectRatio(initialValues.aspectRatio);
+      if (initialValues.voiceTone) setVoiceTone(initialValues.voiceTone);
+    }
+  }, [isOpen, initialValues]);
 
   // Text-to-Image Character Sheet Generator State
   const [isGeneratingChar, setIsGeneratingChar] = useState(false);
