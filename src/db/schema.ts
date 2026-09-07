@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { relations } from 'drizzle-orm';
 
 export const users = sqliteTable('users', {
@@ -29,8 +29,25 @@ export const projects = sqliteTable('projects', {
   createdAt: text('created_at'),
 });
 
+export const creditHolds = sqliteTable('credit_holds', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').references(() => users.uid).notNull(),
+  idempotencyKey: text('idempotency_key').notNull(),
+  generationId: text('generation_id'),
+  amount: integer('amount').notNull(),
+  provider: text('provider'),
+  model: text('model'),
+  operation: text('operation'),
+  status: text('status').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (table) => ({
+  userIdempotencyIdx: uniqueIndex('user_idempotency_idx').on(table.userId, table.idempotencyKey)
+}));
+
 export const usersRelations = relations(users, ({ many }) => ({
   projects: many(projects),
+  creditHolds: many(creditHolds),
 }));
 
 export const projectsRelations = relations(projects, ({ one }) => ({

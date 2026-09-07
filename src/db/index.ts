@@ -62,6 +62,21 @@ function initTables(sqliteInstance: InstanceType<typeof Database>) {
       value TEXT NOT NULL,
       updated_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS credit_holds (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      generation_id TEXT,
+      amount INTEGER NOT NULL,
+      provider TEXT,
+      model TEXT,
+      operation TEXT,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(uid)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS user_idempotency_idx ON credit_holds(user_id, idempotency_key);
   `);
 
   // Ensure columns exist on older database instances

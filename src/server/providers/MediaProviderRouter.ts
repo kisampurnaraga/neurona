@@ -18,6 +18,7 @@ export interface RouteResolution {
   estimatedCostUsd: number;
   reason: string;
   fallbackChain: string[];
+  allowFallback?: boolean;
 }
 
 export interface VideoRouteOptions {
@@ -73,7 +74,8 @@ export class MediaProviderRouter {
         tier: 'balanced',
         estimatedCostUsd: isImg ? 0.010 : 0.050,
         reason: 'Explicitly configured OpenArt MCP Provider',
-        fallbackChain: ['fal', 'google_veo']
+        fallbackChain: ['fal', 'google_veo'],
+        allowFallback: false
       };
     }
 
@@ -86,7 +88,8 @@ export class MediaProviderRouter {
         tier: 'premium',
         estimatedCostUsd: isImg ? 0.03 : 0.20,
         reason: 'Selected Google Cinematic Veo / Imagen engine',
-        fallbackChain: ['fal', 'openart']
+        fallbackChain: ['fal', 'openart'],
+        allowFallback: false
       };
     }
 
@@ -98,7 +101,8 @@ export class MediaProviderRouter {
         tier: 'balanced',
         estimatedCostUsd: 0.08,
         reason: 'Selected BytePlus ModelArk seedance engine',
-        fallbackChain: ['fal', 'openart', 'google_veo']
+        fallbackChain: ['fal', 'openart', 'google_veo'],
+        allowFallback: false
       };
     }
 
@@ -111,7 +115,8 @@ export class MediaProviderRouter {
         tier: 'balanced',
         estimatedCostUsd: isImg ? 0.01 : 0.12,
         reason: 'Selected Fal.ai universal media pipeline',
-        fallbackChain: ['openart', 'google_veo']
+        fallbackChain: ['openart', 'google_veo'],
+        allowFallback: false
       };
     }
 
@@ -208,8 +213,10 @@ export class MediaProviderRouter {
 
     onLog?.('GATOTKACA', `Media Provider Router: Routing Scene ${sceneIdx + 1} to [${route.providerName}] (${route.model})...`, 'INFO');
 
-    // Build execution candidates in priority order: Primary -> Fallbacks
-    const candidateProviderIds = [route.providerId, ...route.fallbackChain.filter(id => id !== route.providerId)];
+    // Build execution candidates in priority order: Primary -> Fallbacks (only if allowed)
+    const candidateProviderIds = route.allowFallback !== false
+      ? [route.providerId, ...route.fallbackChain.filter(id => id !== route.providerId)]
+      : [route.providerId];
 
     let lastError: any = null;
 
