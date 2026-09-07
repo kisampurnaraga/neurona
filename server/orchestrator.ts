@@ -1114,6 +1114,9 @@ export interface ProductionStartOptions {
   affiliateConfig?: AffiliateConfig;
   animationConfig?: AnimationConfig;
   educationalConfig?: EducationalConfig;
+  filmConfig?: any;
+  videoAdsConfig?: any;
+  quickCreateConfig?: any;
   userRole?: string;
 }
 
@@ -1124,7 +1127,7 @@ export class ProductionOrchestrator {
 
   static async startProduction(input: string | ProductionStartOptions) {
     const options: ProductionStartOptions = typeof input === 'string' ? { prompt: input } : input;
-    const { prompt, videoType, videoModel, ttsVoiceConfig, attachedAssets, affiliateConfig, animationConfig, educationalConfig, userRole } = options;
+    const { prompt, videoType, videoModel, ttsVoiceConfig, attachedAssets, affiliateConfig, animationConfig, educationalConfig, filmConfig, videoAdsConfig, quickCreateConfig, userRole } = options;
 
     const id = crypto.randomUUID();
     
@@ -1148,6 +1151,12 @@ export class ProductionOrchestrator {
       defaultTitle = educationalConfig?.subjectTitle || "Materi Pembelajaran Visual";
     } else if (resolvedType === 'AFFILIATE') {
       defaultTitle = affiliateConfig?.productName || "Affiliate Product Showcase";
+    } else if (resolvedType === 'FILM') {
+      defaultTitle = filmConfig?.title || "Cinematic Film Production";
+    } else if (resolvedType === 'VIDEO_ADS') {
+      defaultTitle = videoAdsConfig?.productName || "Video Ad Commercial";
+    } else if (resolvedType === 'QUICK_CREATE') {
+      defaultTitle = quickCreateConfig?.topic || "Quick Visual Production";
     }
 
     const telemetry = createDefaultTelemetry();
@@ -1212,6 +1221,30 @@ export class ProductionOrchestrator {
         characterDescription: educationalConfig?.characterDescription || "Profesor Robot AI ramah bernama Dr. Byte, bodi putih dengan layar ekspresi bersahabat",
         worldSetting: educationalConfig?.worldSetting || "Laboratorium sains modern serba putih dengan layar holografis melayang"
       } : undefined,
+      filmConfig: resolvedType === 'FILM' ? {
+        title: filmConfig?.title || "Cinematic Short Film",
+        genre: filmConfig?.genre || 'DRAMA',
+        style: filmConfig?.style || 'DARK_MOODY',
+        logline: filmConfig?.logline || "Kisah dramatis penuh emosi mendalam",
+        charactersDescription: filmConfig?.charactersDescription || "Karakter utama dengan motif emosional kuat",
+        voiceTone: filmConfig?.voiceTone || 'DEEP_CINEMATIC',
+        aspectRatio: filmConfig?.aspectRatio || '16:9'
+      } : undefined,
+      videoAdsConfig: resolvedType === 'VIDEO_ADS' ? {
+        productName: videoAdsConfig?.productName || "Produk Unggulan",
+        objective: videoAdsConfig?.objective || 'SALES',
+        hookStyle: videoAdsConfig?.hookStyle || 'HIGH_ENERGY',
+        benefits: videoAdsConfig?.benefits || "Material premium dan fungsionalitas tinggi",
+        cta: videoAdsConfig?.cta || "Dapatkan diskon khusus hari ini!",
+        targetAudience: videoAdsConfig?.targetAudience || "Masyarakat umum",
+        aspectRatio: videoAdsConfig?.aspectRatio || '9:16'
+      } : undefined,
+      quickCreateConfig: resolvedType === 'QUICK_CREATE' ? {
+        topic: quickCreateConfig?.topic || "Inspirasi Hari Ini",
+        aspectRatio: quickCreateConfig?.aspectRatio || '9:16',
+        targetAudience: quickCreateConfig?.targetAudience || "Generasi Muda",
+        style: quickCreateConfig?.style || 'CINEMATIC'
+      } : undefined,
       activeAgent: 'Creative Strategist',
       agentStatus: {
         'Creative Strategist': 'WORKING',
@@ -1259,6 +1292,9 @@ export class ProductionOrchestrator {
       let currentConfig: any = undefined;
       if (vType === 'ANIMATION') currentConfig = project.animationConfig;
       else if (vType === 'EDUCATIONAL') currentConfig = project.educationalConfig;
+      else if (vType === 'FILM') currentConfig = project.filmConfig;
+      else if (vType === 'VIDEO_ADS') currentConfig = project.videoAdsConfig;
+      else if (vType === 'QUICK_CREATE') currentConfig = project.quickCreateConfig;
       else if (vType === 'AFFILIATE') {
         currentConfig = project.affiliateConfig;
         if (currentConfig?.productImages && currentConfig.productImages.length > 0) {
@@ -1502,7 +1538,7 @@ export class ProductionOrchestrator {
             productName: project.brief?.product || project.affiliateConfig?.productName || 'Product',
             referenceImageUrl: project.characterProfile?.referenceImageUrl || project.affiliateConfig?.characterImage || '',
             durationSeconds: durSecs,
-            videoType: vType,
+            videoType: vType as any,
             visualStyle: s.visualStyle || (vType === 'AFFILIATE' ? 'ugc' : 'studio'),
             featuresProduct: s.featuresProduct
           });

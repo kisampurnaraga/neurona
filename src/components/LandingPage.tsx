@@ -81,7 +81,7 @@ const FALLBACK_SHOWCASE_PLACEHOLDERS: ShowcaseVideoItem[] = [
 ];
 
 interface LandingPageProps {
-  onEnterStudio: () => void;
+  onEnterStudio: (initialPrompt?: string) => void;
   onOpenFounder?: () => void;
   currentUser?: UserSessionData | null;
   onOpenLogin?: (mode?: 'login' | 'register' | 'checkout' | 'founder' | 'user' | 'buy') => void;
@@ -285,7 +285,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </div>
 
                 <button
-                  onClick={onEnterStudio}
+                  onClick={() => onEnterStudio()}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white text-xs font-bold font-mono uppercase tracking-wider shadow-lg shadow-cyan-500/20 transition-all cursor-pointer"
                 >
                   <span>Buka Studio</span>
@@ -949,7 +949,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <span className="text-gray-300 font-bold">NEURONA AI VIDEO OS</span>
           </div>
           <div className="flex items-center gap-6">
-            <button onClick={onEnterStudio} className="hover:text-cyan-400 transition-colors">Buka Studio</button>
+            <button onClick={() => onEnterStudio()} className="hover:text-cyan-400 transition-colors">Buka Studio</button>
             <button onClick={handleRegisterAction} className="hover:text-amber-400 transition-colors">Akses Rp 150.000</button>
             <a href={whatsappCheckoutUrl} target="_blank" rel="noopener noreferrer" className="hover:text-emerald-400 transition-colors">Kontak Admin</a>
           </div>
@@ -1123,13 +1123,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
                   <button
                     onClick={() => {
+                      const promptText = selectedShowcaseVideo.prompt;
                       setSelectedShowcaseVideo(null);
                       if (currentUser) {
-                        onEnterStudio();
+                        onEnterStudio(promptText);
                       } else if (onOpenLogin) {
                         onOpenLogin('login');
                       } else {
-                        onEnterStudio();
+                        onEnterStudio(promptText);
                       }
                     }}
                     className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-extrabold text-xs font-mono tracking-wider shadow-lg shadow-cyan-500/20 transition cursor-pointer"

@@ -22,6 +22,9 @@ interface StudioSelectorModalProps {
   onSelectAnimation: () => void;
   onSelectAffiliate: () => void;
   onSelectEducational: () => void;
+  onSelectFilm: () => void;
+  onSelectVideoAds: () => void;
+  onSelectQuickCreate: () => void;
 }
 
 export const StudioSelectorModal: React.FC<StudioSelectorModalProps> = ({
@@ -30,6 +33,9 @@ export const StudioSelectorModal: React.FC<StudioSelectorModalProps> = ({
   onSelectAnimation,
   onSelectAffiliate,
   onSelectEducational,
+  onSelectFilm,
+  onSelectVideoAds,
+  onSelectQuickCreate,
 }) => {
   if (!isOpen) return null;
 
@@ -99,6 +105,72 @@ export const StudioSelectorModal: React.FC<StudioSelectorModalProps> = ({
       action: onSelectEducational,
       btnLabel: 'Buka Studio Edukasi',
       btnGradient: 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white'
+    },
+    {
+      id: 'film',
+      title: 'Studio Film Sinematik',
+      subtitle: 'Premium Hollywood Cinema Storytelling',
+      tag: 'CINEMATIC FILM & SHORT STORY',
+      color: 'from-rose-600 via-pink-600 to-purple-600',
+      glowColor: 'rgba(225, 29, 72, 0.4)',
+      borderColor: 'border-rose-500/40 hover:border-rose-400',
+      badgeBg: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+      icon: Film,
+      subIcon: Sparkles,
+      description: 'Sempurna untuk merancang mahakarya film pendek fiksi, drama emosional, thriller menegangkan, dengan arsitektur visual kelas dunia.',
+      features: [
+        'Konfigurasi Genre & Logline Terarah',
+        'Kamera Sinematik Grade Lensa Anamorphic',
+        'Deep Voiceover Berkarakter Narasi Berat',
+        'Kontinuitas Karakter & Tone Pencahayaan'
+      ],
+      action: onSelectFilm,
+      btnLabel: 'Buka Studio Film',
+      btnGradient: 'bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white'
+    },
+    {
+      id: 'video_ads',
+      title: 'Studio Video Ads',
+      subtitle: 'Iklan Komersial Promosi Berkonversi Tinggi',
+      tag: 'COMMERCIAL ADVERTISING',
+      color: 'from-sky-600 via-blue-600 to-indigo-600',
+      glowColor: 'rgba(14, 165, 233, 0.4)',
+      borderColor: 'border-sky-500/40 hover:border-sky-400',
+      badgeBg: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+      icon: Clapperboard,
+      subIcon: Sparkles,
+      description: 'Didesain untuk konversi sales & awareness. Menyajikan hook psikologis instan di 3 detik pertama dengan CTA yang membujuk audiens membeli.',
+      features: [
+        'Pemilihan Objektif Sales, Awareness & Leads',
+        'Teks Overlay Promosi Menarik & Bold',
+        'Studio Lighting & Close-up Produk Presisi',
+        'Call-to-Action Konversi Penjualan Kuat'
+      ],
+      action: onSelectVideoAds,
+      btnLabel: 'Buka Studio Video Ads',
+      btnGradient: 'bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white'
+    },
+    {
+      id: 'quick_create',
+      title: '⚡ Quick Create Express',
+      subtitle: 'Buat Video Secara Kilat Dengan Satu Baris Ide',
+      tag: 'EXPRESS CREATION 100% AUTO',
+      color: 'from-amber-500 via-orange-500 to-yellow-500',
+      glowColor: 'rgba(245, 158, 11, 0.4)',
+      borderColor: 'border-amber-500/40 hover:border-amber-400',
+      badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      icon: Flame,
+      subIcon: Sparkles,
+      description: 'Lompat langsung ke panggung kreasi. Masukkan satu kalimat ide cerita utama, AI akan merumuskan seluruh naskah, storyboard, dan render secara instan.',
+      features: [
+        'Sederhana & Tanpa Konfigurasi Rumit',
+        'Format Storyboard Otomatis 3 Adegan',
+        'Cocok Untuk Eksperimen & Produksi Cepat',
+        'Dukungan Penuh Generator Video Kilat'
+      ],
+      action: onSelectQuickCreate,
+      btnLabel: 'Buat Video Kilat',
+      btnGradient: 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white'
     }
   ];
 

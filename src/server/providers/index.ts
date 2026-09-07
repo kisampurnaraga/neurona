@@ -3,6 +3,7 @@ import { BytePlusAdapter } from "./BytePlusAdapter";
 import { GoogleVeoAdapter } from "./GoogleVeoAdapter";
 import { MockVideoProvider } from "./MockVideoProvider";
 import { OpenArtMCPAdapter } from "./OpenArtMCPAdapter";
+import { HiggsfieldMCPAdapter } from "./HiggsfieldMCPAdapter";
 import { VideoGenerationProvider } from "./VideoProvider";
 import { FAL_MODELS } from "../../../server/falModelConfig";
 import { MediaProviderRouter } from "./MediaProviderRouter";
@@ -32,6 +33,9 @@ export function getVideoProvider(preferredType?: string, preferredProvider?: str
   if (providerClean === 'openart') {
     return new OpenArtMCPAdapter();
   }
+  if (providerClean === 'higgsfield') {
+    return new HiggsfieldMCPAdapter();
+  }
   if (providerClean === 'google_veo' || providerClean === 'google-veo' || providerClean === 'google') {
     return new GoogleVeoAdapter();
   }
@@ -52,6 +56,14 @@ export function getVideoProvider(preferredType?: string, preferredProvider?: str
     typeClean.includes('openart')
   ) {
     return new OpenArtMCPAdapter();
+  }
+
+  if (
+    typeClean === 'higgsfield' || 
+    typeClean.startsWith('higgsfield-') || 
+    typeClean.includes('higgsfield')
+  ) {
+    return new HiggsfieldMCPAdapter();
   }
 
   // Known OpenArt models (only when no explicit provider is specified)
@@ -96,6 +108,7 @@ export function getVideoProvider(preferredType?: string, preferredProvider?: str
   // Otherwise, check activeProviderType
   const fallbackProvider = (activeProviderType || process.env.VIDEO_PROVIDER || 'fal').toLowerCase();
   if (fallbackProvider === 'openart') return new OpenArtMCPAdapter();
+  if (fallbackProvider === 'higgsfield') return new HiggsfieldMCPAdapter();
   if (fallbackProvider === 'google_veo' || fallbackProvider === 'google-veo' || fallbackProvider === 'google') return new GoogleVeoAdapter();
   if (fallbackProvider === 'byteplus') return new BytePlusAdapter();
   if (fallbackProvider === 'mock') return new MockVideoProvider();
@@ -108,5 +121,6 @@ export * from './FalVideoAdapter';
 export * from './BytePlusAdapter';
 export * from './GoogleVeoAdapter';
 export * from './OpenArtMCPAdapter';
+export * from './HiggsfieldMCPAdapter';
 export * from './MediaProviderRouter';
 export * from './mediaProviderRegistry';

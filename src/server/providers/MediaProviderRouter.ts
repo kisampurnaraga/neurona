@@ -2,6 +2,7 @@ import { Scene, ProductionProject, ProviderStatus } from '../../shared/types';
 import { VideoGenerationProvider } from './VideoProvider';
 import { MediaProviderRegistry, ProviderRegistration } from './mediaProviderRegistry';
 import { OpenArtMCPAdapter, OPENART_DEFAULT_MODELS } from './OpenArtMCPAdapter';
+import { HiggsfieldMCPAdapter } from './HiggsfieldMCPAdapter';
 import { FalVideoAdapter } from './FalVideoAdapter';
 import { GoogleVeoAdapter } from './GoogleVeoAdapter';
 import { BytePlusAdapter } from './BytePlusAdapter';
@@ -122,9 +123,43 @@ export class MediaProviderRouter {
       };
     }
 
+    if (preferredProvider === 'higgsfield') {
+      return {
+        providerId: 'higgsfield',
+        providerName: 'Higgsfield MCP Media Provider',
+        model: preferredModel || 'higgsfield-video-pro',
+        tier: 'premium',
+        estimatedCostUsd: 0.150,
+        reason: 'Explicitly configured Higgsfield MCP Provider',
+        fallbackChain: [],
+        allowFallback: false
+      };
+    }
+
     // -------------------------------------------------------------
     // IMPLICIT RESOLUTION BY MODEL ID (Only when no explicit provider)
     // -------------------------------------------------------------
+    const knownHiggsfieldModels = [
+      'higgsfield-video-pro', 'higgsfield-anim'
+    ];
+
+    if (
+      knownHiggsfieldModels.includes(preferredModelLower) ||
+      preferredModelLower.startsWith('higgsfield-') ||
+      preferredModelLower.includes('higgsfield')
+    ) {
+      return {
+        providerId: 'higgsfield',
+        providerName: 'Higgsfield MCP Media Provider',
+        model: preferredModel || 'higgsfield-video-pro',
+        tier: 'premium',
+        estimatedCostUsd: 0.150,
+        reason: 'Implicit Higgsfield MCP Model Match',
+        fallbackChain: [],
+        allowFallback: false
+      };
+    }
+
     const knownOpenArtModels = [
       'veo3-1', 'wan2-7', 'byte-plus-seedance-2', 'byte-plus-seedance-2-fast', 'byte-plus-seedance-2-5',
       'kling-3-omni', 'nano-banana-2-lite', 'nano-banana-2', 'nano-banana-pro',
@@ -396,6 +431,8 @@ export class MediaProviderRouter {
 
         if (providerId === 'openart') {
           provider = new OpenArtMCPAdapter();
+        } else if (providerId === 'higgsfield') {
+          provider = new HiggsfieldMCPAdapter();
         } else if (providerId === 'fal') {
           provider = new FalVideoAdapter();
         } else if (providerId === 'google_veo' || providerId === 'veo') {

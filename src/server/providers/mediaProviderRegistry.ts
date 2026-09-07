@@ -4,6 +4,7 @@ import { GoogleVeoAdapter } from './GoogleVeoAdapter';
 import { BytePlusAdapter } from './BytePlusAdapter';
 import { MockVideoProvider } from './MockVideoProvider';
 import { OpenArtMCPAdapter } from './OpenArtMCPAdapter';
+import { HiggsfieldMCPAdapter } from './HiggsfieldMCPAdapter';
 import { FounderService } from '../fcc/FounderService';
 
 export interface ProviderRegistration {
@@ -105,6 +106,21 @@ export class MediaProviderRegistry {
       defaultImageModel: 'mock-img-v1',
       defaultVideoModel: 'mock-vid-v1',
       baseCostUsd: 0.00
+    });
+
+    // 6. Higgsfield MCP Media Provider
+    const higgsfieldAdapter = new HiggsfieldMCPAdapter();
+    this.register({
+      id: 'higgsfield',
+      name: 'Higgsfield MCP Media Provider',
+      type: 'HYBRID',
+      tier: 'premium',
+      adapter: higgsfieldAdapter,
+      supportsImageGen: false,
+      supportsVideoGen: true,
+      supportsImageToVideo: true,
+      defaultVideoModel: 'higgsfield-video-pro',
+      baseCostUsd: 0.15
     });
   }
 

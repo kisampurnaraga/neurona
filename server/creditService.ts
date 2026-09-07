@@ -85,7 +85,13 @@ const AUTHORITATIVE_PRICING_REGISTRY: ProviderPricing[] = [
   { provider: 'OpenArt', model: 'wan2-7', operation: 'image-to-video', costUsd: 0.120, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
   { provider: 'OpenArt', model: 'openart-wan2.1', operation: 'image-to-video', costUsd: 0.120, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
   { provider: 'OpenArt', model: 'gemini-omni-flash', operation: 'image-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
-  { provider: 'OpenArt', model: 'gemini-omni-flash', operation: 'text-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' }
+  { provider: 'OpenArt', model: 'gemini-omni-flash', operation: 'text-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
+
+  // Verified Higgsfield Live MCP Video Models
+  { provider: 'Higgsfield', model: 'higgsfield-video-pro', operation: 'text-to-video', costUsd: 0.150, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'higgsfield-video-pro', operation: 'image-to-video', costUsd: 0.150, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'higgsfield-anim', operation: 'image-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'higgsfield-anim', operation: 'text-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' }
 ];
 
 export function getProviderPricing(provider: string, model: string, operation: string): ProviderPricing | undefined {
@@ -190,18 +196,25 @@ export class CreditService {
     let resolvedProvider = params?.provider;
 
     if (!resolvedProvider) {
-      const knownOpenArtModels = [
-        'veo3-1', 'wan2-7', 'byte-plus-seedance-2', 'byte-plus-seedance-2-fast', 'byte-plus-seedance-2-5',
-        'kling-3-omni', 'nano-banana-2-lite', 'nano-banana-2', 'nano-banana-pro',
-        'byte-plus-seedream-5-lite', 'byte-plus-seedream-5-pro', 'gpt-image-2', 'wan2-7-image', 'gemini-omni-flash'
-      ];
       const modelIdLower = modelId.toLowerCase();
       if (
-        knownOpenArtModels.includes(modelIdLower) || 
-        modelIdLower.startsWith('openart-') || 
-        modelIdLower.includes('openart')
+        modelIdLower.startsWith('higgsfield') ||
+        modelIdLower.includes('higgsfield')
       ) {
-        resolvedProvider = 'OpenArt';
+        resolvedProvider = 'Higgsfield';
+      } else {
+        const knownOpenArtModels = [
+          'veo3-1', 'wan2-7', 'byte-plus-seedance-2', 'byte-plus-seedance-2-fast', 'byte-plus-seedance-2-5',
+          'kling-3-omni', 'nano-banana-2-lite', 'nano-banana-2', 'nano-banana-pro',
+          'byte-plus-seedream-5-lite', 'byte-plus-seedream-5-pro', 'gpt-image-2', 'wan2-7-image', 'gemini-omni-flash'
+        ];
+        if (
+          knownOpenArtModels.includes(modelIdLower) || 
+          modelIdLower.startsWith('openart-') || 
+          modelIdLower.includes('openart')
+        ) {
+          resolvedProvider = 'OpenArt';
+        }
       }
     }
 
@@ -329,18 +342,25 @@ export class CreditService {
     let resolvedProvider = params?.provider;
 
     if (!resolvedProvider) {
-      const knownOpenArtModels = [
-        'veo3-1', 'wan2-7', 'byte-plus-seedance-2', 'byte-plus-seedance-2-fast', 'byte-plus-seedance-2-5',
-        'kling-3-omni', 'nano-banana-2-lite', 'nano-banana-2', 'nano-banana-pro',
-        'byte-plus-seedream-5-lite', 'byte-plus-seedream-5-pro', 'gpt-image-2', 'wan2-7-image', 'gemini-omni-flash'
-      ];
       const modelIdLower = modelId.toLowerCase();
       if (
-        knownOpenArtModels.includes(modelIdLower) || 
-        modelIdLower.startsWith('openart-') || 
-        modelIdLower.includes('openart')
+        modelIdLower.startsWith('higgsfield') ||
+        modelIdLower.includes('higgsfield')
       ) {
-        resolvedProvider = 'OpenArt';
+        resolvedProvider = 'Higgsfield';
+      } else {
+        const knownOpenArtModels = [
+          'veo3-1', 'wan2-7', 'byte-plus-seedance-2', 'byte-plus-seedance-2-fast', 'byte-plus-seedance-2-5',
+          'kling-3-omni', 'nano-banana-2-lite', 'nano-banana-2', 'nano-banana-pro',
+          'byte-plus-seedream-5-lite', 'byte-plus-seedream-5-pro', 'gpt-image-2', 'wan2-7-image', 'gemini-omni-flash'
+        ];
+        if (
+          knownOpenArtModels.includes(modelIdLower) || 
+          modelIdLower.startsWith('openart-') || 
+          modelIdLower.includes('openart')
+        ) {
+          resolvedProvider = 'OpenArt';
+        }
       }
     }
 

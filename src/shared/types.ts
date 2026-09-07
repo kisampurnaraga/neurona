@@ -2,7 +2,7 @@ export type ProductionState = 'DRAFT' | 'BRIEFING' | 'STORYBOARDING' | 'QUOTA_FA
 
 export type ProviderStatus = 'NOT_CONFIGURED' | 'READY' | 'DEGRADED' | 'UNAVAILABLE' | 'AUTH_ERROR' | 'QUOTA_EXCEEDED' | 'TIMEOUT' | 'ERROR';
 
-export type VideoType = 'AFFILIATE' | 'ANIMATION' | 'EDUCATIONAL' | 'BRAND_COMMERCIAL' | 'CINEMATIC';
+export type VideoType = 'AFFILIATE' | 'ANIMATION' | 'EDUCATIONAL' | 'BRAND_COMMERCIAL' | 'CINEMATIC' | 'FILM' | 'VIDEO_ADS' | 'QUICK_CREATE';
 
 export interface ProviderError {
   code: ProviderStatus;
@@ -160,6 +160,39 @@ export interface EducationalConfig {
   videoEngine?: string;
 }
 
+export interface FilmConfig {
+  title: string;
+  genre: 'THRILLER' | 'SCI_FI' | 'ACTION' | 'ROMANCE' | 'DRAMA' | 'FANTASY';
+  style: 'ANAMORPHIC' | 'DARK_MOODY' | 'NEO_NOIR' | 'IMAX_EXPANSIVE' | 'WARM_VINTAGE';
+  logline: string;
+  charactersDescription?: string;
+  voiceTone?: string;
+  aspectRatio: '16:9' | '9:16' | '1:1';
+  sceneCount?: number;
+  imageEngine?: string;
+  videoEngine?: string;
+}
+
+export interface VideoAdsConfig {
+  productName: string;
+  objective: 'AWARENESS' | 'SALES' | 'LEAD_GEN';
+  hookStyle: 'FOMO' | 'PROBLEM_SOLVER' | 'HIGH_ENERGY' | 'STORYTELLING';
+  benefits: string;
+  cta: string;
+  targetAudience: string;
+  aspectRatio: '16:9' | '9:16' | '1:1';
+  sceneCount?: number;
+  imageEngine?: string;
+  videoEngine?: string;
+}
+
+export interface QuickCreateConfig {
+  topic: string;
+  aspectRatio: '16:9' | '9:16' | '1:1';
+  targetAudience: string;
+  style: 'CINEMATIC' | 'MODERN_MINIMALIST' | 'ANIME' | 'UGC';
+}
+
 export interface AgentTelemetry {
   id: string;
   codename: string;
@@ -209,6 +242,9 @@ export interface ProductionProject {
   affiliateConfig?: AffiliateConfig;
   animationConfig?: AnimationConfig;
   educationalConfig?: EducationalConfig;
+  filmConfig?: FilmConfig;
+  videoAdsConfig?: VideoAdsConfig;
+  quickCreateConfig?: QuickCreateConfig;
   productionContext?: ProductionContext;
   attachedAssets?: ProductAsset[];
   brief?: any;

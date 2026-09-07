@@ -8,6 +8,9 @@ import { VideoPreviewPlayer } from './components/VideoPreviewPlayer';
 import { NeuronaDirectorCore } from './components/NeuronaDirectorCore';
 import { StoryboardMatrixModal } from './components/StoryboardMatrixModal';
 import { StudioSelectorModal } from './components/StudioSelectorModal';
+import { FilmConfigModal } from './components/FilmConfigModal';
+import { VideoAdsConfigModal } from './components/VideoAdsConfigModal';
+import { QuickCreateModal } from './components/QuickCreateModal';
 import { CreditTopUpModal } from './components/CreditTopUpModal';
 import { 
   Mic, 
@@ -332,6 +335,9 @@ export default function App() {
   const [isAffiliateModalOpen, setIsAffiliateModalOpen] = useState(false);
   const [isAnimationModalOpen, setIsAnimationModalOpen] = useState(false);
   const [isEducationalModalOpen, setIsEducationalModalOpen] = useState(false);
+  const [isFilmModalOpen, setIsFilmModalOpen] = useState(false);
+  const [isVideoAdsModalOpen, setIsVideoAdsModalOpen] = useState(false);
+  const [isQuickCreateModalOpen, setIsQuickCreateModalOpen] = useState(false);
   const [animationInitialValues, setAnimationInitialValues] = useState<any>(undefined);
   const [educationalInitialValues, setEducationalInitialValues] = useState<any>(undefined);
   const [affiliateInitialValues, setAffiliateInitialValues] = useState<any>(undefined);
@@ -636,7 +642,10 @@ export default function App() {
     affiliateConfig?: AffiliateConfig,
     animationConfig?: AnimationConfig,
     educationalConfig?: EducationalConfig,
-    videoType?: VideoType
+    videoType?: VideoType,
+    filmConfig?: any,
+    videoAdsConfig?: any,
+    quickCreateConfig?: any
   ) => {
     const currentPrompt = overridePrompt !== undefined ? overridePrompt : prompt;
     const assetsToSend = overrideAssets !== undefined ? overrideAssets : attachedAssets;
@@ -669,7 +678,10 @@ export default function App() {
           affiliateConfig,
           animationConfig,
           educationalConfig,
-          videoType: videoType || (animationConfig ? 'ANIMATION' : educationalConfig ? 'EDUCATIONAL' : affiliateConfig ? 'AFFILIATE' : undefined),
+          filmConfig,
+          videoAdsConfig,
+          quickCreateConfig,
+          videoType: videoType || (animationConfig ? 'ANIMATION' : educationalConfig ? 'EDUCATIONAL' : affiliateConfig ? 'AFFILIATE' : filmConfig ? 'FILM' : videoAdsConfig ? 'VIDEO_ADS' : quickCreateConfig ? 'QUICK_CREATE' : undefined),
           userRole: currentUser?.role || 'user'
         })
       });
@@ -998,7 +1010,10 @@ export default function App() {
       <>
         <LandingPage 
           currentUser={currentUser}
-          onEnterStudio={() => {
+          onEnterStudio={(initPrompt) => {
+            if (initPrompt) {
+              setPrompt(initPrompt);
+            }
             if (currentUser) {
               window.history.pushState({}, '', '/studio');
               setCurrentRoute('/studio');
@@ -1037,7 +1052,10 @@ export default function App() {
       <>
         <LandingPage 
           currentUser={currentUser}
-          onEnterStudio={() => {
+          onEnterStudio={(initPrompt) => {
+            if (initPrompt) {
+              setPrompt(initPrompt);
+            }
             if (currentUser) {
               window.history.pushState({}, '', '/studio');
               setCurrentRoute('/studio');
@@ -1157,6 +1175,18 @@ export default function App() {
           setIsStudioSelectorOpen(false);
           setIsEducationalModalOpen(true);
         }}
+        onSelectFilm={() => {
+          setIsStudioSelectorOpen(false);
+          setIsFilmModalOpen(true);
+        }}
+        onSelectVideoAds={() => {
+          setIsStudioSelectorOpen(false);
+          setIsVideoAdsModalOpen(true);
+        }}
+        onSelectQuickCreate={() => {
+          setIsStudioSelectorOpen(false);
+          setIsQuickCreateModalOpen(true);
+        }}
       />
 
       <AffiliateConfigModal
@@ -1178,6 +1208,24 @@ export default function App() {
         onClose={() => setIsEducationalModalOpen(false)}
         onSubmit={(config, p) => handleInteract(p, undefined, undefined, undefined, config, 'EDUCATIONAL')}
         initialValues={educationalInitialValues}
+      />
+
+      <FilmConfigModal
+        isOpen={isFilmModalOpen}
+        onClose={() => setIsFilmModalOpen(false)}
+        onSubmit={(config, p) => handleInteract(p, undefined, undefined, undefined, undefined, 'FILM', config)}
+      />
+
+      <VideoAdsConfigModal
+        isOpen={isVideoAdsModalOpen}
+        onClose={() => setIsVideoAdsModalOpen(false)}
+        onSubmit={(config, p) => handleInteract(p, undefined, undefined, undefined, undefined, 'VIDEO_ADS', undefined, config)}
+      />
+
+      <QuickCreateModal
+        isOpen={isQuickCreateModalOpen}
+        onClose={() => setIsQuickCreateModalOpen(false)}
+        onSubmit={(config, p) => handleInteract(p, undefined, undefined, undefined, undefined, 'QUICK_CREATE', undefined, undefined, config)}
       />
 
       {/* Drag & Drop Visual Overlay */}

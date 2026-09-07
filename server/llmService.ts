@@ -193,6 +193,36 @@ Promo: ${aff.pricePromo || 'Diskon Terbatas & Gratis Ongkir'}.
 CTA: ${aff.callToAction || 'Klik keranjang kuning di kiri bawah'}.
 Hook Style: ${aff.hookStyle || 'PAIN_POINT'}.
 Craft a high-converting affiliate video brief focusing on scroll-stopping hook, product demo, and buying urgency.`;
+    } else if (videoType === 'FILM' || videoType === 'CINEMATIC') {
+      const film = config || {};
+      systemInstruction = `You are NEURONA Film Director & Cinematic Storyteller.
+Video Type: FILM / CINEMATIC.
+Title: ${film.title || prompt}.
+Genre: ${film.genre || 'DRAMA'}.
+Style: ${film.style || 'DARK_MOODY'}.
+Logline: ${film.logline || 'Dramatic story'}.
+Characters: ${film.charactersDescription || 'Deep emotional character'}.
+Tone: ${film.voiceTone || 'DEEP_CINEMATIC'}.
+Craft a highly cinematic, dramatic, and emotionally resonant movie brief with Hollywood-level artistic depth.`;
+    } else if (videoType === 'VIDEO_ADS' || videoType === 'BRAND_COMMERCIAL') {
+      const ad = config || {};
+      systemInstruction = `You are NEURONA High-Conversion Commercial Ads Director.
+Video Type: VIDEO ADS / BRAND COMMERCIAL.
+Product: ${ad.productName || prompt}.
+Objective: ${ad.objective || 'SALES'}.
+Hook Style: ${ad.hookStyle || 'HIGH_ENERGY'}.
+Benefits: ${ad.benefits || 'High quality'}.
+CTA: ${ad.cta || 'Buy now'}.
+Target: ${ad.targetAudience || 'General'}.
+Craft a highly persuasive commercial brief with a scroll-stopping hook, product value proposition, and an urgent call-to-action.`;
+    } else if (videoType === 'QUICK_CREATE') {
+      const quick = config || {};
+      systemInstruction = `You are NEURONA Lightning-Fast Concept Designer.
+Video Type: QUICK CREATE.
+Topic: ${quick.topic || prompt}.
+Style: ${quick.style || 'CINEMATIC'}.
+Target Audience: ${quick.targetAudience || 'General'}.
+Craft a streamlined, high-impact short form video concept that is engaging, fast-paced, and punchy.`;
     } else {
       systemInstruction = `You are NEURONA Creative Strategist. Create a brief for a cinematic video production: "${prompt}".`;
     }
@@ -716,6 +746,58 @@ ${charVisual ? `- Ciri Fisik Ekstrak dari Foto Karakter (Vision Lock): "${charVi
 - Bahasa Narasi: "${edu.language || 'id'}"
 - Aspect Ratio: "${edu.aspectRatio || '16:9'}"
 - Jumlah Bab / Adegan: ${edu.chapterCount || 4}
+`;
+    } else if (videoType === 'FILM' || videoType === 'CINEMATIC') {
+      const film = config || {};
+      contextBlock = `
+[ROLE: MASTER FILM STUDIO DIRECTOR & CINEMATIC STORYBOARD ARCHITECT]
+- Video Type: FILM / CINEMATIC STORYTELLING (Ultra premium cinema grade)
+- Film Title: "${film.title || brief}"
+- Genre: "${film.genre || 'DRAMA'}"
+- Cinematic Style Palette: "${film.style || 'DARK_MOODY'}"
+- Logline / Premise: "${film.logline || 'Kisah dramatis penuh emosi'}"
+- Characters: "${film.charactersDescription || 'Karakter utama dengan kedalaman emosional'}"
+- Tone Suara / Voice Tone: "${film.voiceTone || 'DEEP_CINEMATIC'}"
+- Target Resolution / Aspect Ratio: "${film.aspectRatio || '16:9'}"
+
+[FILM STUDIO CINEMATIC RULES - MANDATORY]:
+1. Ultra-precise cinematography terms (anamorphic flare, cinematic backlight, volumetric smoke, high contrast, 35mm film grain).
+2. Dynamic scene transitions matching the movie tone.
+3. High cinematic gravity, emotional dialogue or storytelling voiceover.
+`;
+    } else if (videoType === 'VIDEO_ADS' || videoType === 'BRAND_COMMERCIAL') {
+      const ad = config || {};
+      contextBlock = `
+[ROLE: HIGH-CONVERSION VIDEO ADS PRODUCER]
+- Video Type: VIDEO ADS / BRAND COMMERCIAL
+- Product Name: "${ad.productName || brief}"
+- Objective: "${ad.objective || 'SALES'}"
+- Promo Hook Style: "${ad.hookStyle || 'HIGH_ENERGY'}"
+- Product Benefits: "${ad.benefits || 'Solusi terbaik untuk kebutuhan Anda'}"
+- Call to Action: "${ad.cta || 'Dapatkan promo hari ini!'}"
+- Target Audience: "${ad.targetAudience || 'Pengguna umum'}"
+- Aspect Ratio: "${ad.aspectRatio || '9:16'}"
+
+[VIDEO ADS COMMERCIAL RULES - MANDATORY]:
+1. Fast-paced, high engagement hook in first 3 seconds.
+2. Bold text overlays in Indonesian showing value proposition.
+3. Strong call to action in the final scene.
+4. Professional studio lighting, clean background, product presentation close-ups.
+`;
+    } else if (videoType === 'QUICK_CREATE') {
+      const quick = config || {};
+      contextBlock = `
+[ROLE: LIGHTNING-FAST QUICK CREATE WORKFLOW]
+- Video Type: QUICK CREATE (Fast formulation)
+- Topic / Concept: "${quick.topic || brief}"
+- Aspect Ratio: "${quick.aspectRatio || '9:16'}"
+- Target Audience: "${quick.targetAudience || 'Audience umum'}"
+- Style Selected: "${quick.style || 'CINEMATIC'}"
+
+[QUICK CREATE RULES]:
+1. Clean, streamlined storytelling with 3 high-impact scenes.
+2. Strong visual consistency.
+3. Punchy voiceover and clear typography.
 `;
     } else {
       const aff = config || {};
