@@ -264,7 +264,8 @@ export class DomainConfigService {
    * Calculates derived OAuth and Webhook URLs from a base origin
    */
   public static deriveOAuthUrls(baseOrigin: string): DerivedOAuthUrls {
-    const cleanOrigin = this.normalizeUrl(baseOrigin) || 'http://localhost:3000';
+    const config = this.getActiveConfig();
+    const cleanOrigin = this.normalizeUrl(baseOrigin) || (config.environment === 'development' ? 'http://localhost:3000' : (config.canonicalUrl || config.productionAppUrl || 'https://app.neurona.ai'));
     return {
       oauthCallbackBaseUrl: `${cleanOrigin}/api/fcc`,
       openArtOAuthCallbackUrl: `${cleanOrigin}/api/fcc/openart/oauth/callback`,
@@ -394,10 +395,14 @@ export class DomainConfigService {
     // Add configured canonical & production URLs
     if (config.canonicalUrl) approvedOrigins.add(this.normalizeUrl(config.canonicalUrl));
     if (config.productionAppUrl) approvedOrigins.add(this.normalizeUrl(config.productionAppUrl));
-    if (config.developmentAppUrl) approvedOrigins.add(this.normalizeUrl(config.developmentAppUrl));
+    if (config.environment === 'development' && config.developmentAppUrl) {
+      approvedOrigins.add(this.normalizeUrl(config.developmentAppUrl));
+    }
+
+    const fallbackCanonical = config.environment === 'development' ? 'http://localhost:3000' : (config.canonicalUrl || config.productionAppUrl || 'https://app.neurona.ai');
 
     if (!reqHeaders) {
-      return config.canonicalUrl || 'http://localhost:3000';
+      return fallbackCanonical;
     }
 
     const rawProto = reqHeaders['x-forwarded-proto'];
@@ -411,12 +416,17 @@ export class DomainConfigService {
     if (cleanHost) {
       const candidateOrigin = this.normalizeUrl(`${cleanProto}://${cleanHost}`);
       if (approvedOrigins.has(candidateOrigin)) {
+        // Enforce no localhost in production even if headers spoof it
+        if (config.environment !== 'development' && (candidateOrigin.includes('localhost') || candidateOrigin.includes('127.0.0.1'))) {
+            console.warn(`[DomainConfigService] Origin "${candidateOrigin}" is localhost but environment is not development. Defaulting to canonical origin.`);
+            return fallbackCanonical;
+        }
         return candidateOrigin;
       }
       console.warn(`[DomainConfigService] Origin "${candidateOrigin}" is not in explicit approved allowlist. Defaulting to canonical origin.`);
     }
 
-    return config.canonicalUrl || 'http://localhost:3000';
+    return fallbackCanonical;
   }
 
   /**

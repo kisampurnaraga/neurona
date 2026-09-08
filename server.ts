@@ -1011,11 +1011,8 @@ async function startServer() {
   // OpenArt OAuth Callback (Browser Redirect / Popup with PKCE Token Exchange & MCP Validation)
   app.get('/api/fcc/openart/oauth/callback', async (req, res) => {
     const { code, state, error, error_description } = req.query;
-    const forwardedProto = req.headers['x-forwarded-proto'] as string;
-    const forwardedHost = req.headers['x-forwarded-host'] as string;
-    const protocol = forwardedProto || req.protocol || 'http';
-    const host = forwardedHost || req.get('host') || 'localhost:3000';
-    const fallbackOrigin = `${protocol}://${host}`;
+    const { OpenArtOAuthService } = await import('./server/services/openartOAuthService');
+    const fallbackOrigin = OpenArtOAuthService.getCanonicalTrustedOrigin(req.headers as any);
     
     if (error) {
       return res.send(`
@@ -1046,6 +1043,11 @@ async function startServer() {
           <h2 style="color: #ef4444; margin-bottom: 12px;">Parameter Callback Tidak Lengkap</h2>
           <p style="color: #94a3b8; font-size: 14px;">Authorization code atau state tidak ditemukan dalam URL callback.</p>
           <button onclick="window.close()" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Tutup</button>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: 'OPENART_AUTH_ERROR', error: 'MISSING_PARAMETERS', description: 'Authorization code atau state tidak ditemukan.' }, ${JSON.stringify(fallbackOrigin)});
+            }
+          </script>
         </body>
         </html>
       `);
@@ -1128,6 +1130,7 @@ async function startServer() {
       `);
     } catch (err: any) {
       console.error('[OpenArt Callback Error]:', err);
+      const targetOrigin = fallbackOrigin;
       return res.send(`
         <!DOCTYPE html>
         <html>
@@ -1135,6 +1138,11 @@ async function startServer() {
         <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
           <h2 style="color: #ef4444; margin-bottom: 12px;">Terjadi Kesalahan Server</h2>
           <p style="color: #94a3b8; font-size: 14px;">${err?.message || String(err)}</p>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: 'OPENART_AUTH_ERROR', error: 'SERVER_ERROR', description: '${(err?.message || String(err)).replace(/'/g, "\\'")}' }, ${JSON.stringify(targetOrigin)});
+            }
+          </script>
         </body>
         </html>
       `);
@@ -1403,6 +1411,15 @@ async function startServer() {
           <h2 style="color: #ef4444; margin-bottom: 12px;">Parameter Callback Tidak Lengkap</h2>
           <p style="color: #94a3b8; font-size: 14px;">Authorization code atau state tidak ditemukan dalam URL callback.</p>
           <button onclick="window.close()" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Tutup</button>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({
+                type: 'HIGGSFIELD_AUTH_ERROR',
+                error: 'MISSING_PARAMETERS',
+                description: 'Authorization code atau state tidak ditemukan.'
+              }, ${JSON.stringify(trustedOrigin)});
+            }
+          </script>
         </body>
         </html>
       `);
@@ -1505,6 +1522,15 @@ async function startServer() {
         <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
           <h2 style="color: #ef4444; margin-bottom: 12px;">Terjadi Kesalahan Server</h2>
           <p style="color: #94a3b8; font-size: 14px;">${safeErrMsg}</p>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({
+                type: 'HIGGSFIELD_AUTH_ERROR',
+                error: 'SERVER_ERROR',
+                description: ${JSON.stringify(err?.message || String(err))}
+              }, ${JSON.stringify(trustedOrigin)});
+            }
+          </script>
         </body>
         </html>
       `);
