@@ -140,7 +140,7 @@ export class OpenArtOAuthService {
     this.cleanExpiredSessions();
 
     const cleanOrigin = origin.replace(/\/+$/, '');
-    const redirectUri = `${cleanOrigin}/api/fcc/openart/oauth/callback`;
+    const redirectUri = DomainConfigService.deriveOAuthUrls(cleanOrigin).openArtOAuthCallbackUrl;
     const clientId = await this.getOrRegisterClient(redirectUri);
 
     const { verifier, challenge } = this.generatePKCE();

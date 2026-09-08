@@ -91,10 +91,10 @@ async function runDomainAudit() {
   assert(spoofedHost === 'https://domain.com', `Spoofed X-Forwarded-Host header rejected, defaulted to canonical: ${spoofedHost}`);
 
   // 3.2 Derived URLs calculation from canonical origin
-  const derived = DomainConfigService.deriveOAuthUrls('https://app.newdomain.com');
-  assert(derived.openArtOAuthCallbackUrl === 'https://app.newdomain.com/api/fcc/openart/oauth/callback', `OpenArt callback derived correctly: ${derived.openArtOAuthCallbackUrl}`);
-  assert(derived.higgsfieldOAuthCallbackUrl === 'https://app.newdomain.com/api/fcc/higgsfield/oauth/callback', `Higgsfield callback derived correctly: ${derived.higgsfieldOAuthCallbackUrl}`);
-  assert(derived.telegramWebhookUrl === 'https://app.newdomain.com/api/v1/founder/payment/telegram-webhook', `Telegram webhook derived correctly: ${derived.telegramWebhookUrl}`);
+  const derived = DomainConfigService.deriveOAuthUrls('https://app.newdomain.com'); // Parameter should be ignored in favor of canonical (domain.com)
+  assert(derived.openArtOAuthCallbackUrl === 'https://domain.com/api/fcc/openart/oauth/callback', `OpenArt callback derived correctly: ${derived.openArtOAuthCallbackUrl}`);
+  assert(derived.higgsfieldOAuthCallbackUrl === 'https://domain.com/api/fcc/higgsfield/oauth/callback', `Higgsfield callback derived correctly: ${derived.higgsfieldOAuthCallbackUrl}`);
+  assert(derived.telegramWebhookUrl === 'https://domain.com/api/v1/founder/payment/telegram-webhook', `Telegram webhook derived correctly: ${derived.telegramWebhookUrl}`);
 
 
   // TEST GROUP 4: Domain Change & Atomic Rollback
@@ -128,6 +128,8 @@ async function runDomainAudit() {
   const activeAfterRollback = FounderService.getDomainConfig();
   assert(activeAfterRollback.productionAppUrl === 'https://app.domainbaru.com', 'Rollback protection active: Previous valid configuration remained completely untouched');
 
+  // CLEANUP DB POLLUTION
+  db.delete(systemSettings).where(eq(systemSettings.key, 'domain_url_management_config')).run();
 
   // TEST GROUP 5: Security & Audit Logging (No Credentials Exposed)
   console.log('\n--- TEST GROUP 5: Security & Audit Logging ---');

@@ -244,7 +244,7 @@ export class DomainConfigService {
       updatedBy: config.updatedBy || 'Founder'
     };
 
-    const derivedUrls = this.deriveOAuthUrls(normalizedConfig.canonicalUrl || normalizedConfig.productionAppUrl);
+    const derivedUrls = this.deriveOAuthUrls(normalizedConfig.canonicalUrl || normalizedConfig.productionAppUrl, normalizedConfig);
 
     // Warning check: if productionAppUrl changed, remind founder to update external OAuth consoles
     if (normalizedConfig.productionAppUrl !== 'https://app.neurona.ai') {
@@ -261,11 +261,20 @@ export class DomainConfigService {
   }
 
   /**
-   * Calculates derived OAuth and Webhook URLs from a base origin
+   * Calculates derived OAuth and Webhook URLs from a base origin or config
    */
-  public static deriveOAuthUrls(baseOrigin: string): DerivedOAuthUrls {
-    const config = this.getActiveConfig();
-    const cleanOrigin = this.normalizeUrl(baseOrigin) || (config.environment === 'development' ? 'http://localhost:3000' : (config.canonicalUrl || config.productionAppUrl || 'https://app.neurona.ai'));
+  public static deriveOAuthUrls(baseOrigin: string, explicitConfig?: DomainConfig): DerivedOAuthUrls {
+    const config = explicitConfig || this.getActiveConfig();
+    let cleanOrigin = this.normalizeUrl(baseOrigin);
+    
+    // Always use canonical URL for callbacks, EXCEPT when specifically doing local dev on localhost.
+    // AI Studio URLs and preview deployments MUST use the configured canonical URL for OAuth callbacks
+    // because third-party OAuth providers (OpenArt, Higgsfield) strictly require pre-registered URIs.
+    const isLocalhost = cleanOrigin.includes('localhost') || cleanOrigin.includes('127.0.0.1');
+    if (!isLocalhost || config.environment !== 'development') {
+      cleanOrigin = config.canonicalUrl || config.productionAppUrl || 'https://app.neurona.ai';
+    }
+
     return {
       oauthCallbackBaseUrl: `${cleanOrigin}/api/fcc`,
       openArtOAuthCallbackUrl: `${cleanOrigin}/api/fcc/openart/oauth/callback`,

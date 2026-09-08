@@ -409,7 +409,7 @@ export class HiggsfieldOAuthService {
     this.cleanExpiredSessions();
 
     const cleanOrigin = trustedOrigin.replace(/\/+$/, '');
-    const redirectUri = `${cleanOrigin}/api/fcc/higgsfield/oauth/callback`;
+    const redirectUri = DomainConfigService.deriveOAuthUrls(cleanOrigin).higgsfieldOAuthCallbackUrl;
     const clientId = await this.getOrRegisterClient(redirectUri);
 
     const authMeta = await this.discoverAuthorizationServerMetadata();
