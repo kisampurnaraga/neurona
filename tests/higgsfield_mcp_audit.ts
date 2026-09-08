@@ -6,7 +6,7 @@ import { HiggsfieldOAuthService } from '../server/services/higgsfieldOAuthServic
 
 async function runAudit() {
   console.log('====================================================');
-  console.log(' NEURONA HIGGSFIELD MCP OAUTH & REGRESSION SUITE');
+  console.log(' NEURONA HIGGSFIELD MCP SECURITY & OAUTH AUDIT');
   console.log('====================================================\n');
 
   let passed = 0;
@@ -52,35 +52,49 @@ async function runAudit() {
   assert(typeof t2vTool === 'string' && t2vTool.length > 0, `Text-to-Video tool resolved to: "${t2vTool}"`);
   assert(typeof i2vTool === 'string' && i2vTool.length > 0, `Image-to-Video tool resolved to: "${i2vTool}"`);
 
-  // TEST 4: Official OAuth PKCE Flow Verification
-  console.log('\n--- TEST GROUP 4: Official Higgsfield OAuth PKCE Flow ---');
+  // TEST 4: Security Hardening - Canonical Trusted Origin Resolution
+  console.log('\n--- TEST GROUP 4: Security Hardening - Trusted Origin Resolution ---');
+  const localhostOrigin = HiggsfieldOAuthService.getCanonicalTrustedOrigin({ 'x-forwarded-proto': 'http', 'x-forwarded-host': 'localhost:3000' });
+  assert(localhostOrigin === 'http://localhost:3000', `Localhost origin resolved correctly: ${localhostOrigin}`);
+
+  const cloudRunOrigin = HiggsfieldOAuthService.getCanonicalTrustedOrigin({ 'x-forwarded-proto': 'https', 'x-forwarded-host': 'ais-dev-app.asia-southeast1.run.app' });
+  assert(cloudRunOrigin === 'https://ais-dev-app.asia-southeast1.run.app', `Cloud Run origin resolved securely: ${cloudRunOrigin}`);
+
+  const spoofedOrigin = HiggsfieldOAuthService.getCanonicalTrustedOrigin({ 'x-forwarded-proto': 'https', 'x-forwarded-host': 'malicious-attacker.com' });
+  assert(spoofedOrigin === 'http://localhost:3000', `Host-header spoofing rejected, safely defaulted: ${spoofedOrigin}`);
+
+  // TEST 5: Security Hardening - PKCE Generation & Session Integrity
+  console.log('\n--- TEST GROUP 5: Official Higgsfield OAuth PKCE Flow ---');
   
-  // 4.1 PKCE Generation
+  // 5.1 PKCE Generation
   const pkce = HiggsfieldOAuthService.generatePKCE();
   assert(typeof pkce.verifier === 'string' && pkce.verifier.length > 30, 'PKCE Verifier generated with cryptographic entropy');
   assert(typeof pkce.challenge === 'string' && pkce.challenge.length > 30, 'PKCE S256 Challenge generated correctly');
 
-  // 4.2 Authorization Session Creation
+  // 5.2 Authorization Session Creation
   const authSession = await HiggsfieldOAuthService.createAuthorizationSession('http://localhost:3000');
   assert(typeof authSession.state === 'string' && authSession.state.startsWith('higgsfield_pkce_'), `OAuth state is prefixed: "${authSession.state.substring(0, 25)}..."`);
   assert(typeof authSession.authUrl === 'string' && authSession.authUrl.includes('higgsfield.ai'), 'OAuth authUrl points to official Higgsfield login/auth portal');
   assert(typeof authSession.clientId === 'string' && authSession.clientId.length > 0, `OAuth client ID established: "${authSession.clientId.substring(0, 15)}..."`);
 
-  // 4.3 OAuth Token Exchange & Replay Protection Test
+  // 5.3 Strict Token Exchange & Replay Protection Test
   const mockCode = 'hf_mock_oauth_auth_code_' + Date.now();
+  
+  // When external token endpoint is unreachable in isolated test runner, exchangeCodeForToken must strictly return error (NO fallback to code)
   const exchangeResult = await HiggsfieldOAuthService.exchangeCodeForToken(mockCode, authSession.state);
-  assert(exchangeResult.success === true && !!exchangeResult.token, 'OAuth code exchanged for authorized MCP session token');
+  assert(exchangeResult.success === false && ['TOKEN_ENDPOINT_UNREACHABLE', 'TOKEN_EXCHANGE_REJECTED'].includes(exchangeResult.error || ''), 
+    `Strict Token Exchange: Code is NEVER treated as token on endpoint failure (Error: ${exchangeResult.error})`);
 
-  // Replay protection: using the same state again must fail
+  // 5.4 Replay protection: using the same state again must fail
   const replayResult = await HiggsfieldOAuthService.exchangeCodeForToken(mockCode, authSession.state);
   assert(replayResult.success === false && replayResult.error === 'INVALID_STATE', 'Replay protection active: Consumed state is deleted from session store');
 
-  // 4.4 Disconnect & Revocation
-  const revokeResult = await HiggsfieldOAuthService.revokeToken(exchangeResult.token);
+  // 5.5 Disconnect & Revocation
+  const revokeResult = await HiggsfieldOAuthService.revokeToken('test_token_for_revocation');
   assert(revokeResult.success === true, 'Higgsfield OAuth token revocation & SQLite credential purge succeeded');
 
-  // TEST 5: CreditService Integrity (HOLD -> COMMIT / REFUND)
-  console.log('\n--- TEST GROUP 5: CreditService Integrity & Hold Lifecycle ---');
+  // TEST 6: CreditService Integrity (HOLD -> COMMIT / REFUND)
+  console.log('\n--- TEST GROUP 6: CreditService Integrity & Hold Lifecycle ---');
   const commitUserId = 'usr_regular_commit_test';
   const refundUserId = 'usr_regular_refund_test';
 
@@ -107,7 +121,7 @@ async function runAudit() {
     }).onConflictDoNothing();
   } catch (e) {}
   
-  // 5.1 Pricing calculation
+  // 6.1 Pricing calculation
   const costLookup = CreditService.calculateCreditCost('higgsfield-video-pro', {
     provider: 'higgsfield',
     operation: 'text-to-video',
@@ -115,7 +129,7 @@ async function runAudit() {
   });
   assert(costLookup.credits > 0, `Authoritative pricing found for higgsfield-video-pro (${costLookup.credits} credits, $${costLookup.costUsd})`);
 
-  // 5.2 Credit Reserve (HOLD)
+  // 6.2 Credit Reserve (HOLD)
   const runId = Date.now() + '_' + Math.random().toString(36).substring(2, 7);
   const holdRes = await CreditService.holdCredits(
     commitUserId,
@@ -129,7 +143,7 @@ async function runAudit() {
   assert(holdRes.success === true && !!holdRes.holdId, `Credit HOLD successful (Hold ID: ${holdRes.holdId})`);
 
   if (holdRes.success && holdRes.holdId) {
-    // 5.3 Credit Commit
+    // 6.3 Credit Commit
     let commitFailed = false;
     try {
       await CreditService.commitHold(commitUserId, costLookup.credits, holdRes.holdId);
@@ -139,7 +153,7 @@ async function runAudit() {
     }
     assert(!commitFailed, 'Credit COMMIT (commitHold) completed cleanly');
 
-    // 5.4 Test Refund Protection (Cannot refund already committed hold)
+    // 6.4 Test Refund Protection (Cannot refund already committed hold)
     let refundFailed = false;
     try {
       await CreditService.refundCredits(commitUserId, costLookup.credits, 'Test refund on committed', holdRes.holdId);
@@ -149,7 +163,7 @@ async function runAudit() {
     assert(refundFailed, 'Committed credit cannot be refunded (Strict Anti-Double-Charge / Hold Integrity)');
   }
 
-  // 5.5 Test Explicit Failure -> STOP + REFUND Flow
+  // 6.5 Test Explicit Failure -> STOP + REFUND Flow
   const failHoldRes = await CreditService.holdCredits(
     refundUserId,
     costLookup.credits,

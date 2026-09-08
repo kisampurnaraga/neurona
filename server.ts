@@ -1317,17 +1317,13 @@ async function startServer() {
   });
 
   // Higgsfield OAuth Authorization Flow Initialization (RFC 7591 Dynamic Client + RFC 7636 PKCE)
+  // Higgsfield OAuth Authorization Flow Initialization (RFC 7591 Dynamic Client + RFC 7636 PKCE)
   app.get('/api/fcc/higgsfield/auth/init', async (req, res) => {
     if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
     try {
-      const forwardedProto = req.headers['x-forwarded-proto'] as string;
-      const forwardedHost = req.headers['x-forwarded-host'] as string;
-      const protocol = forwardedProto || req.protocol || 'http';
-      const host = forwardedHost || req.get('host') || 'localhost:3000';
-      const origin = (req.query.origin as string) || `${protocol}://${host}`;
-
       const { HiggsfieldOAuthService } = await import('./server/services/higgsfieldOAuthService');
-      const session = await HiggsfieldOAuthService.createAuthorizationSession(origin);
+      const trustedOrigin = HiggsfieldOAuthService.getCanonicalTrustedOrigin(req.headers as any, req.get('host'));
+      const session = await HiggsfieldOAuthService.createAuthorizationSession(trustedOrigin);
       const directPortalUrl = 'https://higgsfield.ai/account/api-keys';
 
       res.json({
@@ -1346,27 +1342,41 @@ async function startServer() {
     }
   });
 
+  // Helper for safe HTML entity escaping to prevent XSS in OAuth callback HTML
+  function escapeHtmlSafe(value: any): string {
+    if (value === null || value === undefined) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   // Higgsfield OAuth Callback (Browser Redirect / Popup with PKCE Token Exchange & MCP Validation)
   app.get('/api/fcc/higgsfield/oauth/callback', async (req, res) => {
     const { code, state, error, error_description } = req.query;
-    const forwardedProto = req.headers['x-forwarded-proto'] as string;
-    const forwardedHost = req.headers['x-forwarded-host'] as string;
-    const protocol = forwardedProto || req.protocol || 'http';
-    const host = forwardedHost || req.get('host') || 'localhost:3000';
-    const fallbackOrigin = `${protocol}://${host}`;
+    const { HiggsfieldOAuthService } = await import('./server/services/higgsfieldOAuthService');
+    const trustedOrigin = HiggsfieldOAuthService.getCanonicalTrustedOrigin(req.headers as any, req.get('host'));
 
     if (error) {
+      const safeError = escapeHtmlSafe(error);
+      const safeErrorDesc = escapeHtmlSafe(error_description || error || 'Otorisasi Higgsfield dibatalkan oleh pengguna.');
       return res.send(`
         <!DOCTYPE html>
         <html>
         <head><title>Higgsfield Authorization Error</title></head>
         <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
           <h2 style="color: #ef4444; margin-bottom: 12px;">Otorisasi Ditolak atau Dibatalkan</h2>
-          <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${error_description || error || 'Otorisasi Higgsfield dibatalkan oleh pengguna.'}</p>
+          <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${safeErrorDesc}</p>
           <button onclick="window.close()" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Tutup Jendela</button>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'HIGGSFIELD_AUTH_ERROR', error: '${error}', description: '${error_description || ''}' }, ${JSON.stringify(fallbackOrigin)});
+              window.opener.postMessage({
+                type: 'HIGGSFIELD_AUTH_ERROR',
+                error: ${JSON.stringify(String(error))},
+                description: ${JSON.stringify(String(error_description || ''))}
+              }, ${JSON.stringify(trustedOrigin)});
               setTimeout(() => window.close(), 3000);
             }
           </script>
@@ -1390,22 +1400,27 @@ async function startServer() {
     }
 
     try {
-      const { HiggsfieldOAuthService } = await import('./server/services/higgsfieldOAuthService');
       const exchangeRes = await HiggsfieldOAuthService.exchangeCodeForToken(String(code), String(state));
-      const targetOrigin = exchangeRes?.origin || fallbackOrigin;
+      const targetOrigin = exchangeRes?.canonicalOrigin || trustedOrigin;
 
-      if (!exchangeRes.success || !exchangeRes.token) {
+      if (!exchangeRes.success || !exchangeRes.oauthAccessToken) {
+        const safeExchangeError = escapeHtmlSafe(exchangeRes.error || 'EXCHANGE_FAILED');
+        const safeExchangeMsg = escapeHtmlSafe(exchangeRes.message || exchangeRes.error || 'Server Higgsfield menolak kode otorisasi.');
         return res.send(`
           <!DOCTYPE html>
           <html>
           <head><title>Higgsfield Token Exchange Failed</title></head>
           <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
             <h2 style="color: #ef4444; margin-bottom: 12px;">Gagal Menukar Authorization Code</h2>
-            <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${exchangeRes.message || exchangeRes.error || 'Server Higgsfield menolak kode otorisasi.'}</p>
+            <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${safeExchangeMsg}</p>
             <button onclick="window.close()" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; cursor: pointer;">Tutup Jendela</button>
             <script>
               if (window.opener) {
-                window.opener.postMessage({ type: 'HIGGSFIELD_AUTH_ERROR', error: '${exchangeRes.error || 'EXCHANGE_FAILED'}', description: '${exchangeRes.message || ''}' }, ${JSON.stringify(targetOrigin)});
+                window.opener.postMessage({
+                  type: 'HIGGSFIELD_AUTH_ERROR',
+                  error: ${JSON.stringify(exchangeRes.error || 'EXCHANGE_FAILED')},
+                  description: ${JSON.stringify(exchangeRes.message || '')}
+                }, ${JSON.stringify(targetOrigin)});
               }
             </script>
           </body>
@@ -1416,19 +1431,25 @@ async function startServer() {
       // Perform real-time MCP validation (initialize + tools/list)
       const { HiggsfieldMCPAdapter } = await import('./src/server/providers/HiggsfieldMCPAdapter');
       const adapter = new HiggsfieldMCPAdapter();
-      const valRes = await adapter.validateSessionToken(exchangeRes.token);
+      const valRes = await adapter.validateSessionToken(exchangeRes.oauthAccessToken);
 
       if (!valRes.valid) {
+        const safeValError = escapeHtmlSafe(valRes.error || 'MCP_VALIDATION_FAILED');
+        const safeValMsg = escapeHtmlSafe(valRes.message || 'Token valid namun handshake MCP gagal.');
         return res.send(`
           <!DOCTYPE html>
           <html>
           <head><title>Higgsfield MCP Validation Failed</title></head>
           <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
             <h2 style="color: #ef4444; margin-bottom: 12px;">Validasi MCP Server Ditolak</h2>
-            <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${valRes.message || 'Token valid namun handshake MCP gagal.'}</p>
+            <p style="color: #94a3b8; font-size: 14px; max-width: 480px; margin: 0 auto 24px;">${safeValMsg}</p>
             <script>
               if (window.opener) {
-                window.opener.postMessage({ type: 'HIGGSFIELD_AUTH_ERROR', error: '${valRes.error || 'MCP_VALIDATION_FAILED'}', description: '${valRes.message || ''}' }, ${JSON.stringify(targetOrigin)});
+                window.opener.postMessage({
+                  type: 'HIGGSFIELD_AUTH_ERROR',
+                  error: ${JSON.stringify(valRes.error || 'MCP_VALIDATION_FAILED')},
+                  description: ${JSON.stringify(valRes.message || '')}
+                }, ${JSON.stringify(targetOrigin)});
               }
             </script>
           </body>
@@ -1436,9 +1457,10 @@ async function startServer() {
         `);
       }
 
-      // Save encrypted token to SQLite
+      // Save encrypted token to SQLite with clear credential separation
       FounderService.saveProviderConfig('higgsfield', {
-        apiKey: exchangeRes.token,
+        oauthAccessToken: exchangeRes.oauthAccessToken,
+        apiKey: exchangeRes.oauthAccessToken,
         endpoint: 'https://mcp.higgsfield.ai/mcp',
         model: 'higgsfield-video-pro'
       });
@@ -1455,8 +1477,8 @@ async function startServer() {
               window.opener.postMessage({
                 type: 'HIGGSFIELD_AUTH_SUCCESS',
                 success: true,
-                toolsCount: ${valRes.toolsCount || 0},
-                latencyMs: ${valRes.latencyMs || 25}
+                toolsCount: ${Number(valRes.toolsCount || 0)},
+                latencyMs: ${Number(valRes.latencyMs || 25)}
               }, ${JSON.stringify(targetOrigin)});
               setTimeout(() => window.close(), 1200);
             }
@@ -1466,61 +1488,27 @@ async function startServer() {
       `);
     } catch (err: any) {
       console.error('[Higgsfield Callback Error]:', err);
+      const safeErrMsg = escapeHtmlSafe(err?.message || String(err));
       return res.send(`
         <!DOCTYPE html>
         <html>
         <head><title>Higgsfield Server Error</title></head>
         <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0A0A14; color: #f87171; text-align: center; padding: 60px 20px;">
           <h2 style="color: #ef4444; margin-bottom: 12px;">Terjadi Kesalahan Server</h2>
-          <p style="color: #94a3b8; font-size: 14px;">${err?.message || String(err)}</p>
+          <p style="color: #94a3b8; font-size: 14px;">${safeErrMsg}</p>
         </body>
         </html>
       `);
     }
   });
 
-  // Higgsfield OAuth Token / Session Validation Endpoint
+  // Legacy manual token verification endpoint is explicitly disabled
   app.post('/api/fcc/higgsfield/auth/verify', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
-    try {
-      const { token, sessionToken, code, endpoint, model } = req.body;
-      const targetToken = (token || sessionToken || code || '').trim();
-
-      if (!targetToken) {
-        return res.status(400).json({
-          success: false,
-          error: 'EMPTY_TOKEN',
-          message: 'Token otorisasi tidak ditemukan. Silakan klik "Connect Higgsfield" untuk otorisasi akun.'
-        });
-      }
-
-      const { HiggsfieldMCPAdapter } = await import('./src/server/providers/HiggsfieldMCPAdapter');
-      const adapter = new HiggsfieldMCPAdapter();
-      const valRes = await adapter.validateSessionToken(targetToken);
-
-      if (!valRes.valid) {
-        return res.status(401).json({
-          success: false,
-          error: valRes.error || 'INVALID_TOKEN',
-          message: valRes.message || 'Otorisasi Higgsfield MCP ditolak oleh server.'
-        });
-      }
-
-      FounderService.saveProviderConfig('higgsfield', {
-        apiKey: targetToken,
-        endpoint: endpoint || 'https://mcp.higgsfield.ai/mcp',
-        model: model || 'higgsfield-video-pro'
-      });
-
-      res.json({
-        success: true,
-        message: 'Otorisasi Higgsfield MCP berhasil diverifikasi dan disimpan.',
-        toolsCount: valRes.toolsCount,
-        latencyMs: valRes.latencyMs
-      });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
+    return res.status(403).json({
+      success: false,
+      error: 'LEGACY_MANUAL_TOKEN_DISABLED',
+      message: 'Verifikasi token manual telah dinonaktifkan untuk Higgsfield MCP. Otorisasi harus dilakukan melalui alur resmi OAuth 2.0 PKCE.'
+    });
   });
 
   app.post('/api/fcc/higgsfield/test', async (req, res) => {

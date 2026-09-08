@@ -281,6 +281,7 @@ export class FounderService {
   };
 
   private static customHiggsfieldConfig: {
+    oauthAccessToken?: string;
     apiKey?: string;
     sessionToken?: string;
     model?: string;
@@ -290,11 +291,12 @@ export class FounderService {
     protocolVersion?: string;
     toolsDiscovered?: number;
   } = {
-    apiKey: process.env.HIGGSFIELD_OAUTH_TOKEN || process.env.HIGGSFIELD_AUTH_TOKEN || '',
-    sessionToken: process.env.HIGGSFIELD_OAUTH_TOKEN || process.env.HIGGSFIELD_AUTH_TOKEN || '',
+    oauthAccessToken: process.env.HIGGSFIELD_OAUTH_TOKEN || '',
+    apiKey: process.env.HIGGSFIELD_OAUTH_TOKEN || '',
+    sessionToken: process.env.HIGGSFIELD_OAUTH_TOKEN || '',
     model: 'higgsfield-video-pro',
     endpoint: process.env.HIGGSFIELD_MCP_ENDPOINT || 'https://mcp.higgsfield.ai/mcp',
-    status: (process.env.HIGGSFIELD_OAUTH_TOKEN || process.env.HIGGSFIELD_AUTH_TOKEN) ? 'READY' : 'NOT_CONFIGURED',
+    status: process.env.HIGGSFIELD_OAUTH_TOKEN ? 'READY' : 'NOT_CONFIGURED',
     protocolVersion: '2024-11-05',
     toolsDiscovered: 2
   };
@@ -521,12 +523,13 @@ export class FounderService {
     const isEnabled = process.env.HIGGSFIELD_ENABLED !== 'false';
     const endpoint = this.customHiggsfieldConfig.endpoint || process.env.HIGGSFIELD_MCP_ENDPOINT || 'https://mcp.higgsfield.ai/mcp';
     const model = this.customHiggsfieldConfig.model || 'higgsfield-video-pro';
-    const sessionToken = this.customHiggsfieldConfig.sessionToken || this.customHiggsfieldConfig.apiKey || process.env.HIGGSFIELD_OAUTH_TOKEN || process.env.HIGGSFIELD_AUTH_TOKEN || '';
-    const status = !isEnabled ? 'NOT_CONFIGURED' : (!sessionToken ? 'NOT_CONFIGURED' : (this.customHiggsfieldConfig.status || 'READY'));
+    const oauthAccessToken = this.customHiggsfieldConfig.oauthAccessToken || this.customHiggsfieldConfig.sessionToken || this.customHiggsfieldConfig.apiKey || process.env.HIGGSFIELD_OAUTH_TOKEN || '';
+    const status = !isEnabled ? 'NOT_CONFIGURED' : (!oauthAccessToken ? 'NOT_CONFIGURED' : (this.customHiggsfieldConfig.status || 'READY'));
 
     return {
-      apiKey: sessionToken,
-      sessionToken,
+      oauthAccessToken,
+      apiKey: oauthAccessToken,
+      sessionToken: oauthAccessToken,
       endpoint,
       status,
       model,
@@ -907,7 +910,7 @@ export class FounderService {
     };
   }
 
-  static saveProviderConfig(providerId: string, data: { apiKey?: string; model?: string; endpoint?: string }) {
+  static saveProviderConfig(providerId: string, data: { apiKey?: string; oauthAccessToken?: string; sessionToken?: string; model?: string; endpoint?: string }) {
     if (providerId === 'chatgpt_image_2') {
       if (data.apiKey !== undefined && data.apiKey !== '') {
         this.customGptImage2Config.apiKey = data.apiKey.trim();
@@ -1257,12 +1260,14 @@ export class FounderService {
     }
 
     if (providerId === 'higgsfield') {
-      if (data.apiKey !== undefined) {
-        const trimmed = data.apiKey.trim();
+      const tokenInput = data.oauthAccessToken !== undefined ? data.oauthAccessToken : data.apiKey;
+      if (tokenInput !== undefined) {
+        const trimmed = tokenInput.trim();
+        this.customHiggsfieldConfig.oauthAccessToken = trimmed;
         this.customHiggsfieldConfig.apiKey = trimmed;
         this.customHiggsfieldConfig.sessionToken = trimmed;
         if (trimmed) {
-          process.env.HIGGSFIELD_API_KEY = trimmed;
+          process.env.HIGGSFIELD_OAUTH_TOKEN = trimmed;
           try {
             const encrypted = encryptSecret(trimmed);
             const masked = this.maskKey(trimmed);
@@ -1291,15 +1296,16 @@ export class FounderService {
                 updatedAt: now
               }).run();
             }
-            console.log(`[FounderService] Persisted encrypted Higgsfield token in SQLite api_keys (${masked})`);
+            console.log(`[FounderService] Persisted encrypted Higgsfield OAuth token in SQLite api_keys (${masked})`);
           } catch (err: any) {
-            console.error('[FounderService] Error encrypting/saving Higgsfield token to api_keys:', err?.message);
+            console.error('[FounderService] Error encrypting/saving Higgsfield OAuth token to api_keys:', err?.message);
           }
         } else {
+          delete process.env.HIGGSFIELD_OAUTH_TOKEN;
           delete process.env.HIGGSFIELD_API_KEY;
           try {
             db.delete(apiKeys).where(eq(apiKeys.provider, 'higgsfield')).run();
-            console.log('[FounderService] Cleared Higgsfield token from SQLite api_keys');
+            console.log('[FounderService] Cleared Higgsfield OAuth token from SQLite api_keys');
           } catch (err: any) {
             console.warn('[FounderService] Error removing Higgsfield token from api_keys:', err?.message);
           }
@@ -1312,7 +1318,7 @@ export class FounderService {
         this.customHiggsfieldConfig.endpoint = data.endpoint.trim();
       }
 
-      const hasToken = !!(this.customHiggsfieldConfig.sessionToken || this.customHiggsfieldConfig.apiKey);
+      const hasToken = !!(this.customHiggsfieldConfig.oauthAccessToken || this.customHiggsfieldConfig.sessionToken || this.customHiggsfieldConfig.apiKey);
       this.customHiggsfieldConfig.status = hasToken ? 'READY' : 'NOT_CONFIGURED';
       this.customHiggsfieldConfig.lastTested = new Date().toISOString();
 

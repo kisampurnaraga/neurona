@@ -58,9 +58,9 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     return fccConfig.endpoint || process.env.HIGGSFIELD_MCP_ENDPOINT || HiggsfieldMCPAdapter.OFFICIAL_ENDPOINT;
   }
 
-  public getSessionToken(): string | null {
+  public getOAuthAccessToken(): string | null {
     const fccConfig: any = (FounderService as any).getHiggsfieldConfig?.() || {};
-    let token = fccConfig.sessionToken || fccConfig.apiKey || process.env.HIGGSFIELD_OAUTH_TOKEN || process.env.HIGGSFIELD_AUTH_TOKEN || null;
+    let token = fccConfig.oauthAccessToken || fccConfig.sessionToken || fccConfig.apiKey || process.env.HIGGSFIELD_OAUTH_TOKEN || null;
     if (!token) {
       try {
         const row = db.select().from(apiKeys).where(and(eq(apiKeys.provider, 'higgsfield'), eq(apiKeys.status, 'ACTIVE'))).get();
@@ -70,6 +70,10 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       } catch (e) {}
     }
     return token;
+  }
+
+  public getSessionToken(): string | null {
+    return this.getOAuthAccessToken();
   }
 
   public async getValidSessionToken(): Promise<string | null> {

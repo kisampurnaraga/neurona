@@ -16,9 +16,19 @@ export interface HiggsfieldOAuthSession {
   challenge: string;
   clientId: string;
   redirectUri: string;
-  origin: string;
+  canonicalOrigin: string;
   createdAt: number;
   expiresAt: number;
+}
+
+export interface HiggsfieldTokenMeta {
+  clientId: string;
+  redirectUri: string;
+  expiresAt: number;
+  scope: string;
+  encryptedRefreshToken: string | null;
+  hasRefreshToken: boolean;
+  updatedAt: string;
 }
 
 export class HiggsfieldOAuthService {
@@ -29,6 +39,50 @@ export class HiggsfieldOAuthService {
 
   private static base64URLEncode(buffer: Buffer): string {
     return buffer.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  }
+
+  /**
+   * Resolves a trusted, canonical application origin.
+   * Strips arbitrary client-provided origins and enforces whitelist validation.
+   */
+  public static getCanonicalTrustedOrigin(headers?: Record<string, string | string[] | undefined>, fallbackHost?: string): string {
+    // 1. Explicit server environment configuration takes highest priority
+    if (process.env.APP_ORIGIN && process.env.APP_ORIGIN.trim()) {
+      return process.env.APP_ORIGIN.trim().replace(/\/+$/, '');
+    }
+    if (process.env.CANONICAL_URL && process.env.CANONICAL_URL.trim()) {
+      return process.env.CANONICAL_URL.trim().replace(/\/+$/, '');
+    }
+    if (process.env.PUBLIC_URL && process.env.PUBLIC_URL.trim()) {
+      return process.env.PUBLIC_URL.trim().replace(/\/+$/, '');
+    }
+
+    if (!headers && !fallbackHost) {
+      return 'http://localhost:3000';
+    }
+
+    // 2. Read headers from trusted reverse proxy
+    const forwardedProto = (headers?.['x-forwarded-proto'] as string) || '';
+    const forwardedHost = (headers?.['x-forwarded-host'] as string) || '';
+    const hostHeader = forwardedHost || fallbackHost || 'localhost:3000';
+
+    const protocol = (forwardedProto === 'https' || forwardedProto === 'http')
+      ? forwardedProto
+      : (hostHeader.includes('localhost') || hostHeader.includes('127.0.0.1') ? 'http' : 'https');
+
+    // 3. Strict host whitelist validation to protect against Host header spoofing
+    const hostWithoutPort = hostHeader.split(':')[0].toLowerCase();
+    const isLocalhost = hostWithoutPort === 'localhost' || hostWithoutPort === '127.0.0.1';
+    const isCloudRun = hostWithoutPort.endsWith('.run.app');
+    const isAiStudio = hostWithoutPort.endsWith('.google.com') || hostWithoutPort.endsWith('.ai.studio');
+    const isNeurona = hostWithoutPort.endsWith('.neurona.ai');
+
+    if (isLocalhost || isCloudRun || isAiStudio || isNeurona) {
+      return `${protocol}://${hostHeader}`.replace(/\/+$/, '');
+    }
+
+    // Safe default fallback
+    return 'http://localhost:3000';
   }
 
   public static generatePKCE(): { verifier: string; challenge: string } {
@@ -115,10 +169,9 @@ export class HiggsfieldOAuthService {
   }
 
   /**
-   * Initialize a new OAuth 2.0 PKCE Session
-   * Persisted in SQLite so any Cloud Run instance can handle the callback.
+   * Initialize a new OAuth 2.0 PKCE Session with canonical origin validation
    */
-  public static async createAuthorizationSession(origin: string): Promise<{
+  public static async createAuthorizationSession(trustedOrigin: string): Promise<{
     authUrl: string;
     directAuthUrl: string;
     state: string;
@@ -128,7 +181,7 @@ export class HiggsfieldOAuthService {
     // Housekeeping: clean expired sessions in SQLite
     this.cleanExpiredSessions();
 
-    const cleanOrigin = origin.replace(/\/+$/, '');
+    const cleanOrigin = trustedOrigin.replace(/\/+$/, '');
     const redirectUri = `${cleanOrigin}/api/fcc/higgsfield/oauth/callback`;
     const clientId = await this.getOrRegisterClient(redirectUri);
 
@@ -143,7 +196,7 @@ export class HiggsfieldOAuthService {
       challenge,
       clientId,
       redirectUri,
-      origin: cleanOrigin,
+      canonicalOrigin: cleanOrigin,
       createdAt: now,
       expiresAt
     };
@@ -185,16 +238,20 @@ export class HiggsfieldOAuthService {
   }
 
   /**
-   * Exchange authorization code for access token via Higgsfield OAuth Token Endpoint
-   * Enforces strict state, PKCE verifier, expiration, and replay protection.
+   * Exchange authorization code for access token via Higgsfield OAuth Token Endpoint.
+   * STRICT SECURITY:
+   * 1. Authorization code is NEVER treated as access token.
+   * 2. If token endpoint fails or doesn't return access_token, OAuth FAILS.
+   * 3. PKCE verifier and state expiration are strictly validated.
+   * 4. Session is immediately consumed to prevent replay attacks.
    */
   public static async exchangeCodeForToken(code: string, state: string): Promise<{
     success: boolean;
-    token?: string;
-    refreshToken?: string;
+    oauthAccessToken?: string;
+    oauthRefreshToken?: string;
     scope?: string;
     expiresIn?: number;
-    origin?: string;
+    canonicalOrigin?: string;
     error?: string;
     message?: string;
   }> {
@@ -203,6 +260,14 @@ export class HiggsfieldOAuthService {
         success: false,
         error: 'INVALID_STATE',
         message: 'State parameter tidak valid atau tidak sesuai format.'
+      };
+    }
+
+    if (!code || typeof code !== 'string' || !code.trim()) {
+      return {
+        success: false,
+        error: 'INVALID_CODE',
+        message: 'Authorization code kosong atau tidak valid.'
       };
     }
 
@@ -233,7 +298,7 @@ export class HiggsfieldOAuthService {
       console.warn('[Higgsfield OAuth] Could not delete consumed session:', delErr);
     }
 
-    // Verify expiry
+    // Verify expiry (15 minutes TTL)
     if (Date.now() > session.expiresAt) {
       return {
         success: false,
@@ -252,119 +317,117 @@ export class HiggsfieldOAuthService {
       };
     }
 
+    const tokenParams = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: session.clientId,
+      code: code.trim(),
+      redirect_uri: session.redirectUri,
+      code_verifier: session.verifier
+    });
+
+    console.log(`[Higgsfield OAuth] Performing strict token exchange with Higgsfield Token Endpoint (${this.TOKEN_ENDPOINT})...`);
+
+    let responseText = '';
+    let responseStatus = 0;
+    let data: any = {};
+
     try {
-      const tokenParams = new URLSearchParams({
-        grant_type: 'authorization_code',
-        client_id: session.clientId,
-        code: code.trim(),
-        redirect_uri: session.redirectUri,
-        code_verifier: session.verifier
+      const resp = await fetch(this.TOKEN_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'NEURONA-Media-Pipeline/2.5',
+          'Accept': 'application/json'
+        },
+        body: tokenParams.toString(),
+        signal: AbortSignal.timeout(12000)
       });
 
-      console.log(`[Higgsfield OAuth] Exchanging code for token with Higgsfield Token Endpoint...`);
-
-      let accessToken: string = '';
-      let refreshToken: string | undefined = undefined;
-      let expiresIn: number = 86400 * 30; // 30 days default
-      let scope: string = 'mcp_full_access';
+      responseStatus = resp.status;
+      responseText = await resp.text();
 
       try {
-        const resp = await fetch(this.TOKEN_ENDPOINT, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'NEURONA-Media-Pipeline/2.5'
-          },
-          body: tokenParams.toString(),
-          signal: AbortSignal.timeout(12000)
-        });
-
-        const responseText = await resp.text();
-        let data: any = {};
-        try {
-          data = JSON.parse(responseText);
-        } catch {
-          data = { raw: responseText };
-        }
-
-        if (resp.ok && (data.access_token || data.token)) {
-          accessToken = data.access_token || data.token;
-          refreshToken = data.refresh_token;
-          expiresIn = typeof data.expires_in === 'number' ? data.expires_in : expiresIn;
-          scope = data.scope || scope;
-        } else if (!resp.ok && code.startsWith('hf_')) {
-          // If direct authorized token was provided in code parameter
-          accessToken = code.trim();
-        } else {
-          // If Higgsfield returned error
-          if (!resp.ok && !code.startsWith('hf_')) {
-            console.warn('[Higgsfield OAuth] Direct token endpoint returned:', resp.status, data);
-            accessToken = code.trim();
-          }
-        }
-      } catch (fetchErr) {
-        console.warn('[Higgsfield OAuth] Network notice during token endpoint call, utilizing authorized code session.');
-        accessToken = code.trim();
+        data = JSON.parse(responseText);
+      } catch {
+        data = { raw: responseText };
       }
 
-      if (!accessToken || typeof accessToken !== 'string') {
+      if (!resp.ok) {
+        const errorDesc = data.error_description || data.error || data.message || `HTTP status ${responseStatus}`;
+        console.error(`[Higgsfield OAuth] Token endpoint rejected exchange: ${errorDesc}`);
         return {
           success: false,
-          error: 'NO_ACCESS_TOKEN',
-          message: 'Server Higgsfield tidak mengembalikan access_token yang valid.'
+          error: 'TOKEN_EXCHANGE_REJECTED',
+          message: `Pertukaran authorization code ditolak oleh server OAuth Higgsfield: ${errorDesc}`
         };
       }
-
-      // Persist token metadata and encrypted refresh token to SQLite
-      try {
-        const tokenMetaKey = 'higgsfield_oauth_token_meta';
-        const now = Date.now();
-        const expiresAt = now + expiresIn * 1000;
-
-        const metaObj = {
-          clientId: session.clientId,
-          redirectUri: session.redirectUri,
-          expiresAt,
-          scope,
-          encryptedRefreshToken: refreshToken ? encryptSecret(refreshToken) : null,
-          hasRefreshToken: !!refreshToken,
-          updatedAt: new Date(now).toISOString()
-        };
-
-        db.insert(systemSettings)
-          .values({
-            key: tokenMetaKey,
-            value: JSON.stringify(metaObj),
-            updatedAt: new Date(now).toISOString()
-          })
-          .onConflictDoUpdate({
-            target: systemSettings.key,
-            set: {
-              value: JSON.stringify(metaObj),
-              updatedAt: new Date(now).toISOString()
-            }
-          })
-          .run();
-      } catch (metaErr: any) {
-        console.warn('[Higgsfield OAuth] Failed to save token metadata in SQLite:', metaErr?.message);
-      }
-
-      return {
-        success: true,
-        token: accessToken,
-        refreshToken,
-        scope,
-        expiresIn,
-        origin: session.origin
-      };
-    } catch (err: any) {
-      console.error('[Higgsfield OAuth] Network error during token exchange:', err);
+    } catch (fetchErr: any) {
+      console.error('[Higgsfield OAuth] Network error connecting to token endpoint:', fetchErr?.message);
       return {
         success: false,
-        error: 'NETWORK_ERROR',
-        message: `Gagal menghubungi Higgsfield Token Endpoint: ${err?.message || String(err)}`
+        error: 'TOKEN_ENDPOINT_UNREACHABLE',
+        message: `Gagal menghubungi Higgsfield Token Endpoint: ${fetchErr?.message || String(fetchErr)}`
       };
     }
+
+    // STRICT CHECK: The response MUST explicitly contain an access_token or token
+    const rawToken = data.access_token || data.token;
+    if (!rawToken || typeof rawToken !== 'string' || !rawToken.trim()) {
+      console.error('[Higgsfield OAuth] Response missing access_token:', data);
+      return {
+        success: false,
+        error: 'NO_ACCESS_TOKEN',
+        message: 'Server Higgsfield tidak mengembalikan access_token yang valid.'
+      };
+    }
+
+    const oauthAccessToken = rawToken.trim();
+    const oauthRefreshToken: string | undefined = typeof data.refresh_token === 'string' ? data.refresh_token.trim() : undefined;
+    const expiresIn: number = typeof data.expires_in === 'number' ? data.expires_in : 86400 * 30; // default 30 days
+    const scope: string = typeof data.scope === 'string' ? data.scope : 'mcp_full_access';
+
+    // Persist token metadata and encrypted refresh token to SQLite
+    try {
+      const tokenMetaKey = 'higgsfield_oauth_token_meta';
+      const now = Date.now();
+      const expiresAt = now + expiresIn * 1000;
+
+      const metaObj: HiggsfieldTokenMeta = {
+        clientId: session.clientId,
+        redirectUri: session.redirectUri,
+        expiresAt,
+        scope,
+        encryptedRefreshToken: oauthRefreshToken ? encryptSecret(oauthRefreshToken) : null,
+        hasRefreshToken: !!oauthRefreshToken,
+        updatedAt: new Date(now).toISOString()
+      };
+
+      db.insert(systemSettings)
+        .values({
+          key: tokenMetaKey,
+          value: JSON.stringify(metaObj),
+          updatedAt: new Date(now).toISOString()
+        })
+        .onConflictDoUpdate({
+          target: systemSettings.key,
+          set: {
+            value: JSON.stringify(metaObj),
+            updatedAt: new Date(now).toISOString()
+          }
+        })
+        .run();
+    } catch (metaErr: any) {
+      console.warn('[Higgsfield OAuth] Failed to save token metadata in SQLite:', metaErr?.message);
+    }
+
+    return {
+      success: true,
+      oauthAccessToken,
+      oauthRefreshToken,
+      scope,
+      expiresIn,
+      canonicalOrigin: session.canonicalOrigin
+    };
   }
 
   /**
