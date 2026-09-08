@@ -267,11 +267,13 @@ export class DomainConfigService {
     const config = explicitConfig || this.getActiveConfig();
     let cleanOrigin = this.normalizeUrl(baseOrigin);
     
-    // Always use canonical URL for callbacks, EXCEPT when specifically doing local dev on localhost.
-    // AI Studio URLs and preview deployments MUST use the configured canonical URL for OAuth callbacks
-    // because third-party OAuth providers (OpenArt, Higgsfield) strictly require pre-registered URIs.
-    const isLocalhost = cleanOrigin.includes('localhost') || cleanOrigin.includes('127.0.0.1');
-    if (!isLocalhost || config.environment !== 'development') {
+    // Always use canonical URL for callbacks, EXCEPT when specifically doing explicit local dev on localhost.
+    const isCandidateLocalhost = cleanOrigin.includes('localhost') || cleanOrigin.includes('127.0.0.1');
+    const isCloudRun = !!process.env.K_REVISION || !!process.env.APP_URL;
+
+    // If we are in ANY kind of public/cloud deployment (AI Studio, Cloud Run, etc)
+    // we MUST NEVER use localhost for OAuth callbacks.
+    if (isCloudRun || !isCandidateLocalhost || config.environment !== 'development') {
       cleanOrigin = config.canonicalUrl || config.productionAppUrl || 'https://app.neurona.ai';
     }
 
@@ -404,14 +406,16 @@ export class DomainConfigService {
     // Add configured canonical & production URLs
     if (config.canonicalUrl) approvedOrigins.add(this.normalizeUrl(config.canonicalUrl));
     if (config.productionAppUrl) approvedOrigins.add(this.normalizeUrl(config.productionAppUrl));
-    if (config.environment === 'development' && config.developmentAppUrl) {
+    if (config.developmentAppUrl) {
       approvedOrigins.add(this.normalizeUrl(config.developmentAppUrl));
     }
 
-    const fallbackCanonical = config.environment === 'development' ? 'http://localhost:3000' : (config.canonicalUrl || config.productionAppUrl || 'https://app.neurona.ai');
+    // NEW RULE: Public fallback MUST be the configured canonical/production URL.
+    // We NEVER fallback to localhost blindly just because APP_ENV=development.
+    const publicCanonical = config.canonicalUrl || config.productionAppUrl || 'https://app.neurona.ai';
 
     if (!reqHeaders) {
-      return fallbackCanonical;
+      return publicCanonical;
     }
 
     const rawProto = reqHeaders['x-forwarded-proto'];
@@ -424,18 +428,20 @@ export class DomainConfigService {
 
     if (cleanHost) {
       const candidateOrigin = this.normalizeUrl(`${cleanProto}://${cleanHost}`);
+      const isCandidateLocalhost = candidateOrigin.includes('localhost') || candidateOrigin.includes('127.0.0.1');
+
       if (approvedOrigins.has(candidateOrigin)) {
-        // Enforce no localhost in production even if headers spoof it
-        if (config.environment !== 'development' && (candidateOrigin.includes('localhost') || candidateOrigin.includes('127.0.0.1'))) {
+        // Enforce no localhost in production even if headers spoof it, OR if we are deployed publicly but the user spoofed a local host
+        if (isCandidateLocalhost && config.environment !== 'development') {
             console.warn(`[DomainConfigService] Origin "${candidateOrigin}" is localhost but environment is not development. Defaulting to canonical origin.`);
-            return fallbackCanonical;
+            return publicCanonical;
         }
         return candidateOrigin;
       }
       console.warn(`[DomainConfigService] Origin "${candidateOrigin}" is not in explicit approved allowlist. Defaulting to canonical origin.`);
     }
 
-    return fallbackCanonical;
+    return publicCanonical;
   }
 
   /**
