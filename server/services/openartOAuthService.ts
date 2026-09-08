@@ -4,6 +4,7 @@ import { db } from '../../src/db/index';
 import { systemSettings, apiKeys } from '../../src/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { encryptSecret, decryptSecret } from '../utils/crypto';
+import { DomainConfigService } from './domainConfigService';
 
 // Prefer IPv4 resolution to prevent slow connection delays in container environments
 try {
@@ -63,8 +64,10 @@ export class OpenArtOAuthService {
     // 3. Dynamic Registration via OpenArt RFC 7591 endpoint
     console.log(`[OpenArt OAuth] Dynamically registering client for redirectUri: ${redirectUri}...`);
 
+    const trustedUris = DomainConfigService.getAllTrustedRedirectUris('openart');
     const knownRedirectUris = [
       redirectUri,
+      ...trustedUris,
       'http://localhost:3000/api/fcc/openart/oauth/callback',
       'https://ais-dev-lhwcbpgrrfalopwm3dt5h2-654788409683.asia-southeast1.run.app/api/fcc/openart/oauth/callback',
       'https://ais-pre-lhwcbpgrrfalopwm3dt5h2-654788409683.asia-southeast1.run.app/api/fcc/openart/oauth/callback'
@@ -116,6 +119,10 @@ export class OpenArtOAuthService {
     }
 
     return clientId;
+  }
+
+  public static getCanonicalTrustedOrigin(headers?: Record<string, string | string[] | undefined>, fallbackHost?: string): string {
+    return DomainConfigService.getCanonicalTrustedOrigin(headers);
   }
 
   /**

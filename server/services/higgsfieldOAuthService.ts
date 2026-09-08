@@ -4,6 +4,7 @@ import { db } from '../../src/db/index';
 import { systemSettings, apiKeys } from '../../src/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { encryptSecret, decryptSecret } from '../utils/crypto';
+import { DomainConfigService } from './domainConfigService';
 
 // Prefer IPv4 resolution to prevent slow connection delays in container environments
 try {
@@ -80,6 +81,16 @@ export class HiggsfieldOAuthService {
     if (process.env.PUBLIC_URL && process.env.PUBLIC_URL.trim()) {
       origins.add(process.env.PUBLIC_URL.trim().replace(/\/+$/, ''));
     }
+
+    try {
+      const activeCfg = DomainConfigService.getActiveConfig();
+      if (activeCfg.allowedOrigins) {
+        activeCfg.allowedOrigins.forEach(o => o && origins.add(o.trim().replace(/\/+$/, '')));
+      }
+      if (activeCfg.trustedOAuthOrigins) {
+        activeCfg.trustedOAuthOrigins.forEach(o => o && origins.add(o.trim().replace(/\/+$/, '')));
+      }
+    } catch {}
 
     return Array.from(origins);
   }

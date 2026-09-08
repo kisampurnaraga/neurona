@@ -22,13 +22,15 @@ import { Settings, Film, CreditCard, Video,
   Trash2,
   RotateCcw,
   Plus,
-  Server
+  Server,
+  Globe
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FounderVideoInspector } from './FounderVideoInspector';
 import { KeyRotatorModal } from './KeyRotatorModal';
 import { FounderOpenArtPanel } from './FounderOpenArtPanel';
 import { FounderHiggsfieldPanel } from './FounderHiggsfieldPanel';
+import { FounderDomainConfigPanel } from './FounderDomainConfigPanel';
 import { AVAILABLE_VOICES } from '../utils/speechSynthesis';
 
 export interface ActivatedUser {
@@ -746,6 +748,18 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
           </button>
 
           <button
+            onClick={() => setActiveTab('domain')}
+            className={`shrink-0 flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
+              activeTab === 'domain'
+                ? 'border-emerald-400 text-emerald-300 font-bold bg-emerald-950/20'
+                : 'border-transparent text-gray-400 hover:text-white'
+            }`}
+          >
+            <Globe size={15} />
+            <span>Domain & URL</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('inspector')}
             className={`shrink-0 flex items-center gap-2 px-4 py-2.5 border-b-2 font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
               activeTab === 'inspector'
@@ -1254,6 +1268,12 @@ Selamat berkarya & merajai algoritma video affiliate! 🚀`;
         {activeTab === 'higgsfield' && (
           <div className="pt-2">
             <FounderHiggsfieldPanel />
+          </div>
+        )}
+        {/* TAB 10: DOMAIN & URL MANAGEMENT */}
+        {activeTab === 'domain' && (
+          <div className="pt-2">
+            <FounderDomainConfigPanel />
           </div>
         )}
       </div>

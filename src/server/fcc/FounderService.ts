@@ -13,6 +13,7 @@ import { users, projects as projectsTable, systemSettings, apiKeys } from '../..
 import { eq, and } from 'drizzle-orm';
 import { encryptSecret, decryptSecret } from '../../../server/utils/crypto';
 import { CostTrackingService } from '../../../server/services/costTrackingService';
+import { DomainConfigService, DomainConfig, DerivedOAuthUrls, DomainValidationResult } from '../../../server/services/domainConfigService';
 
 interface ProviderConfig {
   id: string;
@@ -898,6 +899,8 @@ export class FounderService {
       falTiers: FAL_TIER_META,
       falTierDefaults: FAL_TIER_DEFAULTS,
       pricing: CreditService.getPricingConfig(),
+      domainConfig: DomainConfigService.getActiveConfig(),
+      derivedOAuthUrls: DomainConfigService.deriveOAuthUrls(DomainConfigService.getActiveConfig().canonicalUrl),
       health: {
         system: 'HEALTHY',
         database: 'HEALTHY',
@@ -1879,6 +1882,38 @@ export class FounderService {
       return { success: true, flags: this.flags };
     }
     throw new Error(`Unknown flag: ${key}`);
+  }
+
+  // Domain & URL Management Methods
+  static getDomainConfig(): DomainConfig {
+    return DomainConfigService.getActiveConfig();
+  }
+
+  static validateDomainConfig(config: Partial<DomainConfig>): DomainValidationResult {
+    return DomainConfigService.validateDomainConfig(config);
+  }
+
+  static async saveDomainConfig(config: Partial<DomainConfig>, actor: string = 'Founder'): Promise<DomainValidationResult> {
+    const previousConfig = DomainConfigService.getActiveConfig();
+    const result = await DomainConfigService.saveConfig(config, actor);
+
+    this.auditLogs.push({
+      id: `log-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      action: 'UPDATE_DOMAIN_CONFIG',
+      target: 'DOMAIN_URL_MANAGEMENT',
+      details: result.valid 
+        ? `Domain config updated to env=${result.normalizedConfig?.environment}, canonical=${result.normalizedConfig?.canonicalUrl}, prod=${result.normalizedConfig?.productionAppUrl}`
+        : `Domain config update failed: ${result.errors.join(', ')}`,
+      status: result.valid ? 'SUCCESS' : 'FAILED'
+    });
+
+    return result;
+  }
+
+  static getDerivedOAuthUrls(baseOrigin?: string): DerivedOAuthUrls {
+    const origin = baseOrigin || DomainConfigService.getActiveConfig().canonicalUrl;
+    return DomainConfigService.deriveOAuthUrls(origin);
   }
 }
 

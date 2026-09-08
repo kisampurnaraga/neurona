@@ -28,6 +28,7 @@ import videoStudioRouter from "./server/routes/videoStudio";
 import workerRouter from "./server/routes/workerRoute";
 import founderPaymentRouter from "./server/routes/founderPayment";
 import { OpenArtOAuthService } from "./server/services/openartOAuthService";
+import { DomainConfigService } from "./server/services/domainConfigService";
 import { YouTubeChannelIntelligence } from "./server/services/YouTubeChannelIntelligence";
 import { AIContentStrategist } from "./server/services/AIContentStrategist";
 
@@ -84,9 +85,22 @@ async function startServer() {
       try {
         const u = new URL(origin);
         const host = req.get('host') || '';
-        const isLocalhost = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
-        const isAllowedDomain = u.hostname.endsWith('.run.app') || u.hostname.endsWith('.web.app') || u.hostname.endsWith('.google.com') || u.host === host;
-        if (isLocalhost || isAllowedDomain) {
+        const isLocalhost = u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '::1';
+        
+        let isAllowed = isLocalhost || u.host === host;
+        if (!isAllowed) {
+          try {
+            const domainCfg = DomainConfigService.getActiveConfig();
+            const normalizedOrigin = DomainConfigService.normalizeUrl(origin);
+            if (domainCfg.allowedOrigins.map(o => DomainConfigService.normalizeUrl(o)).includes(normalizedOrigin)) {
+              isAllowed = true;
+            } else if (u.hostname.endsWith('.run.app') || u.hostname.endsWith('.web.app') || u.hostname.endsWith('.google.com')) {
+              isAllowed = true;
+            }
+          } catch {}
+        }
+
+        if (isAllowed) {
           res.header('Access-Control-Allow-Origin', origin);
           res.header('Access-Control-Allow-Credentials', 'true');
           res.header('Vary', 'Origin');
@@ -100,7 +114,7 @@ async function startServer() {
       res.header('Access-Control-Allow-Origin', '*');
     }
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-role, x-custom-api-key');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-role, x-custom-api-key, x-user-email, x-user-id');
     if (req.method === 'OPTIONS') {
       return res.sendStatus(200);
     }
@@ -974,13 +988,8 @@ async function startServer() {
   app.get('/api/fcc/openart/auth/init', async (req, res) => {
     if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
     try {
-      const forwardedProto = req.headers['x-forwarded-proto'] as string;
-      const forwardedHost = req.headers['x-forwarded-host'] as string;
-      const protocol = forwardedProto || req.protocol || 'http';
-      const host = forwardedHost || req.get('host') || 'localhost:3000';
-      const origin = (req.query.origin as string) || `${protocol}://${host}`;
-
-      const session = await OpenArtOAuthService.createAuthorizationSession(origin);
+      const trustedOrigin = OpenArtOAuthService.getCanonicalTrustedOrigin(req.headers as any, req.get('host'));
+      const session = await OpenArtOAuthService.createAuthorizationSession(trustedOrigin);
       const directPortalUrl = `https://openart.ai/account/api-keys`;
 
       res.json({
@@ -1626,6 +1635,77 @@ async function startServer() {
      } catch (e: any) {
        res.status(400).json({ error: e.message });
      }
+  });
+
+  // Founder Control Center - Domain & URL Management Endpoints
+  app.get('/api/fcc/domain-config', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const config = FounderService.getDomainConfig();
+      const derivedUrls = FounderService.getDerivedOAuthUrls(config.canonicalUrl);
+      const validation = FounderService.validateDomainConfig(config);
+
+      const isProdReady = validation.valid && config.productionAppUrl.startsWith('https://') && !config.productionAppUrl.includes('localhost');
+
+      res.json({
+        success: true,
+        domainConfig: config,
+        derivedOAuthUrls: derivedUrls,
+        status: validation.valid ? 'VALID' : 'INVALID',
+        productionReadiness: isProdReady ? 'READY' : 'ACTION_REQUIRED',
+        warnings: validation.warnings || [],
+        errors: validation.errors || []
+      });
+    } catch (e: any) {
+      console.error('[FCC Domain Config GET Error]:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/fcc/domain-config/validate', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const result = FounderService.validateDomainConfig(req.body);
+      res.json({
+        success: result.valid,
+        valid: result.valid,
+        errors: result.errors,
+        warnings: result.warnings,
+        normalizedConfig: result.normalizedConfig,
+        derivedUrls: result.derivedUrls
+      });
+    } catch (e: any) {
+      console.error('[FCC Domain Config Validate Error]:', e);
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/fcc/domain-config/save', async (req, res) => {
+    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    try {
+      const actor = (req.headers['x-user-email'] as string) || (req.headers['x-user-id'] as string) || 'Founder';
+      const result = await FounderService.saveDomainConfig(req.body, actor);
+
+      if (!result.valid) {
+        return res.status(400).json({
+          success: false,
+          errors: result.errors,
+          warnings: result.warnings,
+          message: 'Konfigurasi domain gagal disimpan karena validasi tidak terpenuhi.'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Konfigurasi Domain & URL berhasil disimpan secara aman.',
+        domainConfig: result.normalizedConfig,
+        derivedOAuthUrls: result.derivedUrls,
+        warnings: result.warnings
+      });
+    } catch (e: any) {
+      console.error('[FCC Domain Config Save Error]:', e);
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // Fal Model Catalog Endpoint (Public / Client & Founder accessible)
