@@ -37,52 +37,92 @@ export class HiggsfieldOAuthService {
   private static readonly REVOCATION_ENDPOINT = 'https://mcp.higgsfield.ai/oauth/revoke';
   private static readonly AUTHORIZATION_ENDPOINT = 'https://higgsfield.ai/auth/oauth/authorize';
 
+  // Base list of explicitly approved NEURONA canonical origins
+  private static readonly BASE_APPROVED_ORIGINS = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://ais-dev-lhwcbpgrrfalopwm3dt5h2-654788409683.asia-southeast1.run.app',
+    'https://ais-pre-lhwcbpgrrfalopwm3dt5h2-654788409683.asia-southeast1.run.app',
+    'https://app.neurona.ai',
+    'https://neurona.ai'
+  ];
+
   private static base64URLEncode(buffer: Buffer): string {
     return buffer.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
   }
 
   /**
-   * Resolves a trusted, canonical application origin.
-   * Strips arbitrary client-provided origins and enforces whitelist validation.
+   * Retrieves the comprehensive list of explicitly approved trusted origins.
+   * Disallows suffix wildcards to prevent subdomain/domain takeover or spoofing.
    */
-  public static getCanonicalTrustedOrigin(headers?: Record<string, string | string[] | undefined>, fallbackHost?: string): string {
-    // 1. Explicit server environment configuration takes highest priority
+  public static getExplicitApprovedOrigins(): string[] {
+    const origins = new Set<string>();
+
+    for (const base of this.BASE_APPROVED_ORIGINS) {
+      origins.add(base.trim().replace(/\/+$/, ''));
+    }
+
+    if (process.env.HIGGSFIELD_ALLOWED_ORIGINS) {
+      const split = process.env.HIGGSFIELD_ALLOWED_ORIGINS.split(',');
+      for (const item of split) {
+        if (item && item.trim()) {
+          origins.add(item.trim().replace(/\/+$/, ''));
+        }
+      }
+    }
+
     if (process.env.APP_ORIGIN && process.env.APP_ORIGIN.trim()) {
-      return process.env.APP_ORIGIN.trim().replace(/\/+$/, '');
+      origins.add(process.env.APP_ORIGIN.trim().replace(/\/+$/, ''));
     }
     if (process.env.CANONICAL_URL && process.env.CANONICAL_URL.trim()) {
-      return process.env.CANONICAL_URL.trim().replace(/\/+$/, '');
+      origins.add(process.env.CANONICAL_URL.trim().replace(/\/+$/, ''));
     }
     if (process.env.PUBLIC_URL && process.env.PUBLIC_URL.trim()) {
-      return process.env.PUBLIC_URL.trim().replace(/\/+$/, '');
+      origins.add(process.env.PUBLIC_URL.trim().replace(/\/+$/, ''));
     }
+
+    return Array.from(origins);
+  }
+
+  /**
+   * Resolves a trusted, canonical application origin using strict exact matching.
+   * Rejects suffix wildcards and unapproved headers, falling back to canonical safe default.
+   */
+  public static getCanonicalTrustedOrigin(headers?: Record<string, string | string[] | undefined>, fallbackHost?: string): string {
+    const approvedOrigins = this.getExplicitApprovedOrigins();
+    const safeDefault = (process.env.APP_ORIGIN && process.env.APP_ORIGIN.trim())
+      ? process.env.APP_ORIGIN.trim().replace(/\/+$/, '')
+      : 'http://localhost:3000';
 
     if (!headers && !fallbackHost) {
-      return 'http://localhost:3000';
+      return safeDefault;
     }
 
-    // 2. Read headers from trusted reverse proxy
+    // 1. Read candidate headers from reverse proxy
     const forwardedProto = (headers?.['x-forwarded-proto'] as string) || '';
     const forwardedHost = (headers?.['x-forwarded-host'] as string) || '';
-    const hostHeader = forwardedHost || fallbackHost || 'localhost:3000';
+    const rawHost = forwardedHost || fallbackHost || '';
+
+    if (!rawHost) {
+      return safeDefault;
+    }
 
     const protocol = (forwardedProto === 'https' || forwardedProto === 'http')
       ? forwardedProto
-      : (hostHeader.includes('localhost') || hostHeader.includes('127.0.0.1') ? 'http' : 'https');
+      : (rawHost.includes('localhost') || rawHost.includes('127.0.0.1') ? 'http' : 'https');
 
-    // 3. Strict host whitelist validation to protect against Host header spoofing
-    const hostWithoutPort = hostHeader.split(':')[0].toLowerCase();
-    const isLocalhost = hostWithoutPort === 'localhost' || hostWithoutPort === '127.0.0.1';
-    const isCloudRun = hostWithoutPort.endsWith('.run.app');
-    const isAiStudio = hostWithoutPort.endsWith('.google.com') || hostWithoutPort.endsWith('.ai.studio');
-    const isNeurona = hostWithoutPort.endsWith('.neurona.ai');
+    const candidateOrigin = `${protocol}://${rawHost}`.trim().replace(/\/+$/, '');
 
-    if (isLocalhost || isCloudRun || isAiStudio || isNeurona) {
-      return `${protocol}://${hostHeader}`.replace(/\/+$/, '');
+    // 2. Exact match against approved allowlist (no wildcard / suffix loose match)
+    const isApproved = approvedOrigins.some(allowed => allowed.toLowerCase() === candidateOrigin.toLowerCase());
+
+    if (isApproved) {
+      return candidateOrigin;
     }
 
-    // Safe default fallback
-    return 'http://localhost:3000';
+    // 3. Reject unapproved or spoofed origin -> return safe default
+    console.warn(`[Higgsfield OAuth] Origin "${candidateOrigin}" not in approved allowlist. Defaulting to safe canonical origin: "${safeDefault}"`);
+    return safeDefault;
   }
 
   public static generatePKCE(): { verifier: string; challenge: string } {
@@ -93,7 +133,8 @@ export class HiggsfieldOAuthService {
 
   /**
    * Register OAuth Client dynamically with Higgsfield (RFC 7591)
-   * Stored in SQLite systemSettings for persistence across Cloud Run instances.
+   * Stored in SQLite systemSettings for persistence.
+   * STRICT SECURITY: Never generates or persists fake/random client IDs.
    */
   public static async getOrRegisterClient(redirectUri: string): Promise<string> {
     // 1. Explicit environment override if provided
@@ -103,18 +144,25 @@ export class HiggsfieldOAuthService {
 
     const cacheKey = `higgsfield_oauth_client:${redirectUri}`;
 
-    // 2. Check SQLite persistence
+    // 2. Check SQLite persistence for official registered client ID
     try {
       const existing = db.select().from(systemSettings).where(eq(systemSettings.key, cacheKey)).get();
       if (existing && existing.value) {
-        return existing.value.trim();
+        const val = existing.value.trim();
+        // Discard any legacy fake client IDs
+        if (val && !val.startsWith('neurona_higgsfield_')) {
+          return val;
+        } else if (val.startsWith('neurona_higgsfield_')) {
+          // Purge legacy fake client ID from SQLite
+          db.delete(systemSettings).where(eq(systemSettings.key, cacheKey)).run();
+        }
       }
     } catch (e) {
       console.warn('[Higgsfield OAuth] SQLite client lookup notice:', (e as any)?.message);
     }
 
-    // 3. Dynamic Registration via Higgsfield RFC 7591 endpoint or generate registered client id
-    console.log(`[Higgsfield OAuth] Resolving client for redirectUri: ${redirectUri}...`);
+    // 3. Dynamic Registration via Higgsfield RFC 7591 endpoint
+    console.log(`[Higgsfield OAuth] Performing official RFC 7591 client registration for redirectUri: ${redirectUri}...`);
 
     const knownRedirectUris = [
       redirectUri,
@@ -124,7 +172,7 @@ export class HiggsfieldOAuthService {
     ];
     const uniqueRedirectUris = Array.from(new Set(knownRedirectUris));
 
-    let clientId = `neurona_higgsfield_${crypto.randomBytes(12).toString('hex')}`;
+    let officialClientId = '';
 
     try {
       const resp = await fetch(this.REGISTRATION_ENDPOINT, {
@@ -142,30 +190,36 @@ export class HiggsfieldOAuthService {
 
       if (resp.ok) {
         const data: any = await resp.json().catch(() => ({}));
-        if (data.client_id && typeof data.client_id === 'string') {
-          clientId = data.client_id;
+        if (data.client_id && typeof data.client_id === 'string' && data.client_id.trim()) {
+          officialClientId = data.client_id.trim();
         }
       }
     } catch (netErr: any) {
-      console.log('[Higgsfield OAuth] Dynamic registration fallback to client id descriptor.');
+      console.error('[Higgsfield OAuth] Dynamic registration request failed:', netErr?.message);
     }
 
-    // 4. Persist registered client ID in SQLite
+    // 4. STRICT: If dynamic registration fails or does not return a client_id, STOP OAuth.
+    // NEVER generate random fake fallback client ID or save fake ID to SQLite.
+    if (!officialClientId) {
+      throw new Error('DYNAMIC_CLIENT_REGISTRATION_FAILED: Server Higgsfield tidak mengembalikan official client_id dan HIGGSFIELD_CLIENT_ID belum dikonfigurasi.');
+    }
+
+    // 5. Persist official registered client ID in SQLite
     try {
       const now = new Date().toISOString();
       db.insert(systemSettings)
-        .values({ key: cacheKey, value: clientId, updatedAt: now })
+        .values({ key: cacheKey, value: officialClientId, updatedAt: now })
         .onConflictDoUpdate({
           target: systemSettings.key,
-          set: { value: clientId, updatedAt: now }
+          set: { value: officialClientId, updatedAt: now }
         })
         .run();
-      console.log(`[Higgsfield OAuth] Persisted registered client_id in SQLite: ${clientId.substring(0, 10)}...`);
+      console.log(`[Higgsfield OAuth] Persisted official registered client_id in SQLite: ${officialClientId.substring(0, 10)}...`);
     } catch (saveErr) {
-      console.warn('[Higgsfield OAuth] Could not save client_id to SQLite:', saveErr);
+      console.warn('[Higgsfield OAuth] Could not save official client_id to SQLite:', saveErr);
     }
 
-    return clientId;
+    return officialClientId;
   }
 
   /**
@@ -240,10 +294,11 @@ export class HiggsfieldOAuthService {
   /**
    * Exchange authorization code for access token via Higgsfield OAuth Token Endpoint.
    * STRICT SECURITY:
-   * 1. Authorization code is NEVER treated as access token.
-   * 2. If token endpoint fails or doesn't return access_token, OAuth FAILS.
-   * 3. PKCE verifier and state expiration are strictly validated.
-   * 4. Session is immediately consumed to prevent replay attacks.
+   * 1. ONLY accepts non-empty string in "access_token" (NO "token" fallback).
+   * 2. Authorization code is NEVER treated as access token.
+   * 3. If token endpoint fails or doesn't return access_token, returns success: false with NO_ACCESS_TOKEN and saves nothing.
+   * 4. PKCE verifier and state expiration are strictly validated.
+   * 5. Session is immediately consumed to prevent replay attacks.
    */
   public static async exchangeCodeForToken(code: string, state: string): Promise<{
     success: boolean;
@@ -370,10 +425,11 @@ export class HiggsfieldOAuthService {
       };
     }
 
-    // STRICT CHECK: The response MUST explicitly contain an access_token or token
-    const rawToken = data.access_token || data.token;
+    // STRICT CHECK 1: MUST explicitly contain non-empty string in "access_token" ONLY.
+    // Support for "data.token" is completely removed.
+    const rawToken = data.access_token;
     if (!rawToken || typeof rawToken !== 'string' || !rawToken.trim()) {
-      console.error('[Higgsfield OAuth] Response missing access_token:', data);
+      console.error('[Higgsfield OAuth] Response missing valid "access_token" field:', data);
       return {
         success: false,
         error: 'NO_ACCESS_TOKEN',
