@@ -32,11 +32,43 @@ export interface HiggsfieldTokenMeta {
   updatedAt: string;
 }
 
+export interface HiggsfieldProtectedResourceMetadata {
+  resource: string;
+  authorization_servers: string[];
+  scopes_supported?: string[];
+  bearer_methods_supported?: string[];
+}
+
+export interface HiggsfieldAuthorizationServerMetadata {
+  issuer: string;
+  authorization_endpoint: string;
+  token_endpoint: string;
+  registration_endpoint?: string;
+  revocation_endpoint?: string;
+  response_types_supported?: string[];
+  grant_types_supported?: string[];
+  token_endpoint_auth_methods_supported?: string[];
+  code_challenge_methods_supported?: string[];
+  scopes_supported?: string[];
+}
+
 export class HiggsfieldOAuthService {
-  private static readonly REGISTRATION_ENDPOINT = 'https://mcp.higgsfield.ai/oauth/register';
-  private static readonly TOKEN_ENDPOINT = 'https://mcp.higgsfield.ai/oauth/token';
-  private static readonly REVOCATION_ENDPOINT = 'https://mcp.higgsfield.ai/oauth/revoke';
-  private static readonly AUTHORIZATION_ENDPOINT = 'https://higgsfield.ai/auth/oauth/authorize';
+  public static readonly OFFICIAL_MCP_ENDPOINT = 'https://mcp.higgsfield.ai/mcp';
+  public static readonly DEFAULT_PROTECTED_RESOURCE_METADATA_URL = 'https://mcp.higgsfield.ai/.well-known/oauth-protected-resource';
+  public static readonly DEFAULT_AUTH_SERVER_METADATA_URL = 'https://mcp.higgsfield.ai/.well-known/oauth-authorization-server';
+
+  // Fallback endpoints if discovery is unreachable
+  private static readonly FALLBACK_AUTHORIZATION_ENDPOINT = 'https://mcp.higgsfield.ai/oauth2/authorize';
+  private static readonly FALLBACK_TOKEN_ENDPOINT = 'https://mcp.higgsfield.ai/oauth2/token';
+  private static readonly FALLBACK_REGISTRATION_ENDPOINT = 'https://mcp.higgsfield.ai/oauth2/register';
+  private static readonly FALLBACK_REVOCATION_ENDPOINT = 'https://mcp.higgsfield.ai/oauth2/revoke';
+
+  // In-memory discovery cache with 1 hour TTL
+  private static metadataCache: {
+    protectedResource?: HiggsfieldProtectedResourceMetadata;
+    authServer?: HiggsfieldAuthorizationServerMetadata;
+    fetchedAt: number;
+  } | null = null;
 
   // Base list of explicitly approved NEURONA canonical origins
   private static readonly BASE_APPROVED_ORIGINS = [
@@ -50,6 +82,120 @@ export class HiggsfieldOAuthService {
 
   private static base64URLEncode(buffer: Buffer): string {
     return buffer.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  }
+
+  /**
+   * PHASE 3 — Discover Protected Resource Metadata (RFC 9207 / MCP OAuth)
+   */
+  public static async discoverProtectedResourceMetadata(mcpEndpoint: string = this.OFFICIAL_MCP_ENDPOINT): Promise<HiggsfieldProtectedResourceMetadata> {
+    const discoveryUrl = mcpEndpoint.endsWith('/mcp')
+      ? `${mcpEndpoint.replace(/\/mcp$/, '')}/.well-known/oauth-protected-resource`
+      : `${mcpEndpoint.replace(/\/+$/, '')}/.well-known/oauth-protected-resource`;
+
+    try {
+      const resp = await fetch(discoveryUrl, {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'NEURONA-MCP-Client/2.5' },
+        signal: AbortSignal.timeout(5000)
+      });
+      if (resp.ok) {
+        const meta: HiggsfieldProtectedResourceMetadata = await resp.json();
+        if (meta && Array.isArray(meta.authorization_servers) && meta.authorization_servers.length > 0) {
+          console.log(`[Higgsfield OAuth Discovery] Protected Resource Metadata discovered. Auth Servers: ${meta.authorization_servers.join(', ')}`);
+          return meta;
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[Higgsfield OAuth Discovery] Protected Resource discovery request failed (${err?.message}). Checking WWW-Authenticate header...`);
+    }
+
+    // Attempt WWW-Authenticate header inspection from MCP 401 response
+    try {
+      const probeRes = await fetch(mcpEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 'probe_01', method: 'initialize' }),
+        signal: AbortSignal.timeout(4000)
+      });
+      const wwwAuth = probeRes.headers.get('www-authenticate') || '';
+      if (wwwAuth.includes('resource_metadata=')) {
+        const match = wwwAuth.match(/resource_metadata=["']([^"']+)["']/);
+        if (match && match[1]) {
+          const resMetaUrl = match[1];
+          const resMetaResp = await fetch(resMetaUrl, { signal: AbortSignal.timeout(4000) });
+          if (resMetaResp.ok) {
+            const meta = await resMetaResp.json();
+            if (meta && Array.isArray(meta.authorization_servers) && meta.authorization_servers.length > 0) {
+              return meta;
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // Fallback if discovery endpoint is unreachable
+    return {
+      resource: mcpEndpoint,
+      authorization_servers: ['https://mcp.higgsfield.ai'],
+      scopes_supported: ['openid', 'email', 'offline_access']
+    };
+  }
+
+  /**
+   * PHASE 4 — Discover Authorization Server Metadata (RFC 8414)
+   */
+  public static async discoverAuthorizationServerMetadata(authServerUrl?: string): Promise<HiggsfieldAuthorizationServerMetadata> {
+    const now = Date.now();
+    if (this.metadataCache && this.metadataCache.authServer && (now - this.metadataCache.fetchedAt < 3600000)) {
+      return this.metadataCache.authServer;
+    }
+
+    let targetServer = authServerUrl;
+    if (!targetServer) {
+      const protectedMeta = await this.discoverProtectedResourceMetadata();
+      targetServer = protectedMeta.authorization_servers[0] || 'https://mcp.higgsfield.ai';
+    }
+
+    const cleanServer = targetServer.replace(/\/+$/, '');
+    const metaUrl = `${cleanServer}/.well-known/oauth-authorization-server`;
+
+    try {
+      const resp = await fetch(metaUrl, {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'NEURONA-MCP-Client/2.5' },
+        signal: AbortSignal.timeout(5000)
+      });
+      if (resp.ok) {
+        const meta: HiggsfieldAuthorizationServerMetadata = await resp.json();
+        if (meta && meta.authorization_endpoint && meta.token_endpoint) {
+          console.log(`[Higgsfield OAuth Discovery] Discovered Authorization Server Metadata from ${metaUrl}: authorization_endpoint=${meta.authorization_endpoint}, registration_endpoint=${meta.registration_endpoint || 'none'}`);
+          this.metadataCache = {
+            authServer: meta,
+            fetchedAt: now
+          };
+          return meta;
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[Higgsfield OAuth Discovery] Authorization Server Metadata discovery error at ${metaUrl}:`, err?.message);
+    }
+
+    const fallbackMeta: HiggsfieldAuthorizationServerMetadata = {
+      issuer: cleanServer,
+      authorization_endpoint: this.FALLBACK_AUTHORIZATION_ENDPOINT,
+      token_endpoint: this.FALLBACK_TOKEN_ENDPOINT,
+      registration_endpoint: this.FALLBACK_REGISTRATION_ENDPOINT,
+      revocation_endpoint: this.FALLBACK_REVOCATION_ENDPOINT,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code', 'refresh_token'],
+      code_challenge_methods_supported: ['S256'],
+      scopes_supported: ['openid', 'email', 'offline_access']
+    };
+
+    this.metadataCache = {
+      authServer: fallbackMeta,
+      fetchedAt: now
+    };
+
+    return fallbackMeta;
   }
 
   /**
@@ -144,6 +290,7 @@ export class HiggsfieldOAuthService {
 
   /**
    * Register OAuth Client dynamically with Higgsfield (RFC 7591)
+   * Discovers official registration_endpoint via Authorization Server Metadata (RFC 8414).
    * Stored in SQLite systemSettings for persistence.
    * STRICT SECURITY: Never generates or persists fake/random client IDs.
    */
@@ -172,11 +319,15 @@ export class HiggsfieldOAuthService {
       console.warn('[Higgsfield OAuth] SQLite client lookup notice:', (e as any)?.message);
     }
 
-    // 3. Dynamic Registration via Higgsfield RFC 7591 endpoint
-    console.log(`[Higgsfield OAuth] Performing official RFC 7591 client registration for redirectUri: ${redirectUri}...`);
+    // 3. Discover Registration Endpoint via Authorization Server Metadata (RFC 8414)
+    const authMeta = await this.discoverAuthorizationServerMetadata();
+    const registrationEndpoint = authMeta.registration_endpoint || this.FALLBACK_REGISTRATION_ENDPOINT;
+
+    console.log(`[Higgsfield OAuth] Performing official RFC 7591 client registration via discovered endpoint: ${registrationEndpoint} (redirectUri: ${redirectUri})...`);
 
     const knownRedirectUris = [
       redirectUri,
+      ...DomainConfigService.getAllTrustedRedirectUris('higgsfield'),
       'http://localhost:3000/api/fcc/higgsfield/oauth/callback',
       'https://ais-dev-lhwcbpgrrfalopwm3dt5h2-654788409683.asia-southeast1.run.app/api/fcc/higgsfield/oauth/callback',
       'https://ais-pre-lhwcbpgrrfalopwm3dt5h2-654788409683.asia-southeast1.run.app/api/fcc/higgsfield/oauth/callback'
@@ -186,7 +337,7 @@ export class HiggsfieldOAuthService {
     let officialClientId = '';
 
     try {
-      const resp = await fetch(this.REGISTRATION_ENDPOINT, {
+      const resp = await fetch(registrationEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -194,9 +345,13 @@ export class HiggsfieldOAuthService {
         },
         body: JSON.stringify({
           client_name: 'NEURONA AI Video Pipeline',
-          redirect_uris: uniqueRedirectUris
+          redirect_uris: uniqueRedirectUris,
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          token_endpoint_auth_method: 'none',
+          scope: 'openid email offline_access'
         }),
-        signal: AbortSignal.timeout(6000)
+        signal: AbortSignal.timeout(8000)
       });
 
       if (resp.ok) {
@@ -204,15 +359,18 @@ export class HiggsfieldOAuthService {
         if (data.client_id && typeof data.client_id === 'string' && data.client_id.trim()) {
           officialClientId = data.client_id.trim();
         }
+      } else {
+        const errTxt = await resp.text().catch(() => '');
+        console.warn(`[Higgsfield OAuth] Dynamic registration endpoint ${registrationEndpoint} returned HTTP ${resp.status}: ${errTxt}`);
       }
     } catch (netErr: any) {
-      console.error('[Higgsfield OAuth] Dynamic registration request failed:', netErr?.message);
+      console.error(`[Higgsfield OAuth] Dynamic registration request to ${registrationEndpoint} failed:`, netErr?.message);
     }
 
-    // 4. STRICT: If dynamic registration fails or does not return a client_id, STOP OAuth.
+    // 4. STRICT: If dynamic registration fails or does not return a client_id, STOP OAuth safely.
     // NEVER generate random fake fallback client ID or save fake ID to SQLite.
     if (!officialClientId) {
-      throw new Error('DYNAMIC_CLIENT_REGISTRATION_FAILED: Server Higgsfield tidak mengembalikan official client_id dan HIGGSFIELD_CLIENT_ID belum dikonfigurasi.');
+      throw new Error(`HIGGSFIELD_OAUTH_CLIENT_REGISTRATION_UNAVAILABLE: Server Higgsfield (${registrationEndpoint}) tidak mengembalikan official client_id dan HIGGSFIELD_CLIENT_ID belum dikonfigurasi.`);
     }
 
     // 5. Persist official registered client ID in SQLite
@@ -249,6 +407,12 @@ export class HiggsfieldOAuthService {
     const cleanOrigin = trustedOrigin.replace(/\/+$/, '');
     const redirectUri = `${cleanOrigin}/api/fcc/higgsfield/oauth/callback`;
     const clientId = await this.getOrRegisterClient(redirectUri);
+
+    const authMeta = await this.discoverAuthorizationServerMetadata();
+    const authEndpoint = authMeta.authorization_endpoint || this.FALLBACK_AUTHORIZATION_ENDPOINT;
+    const scope = (authMeta.scopes_supported && authMeta.scopes_supported.length > 0)
+      ? authMeta.scopes_supported.join(' ')
+      : 'openid email offline_access';
 
     const { verifier, challenge } = this.generatePKCE();
     const state = `higgsfield_pkce_${Date.now()}_${crypto.randomBytes(16).toString('hex')}`;
@@ -288,10 +452,18 @@ export class HiggsfieldOAuthService {
       throw new Error('Gagal menyimpan sesi otorisasi OAuth Higgsfield.');
     }
 
-    const authorizeRelativePath = `/auth/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=mcp_full_access&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(challenge)}&code_challenge_method=S256`;
+    const queryParams = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope,
+      state,
+      code_challenge: challenge,
+      code_challenge_method: 'S256'
+    });
 
-    const directAuthUrl = `https://higgsfield.ai${authorizeRelativePath}`;
-    const authUrl = `https://higgsfield.ai/login?callbackUrl=${encodeURIComponent(authorizeRelativePath)}`;
+    const directAuthUrl = `${authEndpoint}?${queryParams.toString()}`;
+    const authUrl = directAuthUrl;
 
     return {
       authUrl,
@@ -383,6 +555,9 @@ export class HiggsfieldOAuthService {
       };
     }
 
+    const authMeta = await this.discoverAuthorizationServerMetadata();
+    const tokenEndpoint = authMeta.token_endpoint || this.FALLBACK_TOKEN_ENDPOINT;
+
     const tokenParams = new URLSearchParams({
       grant_type: 'authorization_code',
       client_id: session.clientId,
@@ -391,14 +566,14 @@ export class HiggsfieldOAuthService {
       code_verifier: session.verifier
     });
 
-    console.log(`[Higgsfield OAuth] Performing strict token exchange with Higgsfield Token Endpoint (${this.TOKEN_ENDPOINT})...`);
+    console.log(`[Higgsfield OAuth] Performing strict token exchange with Higgsfield Token Endpoint (${tokenEndpoint})...`);
 
     let responseText = '';
     let responseStatus = 0;
     let data: any = {};
 
     try {
-      const resp = await fetch(this.TOKEN_ENDPOINT, {
+      const resp = await fetch(tokenEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -522,10 +697,13 @@ export class HiggsfieldOAuthService {
 
       if (targetToken) {
         try {
+          const authMeta = await this.discoverAuthorizationServerMetadata();
+          const revocationEndpoint = authMeta.revocation_endpoint || this.FALLBACK_REVOCATION_ENDPOINT;
+
           const params = new URLSearchParams({ token: targetToken });
           if (clientId) params.append('client_id', clientId);
 
-          await fetch(this.REVOCATION_ENDPOINT, {
+          await fetch(revocationEndpoint, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
@@ -534,7 +712,7 @@ export class HiggsfieldOAuthService {
             body: params.toString(),
             signal: AbortSignal.timeout(6000)
           });
-          console.log('[Higgsfield OAuth] Remote token revocation signal sent.');
+          console.log(`[Higgsfield OAuth] Remote token revocation signal sent to ${revocationEndpoint}.`);
         } catch (revokeErr) {
           console.warn('[Higgsfield OAuth] Revocation request error (safe to ignore):', revokeErr);
         }

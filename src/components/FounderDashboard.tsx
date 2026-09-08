@@ -316,7 +316,7 @@ const FounderChangePasswordPanel = () => {
 };
 
 export const FounderDashboard: React.FC<FounderDashboardProps> = ({ onBack }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'activation_form' | 'stats' | 'payment' | 'inspector' | 'openart' | 'higgsfield' | 'settings' | 'change_password'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'activation_form' | 'stats' | 'payment' | 'inspector' | 'openart' | 'higgsfield' | 'settings' | 'change_password' | 'domain'>('users');
   const [isRotatorModalOpen, setIsRotatorModalOpen] = useState(false);
   
   // Form State for Manual Activation

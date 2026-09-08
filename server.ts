@@ -1638,8 +1638,7 @@ async function startServer() {
   });
 
   // Founder Control Center - Domain & URL Management Endpoints
-  app.get('/api/fcc/domain-config', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.get('/api/fcc/domain-config', verifyToken, requireRole(['founder']), async (req: AuthenticatedRequest, res) => {
     try {
       const config = FounderService.getDomainConfig();
       const derivedUrls = FounderService.getDerivedOAuthUrls(config.canonicalUrl);
@@ -1662,8 +1661,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/domain-config/validate', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/domain-config/validate', verifyToken, requireRole(['founder']), async (req: AuthenticatedRequest, res) => {
     try {
       const result = FounderService.validateDomainConfig(req.body);
       res.json({
@@ -1680,10 +1678,9 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/domain-config/save', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/domain-config/save', verifyToken, requireRole(['founder']), async (req: AuthenticatedRequest, res) => {
     try {
-      const actor = (req.headers['x-user-email'] as string) || (req.headers['x-user-id'] as string) || 'Founder';
+      const actor = req.user?.email || req.user?.user_id || 'Founder';
       const result = await FounderService.saveDomainConfig(req.body, actor);
 
       if (!result.valid) {
