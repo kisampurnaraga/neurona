@@ -127,6 +127,53 @@ async function runAudit() {
     assert(false, 'Test 7: Token Isolation & Secret Protection', e.message);
   }
 
+  // TEST 8: Fail-Closed Discovery Stopping Behavior (No Hardcoded Fallbacks)
+  try {
+    let protectedFailed = false;
+    try {
+      await HiggsfieldOAuthService.discoverProtectedResourceMetadata('https://invalid-nonexistent-endpoint-123.local');
+    } catch (e: any) {
+      if (e.message.includes('HIGGSFIELD_OAUTH_DISCOVERY_FAILED')) {
+        protectedFailed = true;
+      }
+    }
+
+    HiggsfieldOAuthService.clearMetadataCache();
+    let authServerFailed = false;
+    try {
+      await HiggsfieldOAuthService.discoverAuthorizationServerMetadata('https://invalid-nonexistent-endpoint-123.local');
+    } catch (e: any) {
+      if (e.message.includes('HIGGSFIELD_OAUTH_DISCOVERY_FAILED')) {
+        authServerFailed = true;
+      }
+    }
+
+    assert(
+      protectedFailed && authServerFailed,
+      'Test 8: Fail-closed discovery strictly throws HIGGSFIELD_OAUTH_DISCOVERY_FAILED when endpoints are unreachable (NO hardcoded fallbacks)'
+    );
+  } catch (e: any) {
+    assert(false, 'Test 8: Fail-Closed Discovery', e.message);
+  }
+
+  // TEST 9: PKCE & State Validation Security
+  try {
+    const pkce = HiggsfieldOAuthService.generatePKCE();
+    const validPKCE = pkce.verifier.length >= 43 && pkce.challenge.length >= 43;
+
+    const invalidStateRes = await HiggsfieldOAuthService.exchangeCodeForToken('dummy_code', 'malicious_state');
+    const invalidCodeRes = await HiggsfieldOAuthService.exchangeCodeForToken('', 'higgsfield_pkce_123456');
+
+    assert(
+      validPKCE &&
+      invalidStateRes.success === false && invalidStateRes.error === 'INVALID_STATE' &&
+      invalidCodeRes.success === false && invalidCodeRes.error === 'INVALID_CODE',
+      'Test 9: PKCE generation and state/code parameter security validation'
+    );
+  } catch (e: any) {
+    assert(false, 'Test 9: PKCE & State Validation', e.message);
+  }
+
   console.log('\n====================================================');
   console.log(`AUDIT SUMMARY: ${passed} PASSED, ${failed} FAILED`);
   console.log('====================================================');
