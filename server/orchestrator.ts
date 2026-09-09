@@ -1293,12 +1293,17 @@ export class ProductionOrchestrator {
         project.status = 'PRODUCING';
         project.overallProgress = 15;
         project.currentPhaseName = 'Direct Generation (Quick Create)';
+        project.agentStatus['Creative Strategist'] = 'COMPLETE';
+        project.agentStatus['Storyboard Director'] = 'COMPLETE';
+        project.agentStatus['Human Approval Gate'] = 'COMPLETE';
+        project.agentStatus['AI Video Director'] = 'WORKING';
+        project.activeAgent = 'AI Video Director';
         appendLog(project, 'PROTOCOL', `[Quick Create] Starting direct video generation with isolated routing...`, 'INFO');
         projectEvents.emit(`update:${id}`, project);
 
         const config = (project as any).quickCreateConfig || {};
-        const preferredProvider = config.preferredProvider || (project as any).preferredProvider || 'higgsfield';
-        const model = config.model || (project as any).modelPreference || 'higgsfield-video-pro';
+        const preferredProvider = project.videoProvider || 'higgsfield';
+        const model = project.videoModel || 'veo3_1_lite';
         const isI2V = !!config.imageUrl;
         const promptText = config.prompt || prompt || 'Cinematic video scene';
         const duration = config.duration || 5;
@@ -1389,6 +1394,12 @@ export class ProductionOrchestrator {
           project.status = 'COMPLETED';
           project.overallProgress = 100;
           project.currentPhaseName = 'Produksi Selesai (100%)';
+          project.agentStatus['AI Video Director'] = 'COMPLETE';
+          project.agentStatus['Video Assembly Editor'] = 'COMPLETE';
+          project.agentStatus['Audio Designer'] = 'COMPLETE';
+          project.agentStatus['Viral Content Editor'] = 'COMPLETE';
+          project.agentStatus['Video QA Director'] = 'COMPLETE';
+          project.agentStatus['Distribution Manager'] = 'COMPLETE';
           appendLog(project, 'PROTOCOL', `[Quick Create] Direct generation completed successfully: ${savedUrl}`, 'SUCCESS');
           projectEvents.emit(`update:${id}`, project);
 
@@ -1415,6 +1426,7 @@ export class ProductionOrchestrator {
           }
           project.status = 'FAILED';
           project.error = genErr?.message || 'Quick Create video generation failed.';
+          project.agentStatus['AI Video Director'] = 'FAILED';
           projectEvents.emit(`update:${id}`, project);
 
           try {

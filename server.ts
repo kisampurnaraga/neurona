@@ -694,7 +694,7 @@ async function startServer() {
       
       let newProjectId = projectId;
       if (result.action === 'START_PRODUCTION') {
-         const finalType = result.videoType || videoType || 'BRAND_COMMERCIAL';
+         const finalType = videoType || result.videoType || 'BRAND_COMMERCIAL';
          const configVideoProvider = affiliateConfig?.videoProvider || animationConfig?.videoProvider || educationalConfig?.videoProvider || filmConfig?.videoProvider || videoAdsConfig?.videoProvider || quickCreateConfig?.videoProvider || req.body.videoProvider;
          const configVideoModel = affiliateConfig?.videoModel || animationConfig?.videoModel || educationalConfig?.videoModel || filmConfig?.videoModel || videoAdsConfig?.videoModel || quickCreateConfig?.videoModel || affiliateConfig?.videoEngine || animationConfig?.videoEngine || educationalConfig?.videoEngine || filmConfig?.videoEngine || videoAdsConfig?.videoEngine || quickCreateConfig?.model || videoModel;
          const configVideoDisplayName = affiliateConfig?.videoModelDisplayName || animationConfig?.videoModelDisplayName || educationalConfig?.videoModelDisplayName || filmConfig?.videoModelDisplayName || videoAdsConfig?.videoModelDisplayName || quickCreateConfig?.videoModelDisplayName || req.body.videoModelDisplayName;
