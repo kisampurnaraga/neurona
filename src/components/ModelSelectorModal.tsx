@@ -186,6 +186,67 @@ export const VIDEO_MODELS = [
     color: 'border-blue-500/60 bg-blue-950/40 text-blue-300 font-bold',
     description: 'Model image generasi OpenArt MCP dengan pemahaman instruksi prompt multi-lapisan yang sangat cerdas.',
     capabilities: ['OpenArt MCP Native', 'Complex Prompts', 'Accurate Scene Logic', 'High Definition (30 Cr)']
+  },
+  // --- HIGGSFIELD MCP LIVE MODELS ---
+  {
+    id: 'veo3_1_lite',
+    name: 'Veo 3.1 Lite (Official Higgsfield MCP)',
+    tag: 'Fast Cinematic Generation (8 Credits)',
+    badge: 'HIGGSFIELD MCP LIVE',
+    disabled: false,
+    color: 'border-purple-500/60 bg-purple-950/40 text-purple-300 font-bold',
+    description: 'Google Veo 3.1 Lite resmi via Higgsfield MCP. Sangat cepat, hemat, dan berkualitas sinematik tinggi.',
+    capabilities: ['Higgsfield MCP Live', 'Veo 3.1 Lite', 'Ultra Fast', 'Lowest Cost (8 Cr)']
+  },
+  {
+    id: 'wan3_0',
+    name: 'Wan 3.0 (Official Higgsfield MCP)',
+    tag: 'Ultra Realistic Motion & Physics (8.75 Credits)',
+    badge: 'HIGGSFIELD MCP LIVE',
+    disabled: false,
+    color: 'border-indigo-500/60 bg-indigo-950/40 text-indigo-300 font-bold',
+    description: 'Engine animasi Wan 3.0 resmi via Higgsfield MCP dengan simulasi fisika dan dinamika gerak organik.',
+    capabilities: ['Higgsfield MCP Live', 'Wan 3.0 Engine', 'Natural Physics', '8.75 Credits']
+  },
+  {
+    id: 'veo3_1',
+    name: 'Veo 3.1 Pro (Official Higgsfield MCP)',
+    tag: 'Ultra High Definition Cinematic (22 Credits)',
+    badge: 'HIGGSFIELD MCP PRO',
+    disabled: false,
+    color: 'border-fuchsia-500/60 bg-fuchsia-950/40 text-fuchsia-300 font-bold',
+    description: 'Flagship Google Veo 3.1 Pro melalui Higgsfield MCP untuk video broadcast sinematik premium.',
+    capabilities: ['Higgsfield MCP Live', 'Veo 3.1 Flagship', 'Cinema Master', '22 Credits']
+  },
+  {
+    id: 'wan2_7',
+    name: 'Wan 2.7 (Official Higgsfield MCP)',
+    tag: 'Smooth Motion Dynamics (12 Credits)',
+    badge: 'HIGGSFIELD MCP VIDEO',
+    disabled: false,
+    color: 'border-emerald-500/60 bg-emerald-950/40 text-emerald-300 font-bold',
+    description: 'Model Wan 2.7 via Higgsfield MCP dengan stabilitas gerak tinggi untuk transisi adegan.',
+    capabilities: ['Higgsfield MCP Live', 'Wan 2.7 Engine', 'Fluid Motion', '12 Credits']
+  },
+  {
+    id: 'grok_video',
+    name: 'Grok Video (Official Higgsfield MCP)',
+    tag: 'Creative Dynamics & Physics (12 Credits)',
+    badge: 'HIGGSFIELD MCP VIDEO',
+    disabled: false,
+    color: 'border-amber-500/60 bg-amber-950/40 text-amber-300 font-bold',
+    description: 'Engine Grok Video via Higgsfield MCP untuk kreativitas gerak dinamis dan efek visual unik.',
+    capabilities: ['Higgsfield MCP Live', 'Grok Video AI', 'High Creativity', '12 Credits']
+  },
+  {
+    id: 'gemini_omni',
+    name: 'Gemini Omni (Official Higgsfield MCP)',
+    tag: 'Multimodal Video Reasoning (10 Credits)',
+    badge: 'HIGGSFIELD MCP OMNI',
+    disabled: false,
+    color: 'border-cyan-500/60 bg-cyan-950/40 text-cyan-300 font-bold',
+    description: 'Model multimodal Gemini Omni via Higgsfield MCP dengan pemahaman konteks visual komprehensif.',
+    capabilities: ['Higgsfield MCP Live', 'Gemini Omni Engine', 'Multimodal', '10 Credits']
   }
 ];
 

@@ -22,24 +22,84 @@ export interface HiggsfieldModelInfo {
 
 export const HIGGSFIELD_DEFAULT_MODELS: HiggsfieldModelInfo[] = [
   {
-    id: 'higgsfield-video-pro',
-    name: 'Higgsfield Video Pro',
+    id: 'veo3_1_lite',
+    name: 'Google Veo 3.1 Lite',
     type: 'VIDEO',
-    tier: 'premium',
-    costUsd: 0.150,
-    defaultDuration: 5,
-    description: 'Higgsfield Video Pro cinematic generation (15 credits)',
-    supportedAspectRatios: ['9:16', '16:9', '1:1']
+    tier: 'economy',
+    costUsd: 0.080,
+    defaultDuration: 4,
+    description: 'Google Veo 3.1 Lite fast cinematic video generation (8 credits)',
+    supportedAspectRatios: ['16:9', '9:16', '1:1']
   },
   {
-    id: 'higgsfield-anim',
-    name: 'Higgsfield Anim (Image-to-Video)',
-    type: 'IMAGE_TO_VIDEO',
+    id: 'wan3_0',
+    name: 'Wan 3.0',
+    type: 'VIDEO',
+    tier: 'balanced',
+    costUsd: 0.0875,
+    defaultDuration: 5,
+    description: 'Wan 3.0 character consistent generation with multimodal audio/motion (8.75 credits)',
+    supportedAspectRatios: ['16:9', '9:16', '1:1', '4:3', '3:4']
+  },
+  {
+    id: 'veo3_1',
+    name: 'Google Veo 3.1',
+    type: 'VIDEO',
+    tier: 'premium',
+    costUsd: 0.220,
+    defaultDuration: 8,
+    description: 'Google Veo 3.1 top-tier photorealistic video generation (22 credits)',
+    supportedAspectRatios: ['16:9', '9:16']
+  },
+  {
+    id: 'wan2_7',
+    name: 'Wan 2.7 Video Engine',
+    type: 'VIDEO',
+    tier: 'balanced',
+    costUsd: 0.120,
+    defaultDuration: 5,
+    description: 'Wan 2.7 high-realism video physics and organic motion (12 credits)',
+    supportedAspectRatios: ['16:9', '9:16', '1:1']
+  },
+  {
+    id: 'grok_video',
+    name: 'Grok Video Engine',
+    type: 'VIDEO',
+    tier: 'balanced',
+    costUsd: 0.120,
+    defaultDuration: 5,
+    description: 'Grok Video Engine high dynamic action and camera physics (12 credits)',
+    supportedAspectRatios: ['16:9', '9:16', '1:1']
+  },
+  {
+    id: 'gemini_omni',
+    name: 'Gemini Omni Video',
+    type: 'VIDEO',
     tier: 'balanced',
     costUsd: 0.100,
     defaultDuration: 5,
-    description: 'Higgsfield Anim fluid character and object animation (10 credits)',
-    supportedAspectRatios: ['9:16', '16:9', '1:1']
+    description: 'Gemini Omni Video multimodal reasoning & video synthesis (10 credits)',
+    supportedAspectRatios: ['16:9', '9:16']
+  },
+  {
+    id: 'higgsfield-video-pro',
+    name: 'Google Veo 3.1 Lite (Legacy: Video Pro)',
+    type: 'VIDEO',
+    tier: 'economy',
+    costUsd: 0.080,
+    defaultDuration: 4,
+    description: 'Higgsfield Video Pro alias (normalizes to veo3_1_lite - 8 credits)',
+    supportedAspectRatios: ['16:9', '9:16', '1:1']
+  },
+  {
+    id: 'higgsfield-anim',
+    name: 'Wan 3.0 (Legacy: Anim)',
+    type: 'IMAGE_TO_VIDEO',
+    tier: 'balanced',
+    costUsd: 0.0875,
+    defaultDuration: 5,
+    description: 'Higgsfield Anim alias (normalizes to wan3_0 - 8.75 credits)',
+    supportedAspectRatios: ['16:9', '9:16', '1:1']
   }
 ];
 
@@ -289,11 +349,20 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
   public resolveModelId(inputModel?: string, mediaType: 'image' | 'video' = 'video'): { modelId: string; modelDef: HiggsfieldModelInfo } {
     const model = (inputModel || '').trim();
     const aliasMap: Record<string, string> = {
-      'higgsfield-video-pro': 'higgsfield-video-pro',
-      'higgsfield-anim': 'higgsfield-anim'
+      'higgsfield-video-pro': 'veo3_1_lite',
+      'higgsfield-anim': 'wan3_0',
+      'default': 'veo3_1_lite',
+      'veo': 'veo3_1_lite',
+      'veo3': 'veo3',
+      'veo3_1': 'veo3_1',
+      'veo3_1_lite': 'veo3_1_lite',
+      'wan3_0': 'wan3_0',
+      'wan2_7': 'wan2_7',
+      'grok_video': 'grok_video',
+      'gemini_omni': 'gemini_omni'
     };
 
-    const targetId = aliasMap[model] || (model && model !== 'default' ? model : 'higgsfield-video-pro');
+    const targetId = aliasMap[model] || (model && model !== 'default' ? model : 'veo3_1_lite');
     const modelDef = HIGGSFIELD_DEFAULT_MODELS.find(m => m.id === targetId) ||
       HIGGSFIELD_DEFAULT_MODELS.find(m => m.id === model) ||
       HIGGSFIELD_DEFAULT_MODELS[0];
@@ -301,7 +370,7 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     return { modelId: targetId, modelDef };
   }
 
-  public resolveToolName(category: 'IMAGE_TO_VIDEO' | 'TEXT_TO_VIDEO'): string {
+  public resolveToolName(category: 'IMAGE_TO_VIDEO' | 'TEXT_TO_VIDEO' | 'TEXT_TO_IMAGE'): string {
     const tools = HiggsfieldMCPAdapter.cachedTools || [];
     const findTool = (candidates: string[]) => {
       for (const c of candidates) {
@@ -315,29 +384,17 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       return null;
     };
 
-    if (category === 'IMAGE_TO_VIDEO') {
-      const tool = findTool(['higgsfield_image_to_video', 'image_to_video', 'higgsfield_generate_video', 'generate_video']);
-      if (tool) return tool;
-      if (tools.length > 0) {
-        const schemaMatch = tools.find(t => t.inputSchema?.properties?.image_url || t.inputSchema?.properties?.image || t.inputSchema?.properties?.visualReferences);
-        if (schemaMatch) return schemaMatch.name;
-        throw new Error(`Tool untuk kategori ${category} tidak ditemukan pada server Higgsfield MCP.`);
-      }
-      return 'higgsfield_generate_video';
+    if (category === 'IMAGE_TO_VIDEO' || category === 'TEXT_TO_VIDEO') {
+      const tool = findTool(['generate_video', 'higgsfield_generate_video', 'text_to_video', 'image_to_video']);
+      return tool || 'generate_video';
     }
 
-    if (category === 'TEXT_TO_VIDEO') {
-      const tool = findTool(['higgsfield_text_to_video', 'text_to_video', 'higgsfield_generate_video', 'generate_video']);
-      if (tool) return tool;
-      if (tools.length > 0) {
-        const schemaMatch = tools.find(t => t.inputSchema?.properties?.prompt);
-        if (schemaMatch) return schemaMatch.name;
-        throw new Error(`Tool untuk kategori ${category} tidak ditemukan pada server Higgsfield MCP.`);
-      }
-      return 'higgsfield_generate_video';
+    if (category === 'TEXT_TO_IMAGE') {
+      const tool = findTool(['generate_image', 'higgsfield_generate_image', 'text_to_image']);
+      return tool || 'generate_image';
     }
 
-    return 'higgsfield_generate_video';
+    return 'generate_video';
   }
 
   async validateSessionToken(token: string): Promise<{
@@ -585,7 +642,13 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       } catch {}
     }
 
-    const structuredResources = result.structuredContent?.resources || result.resources;
+    // 1. Check structuredContent generation results (Higgsfield job_status)
+    const genResults = result?.structuredContent?.generation?.results || result?.generation?.results;
+    if (genResults?.rawUrl) return genResults.rawUrl;
+    if (genResults?.url) return genResults.url;
+
+    // 2. Check structured resources
+    const structuredResources = result?.structuredContent?.resources || result?.resources;
     if (Array.isArray(structuredResources) && structuredResources.length > 0) {
       const first = structuredResources[0];
       if (first.url) return first.url;
@@ -593,7 +656,8 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       if (first.thumbnailUrl) return first.thumbnailUrl;
     }
 
-    if (Array.isArray(result.content)) {
+    // 3. Check content array
+    if (Array.isArray(result?.content)) {
       for (const c of result.content) {
         if (c.uri && (c.uri.startsWith('http://') || c.uri.startsWith('https://'))) {
           return c.uri;
@@ -607,12 +671,18 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
         if (c.text) {
           try {
             const parsed = JSON.parse(c.text);
+            const nestedGenResults = parsed?.structuredContent?.generation?.results || parsed?.generation?.results;
+            if (nestedGenResults?.rawUrl) return nestedGenResults.rawUrl;
+            if (nestedGenResults?.url) return nestedGenResults.url;
             const nestedResources = parsed?.resources || parsed?.structuredContent?.resources;
             if (Array.isArray(nestedResources) && nestedResources.length > 0 && nestedResources[0].url) {
               return nestedResources[0].url;
             }
             if (parsed?.url) return parsed.url;
+            if (parsed?.rawUrl) return parsed.rawUrl;
           } catch {
+            const urlMatch = c.text.match(/https?:\/\/[^\s"'<>]+\.(?:mp4|webm|mov|png|jpg|jpeg|webp)(?:\?[^\s"'<>]*)?/i);
+            if (urlMatch) return urlMatch[0];
             if (c.text.startsWith('http://') || c.text.startsWith('https://') || c.text.startsWith('data:')) {
               return c.text.trim();
             }
@@ -621,86 +691,100 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       }
     }
 
-    if (result.url) return result.url;
-    if (result.image_url) return result.image_url;
-    if (result.video_url) return result.video_url;
-    if (result.asset_url) return result.asset_url;
-    if (Array.isArray(result.images) && result.images.length > 0) {
+    if (result?.url) return result.url;
+    if (result?.rawUrl) return result.rawUrl;
+    if (result?.videoUrl) return result.videoUrl;
+    if (result?.image_url) return result.image_url;
+    if (result?.video_url) return result.video_url;
+    if (result?.asset_url) return result.asset_url;
+    if (Array.isArray(result?.images) && result.images.length > 0) {
       return typeof result.images[0] === 'string' ? result.images[0] : (result.images[0]?.url || null);
     }
-    if (Array.isArray(result.videos) && result.videos.length > 0) {
+    if (Array.isArray(result?.videos) && result.videos.length > 0) {
       return typeof result.videos[0] === 'string' ? result.videos[0] : (result.videos[0]?.url || null);
     }
 
     return null;
   }
 
-  private extractHistoryId(result: any): string | null {
+  private extractJobId(result: any): string | null {
     if (!result) return null;
     if (typeof result === 'string') {
       try { result = JSON.parse(result); } catch {}
     }
-    if (result.structuredContent?.historyId) return result.structuredContent.historyId;
-    if (result.historyId) return result.historyId;
-    if (Array.isArray(result.content)) {
+
+    // 1. Structured results array (e.g. results: [{ id: "uuid", ... }])
+    const results = result?.structuredContent?.results || result?.results;
+    if (Array.isArray(results) && results.length > 0 && results[0]?.id) {
+      return results[0].id;
+    }
+
+    // 2. Structured generation id
+    if (result?.structuredContent?.generation?.id) return result.structuredContent.generation.id;
+    if (result?.generation?.id) return result.generation.id;
+    if (result?.jobId) return result.jobId;
+    if (result?.id) return result.id;
+    if (result?.structuredContent?.historyId) return result.structuredContent.historyId;
+    if (result?.historyId) return result.historyId;
+
+    // 3. Check content text for UUID or JSON
+    if (Array.isArray(result?.content)) {
       for (const c of result.content) {
         if (c.text) {
           try {
             const parsed = JSON.parse(c.text);
-            if (parsed.historyId) return parsed.historyId;
-          } catch {}
+            const parsedResults = parsed?.structuredContent?.results || parsed?.results;
+            if (Array.isArray(parsedResults) && parsedResults.length > 0 && parsedResults[0]?.id) {
+              return parsedResults[0].id;
+            }
+            if (parsed?.jobId) return parsed.jobId;
+            if (parsed?.id) return parsed.id;
+            if (parsed?.historyId) return parsed.historyId;
+          } catch {
+            const uuidMatch = c.text.match(/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})/);
+            if (uuidMatch) return uuidMatch[1];
+          }
         }
       }
     }
+
     return null;
   }
 
-  private async waitForCreation(historyId: string, timeoutSeconds = 90, isVideo = false): Promise<string> {
-    try {
-      const waitResult = await this.callMCPTool('higgsfield_creation_wait', {
-        historyId,
-        timeoutSeconds: Math.min(timeoutSeconds, 90)
-      }, 2);
-
-      const assetUrl = this.extractAssetUrlFromResult(waitResult);
-      if (assetUrl) {
-        return assetUrl;
-      }
-    } catch (waitErr: any) {
-      console.warn(`[Higgsfield MCP] wait notice: ${waitErr?.message}. Falling back to polling...`);
-    }
-
+  private async waitForJob(jobId: string, timeoutSeconds = 120): Promise<string> {
     const startTime = Date.now();
     const maxWaitMs = timeoutSeconds * 1000;
-    while (Date.now() - startTime < maxWaitMs) {
-      await new Promise(r => setTimeout(r, 4000));
-      try {
-        const getResult = await this.callMCPTool('higgsfield_creation_get', { historyId }, 1);
-        let parsed: any = getResult;
-        if (typeof getResult === 'string') {
-          try { parsed = JSON.parse(getResult); } catch {}
-        }
-        if (Array.isArray(getResult?.content)) {
-          for (const c of getResult.content) {
-            if (c.type === 'text') {
-              try { parsed = JSON.parse(c.text); } catch {}
-            }
-          }
-        }
 
-        const status = parsed?.status || parsed?.structuredContent?.status;
-        if (status === 'COMPLETED') {
-          const url = this.extractAssetUrlFromResult(parsed);
-          if (url) return url;
-        } else if (status === 'FAILED' || status === 'CANCELLED') {
-          throw new Error(`Higgsfield generation ${historyId} ended with status [${status}]: ${parsed?.error || parsed?.failedReason || 'Generation rejected'}`);
+    console.log(`[Higgsfield MCP] Awaiting job completion (jobId: ${jobId}, timeout: ${timeoutSeconds}s)...`);
+
+    while (Date.now() - startTime < maxWaitMs) {
+      await new Promise(r => setTimeout(r, 3500));
+
+      try {
+        const statusResult = await this.callMCPTool('job_status', { jobId }, 2);
+
+        const gen = statusResult?.structuredContent?.generation || statusResult?.generation || {};
+        const status = (gen.status || statusResult?.status || '').toLowerCase();
+
+        if (status === 'completed' || status === 'success' || status === 'succeeded') {
+          const url = this.extractAssetUrlFromResult(statusResult);
+          if (url) {
+            console.log(`[Higgsfield MCP] Job ${jobId} completed successfully! URL: ${url}`);
+            return url;
+          }
+        } else if (status === 'failed' || status === 'cancelled' || status === 'rejected') {
+          const failureReason = gen.error || gen.failedReason || statusResult?.error || 'Generation rejected by provider';
+          throw new Error(`Higgsfield job [${jobId}] failed: ${failureReason}`);
         }
-      } catch (e: any) {
-        if (e.message?.includes('ended with status')) throw e;
+      } catch (err: any) {
+        if (err?.message?.includes('failed:')) {
+          throw err;
+        }
+        console.warn(`[Higgsfield MCP] Polling notice for job ${jobId}: ${err?.message}`);
       }
     }
 
-    throw new Error(`Higgsfield creation timed out after ${timeoutSeconds}s (historyId: ${historyId})`);
+    throw new Error(`Higgsfield video generation timed out after ${timeoutSeconds}s (jobId: ${jobId}).`);
   }
 
   static clearCache(): void {
@@ -716,29 +800,29 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     const rawImageUrl = scene.imageUrl || scene.assetUrl || '';
 
     const explicitModel = (scene as any)?.videoModel || (scene as any)?.metadata?.model;
-    const model = (explicitModel && explicitModel.startsWith('higgsfield')) ? explicitModel : 'higgsfield-video-pro';
+    const { modelId } = this.resolveModelId(explicitModel, 'video');
 
     if (rawImageUrl) {
-      onProgress?.(`Higgsfield MCP: Animating image keyframe (${model})...`);
+      onProgress?.(`Higgsfield MCP: Animating image keyframe (${modelId})...`);
       const result = await this.imageToVideo({
         prompt,
         imageUrl: rawImageUrl,
-        model,
-        duration: 5,
-        aspectRatio: '9:16',
+        model: modelId,
+        duration: 4,
+        aspectRatio: '16:9',
         sceneId: scene.id
       });
-      return result.assetUrl || '';
+      return result.assetUrl || result.videoUrl || '';
     } else {
-      onProgress?.(`Higgsfield MCP: Rendering text-to-video (${model})...`);
+      onProgress?.(`Higgsfield MCP: Rendering text-to-video (${modelId})...`);
       const result = await this.generateVideo({
         prompt,
-        model,
-        duration: 5,
-        aspectRatio: '9:16',
+        model: modelId,
+        duration: 4,
+        aspectRatio: '16:9',
         sceneId: scene.id
       });
-      return result.assetUrl || '';
+      return result.assetUrl || result.videoUrl || '';
     }
   }
 
@@ -746,6 +830,8 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     const generationId = `higgsfield_i2v_${Date.now()}_${randomUUID().substring(0, 8)}`;
     const { modelId, modelDef } = this.resolveModelId(request.model, 'video');
     const estimatedCost = modelDef.costUsd;
+    const duration = request.duration || modelDef.defaultDuration || 4;
+    const aspectRatio = request.aspectRatio || '16:9';
 
     CostTrackingService.startGeneration({
       generationId,
@@ -756,36 +842,47 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       provider: 'higgsfield',
       model: modelId,
       operation: 'IMAGE_TO_VIDEO',
-      duration: request.duration || 5,
+      duration,
       resolution: request.resolution || '720p',
       estimatedCost
     });
 
     try {
       const toolName = this.resolveToolName('IMAGE_TO_VIDEO');
-      let assetUrl: string | null = null;
+      let mediaValue = request.imageUrl;
+
+      // If imageUrl is a web URL, import it to get media value
+      if (request.imageUrl && (request.imageUrl.startsWith('http://') || request.imageUrl.startsWith('https://'))) {
+        try {
+          const importResult = await this.callMCPTool('media_import_url', { url: request.imageUrl, type: 'image' }, 2);
+          const importedId = importResult?.structuredContent?.media?.id || importResult?.id || importResult?.mediaId;
+          if (importedId) {
+            mediaValue = importedId;
+          }
+        } catch (importErr) {
+          console.warn(`[Higgsfield MCP] media_import_url notice:`, importErr);
+        }
+      }
 
       const toolArgs = {
-        model: modelId,
-        mode: 'image2video',
         params: {
+          model: modelId,
           prompt: request.prompt || 'Fluid cinematic camera motion and realistic movement',
-          aspectRatio: request.aspectRatio || '16:9',
-          visualReferences: [
-            {
-              type: 'image',
-              id: 'first_frame',
-              url: request.imageUrl,
-              label: 'First Frame'
-            }
-          ]
+          aspect_ratio: aspectRatio,
+          duration,
+          medias: mediaValue ? [{ value: mediaValue, role: 'start_image' }] : [],
+          count: 1
         }
       };
 
+      console.log(`[Higgsfield MCP] Calling ${toolName} with model ${modelId} for Image-to-Video...`);
       const mcpResult = await this.callMCPTool(toolName, toolArgs);
-      const historyId = this.extractHistoryId(mcpResult);
-      if (historyId) {
-        assetUrl = await this.waitForCreation(historyId, 120, true);
+      const jobId = this.extractJobId(mcpResult);
+      let assetUrl: string | null = null;
+
+      if (jobId) {
+        request.onProgress?.(`Higgsfield MCP: Job ${jobId.substring(0, 8)} in progress...`);
+        assetUrl = await this.waitForJob(jobId, 120);
       } else {
         assetUrl = this.extractAssetUrlFromResult(mcpResult);
       }
@@ -804,6 +901,8 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       return {
         success: true,
         assetUrl,
+        videoUrl: assetUrl,
+        url: assetUrl,
         generationId,
         provider: 'higgsfield',
         model: modelId,
@@ -822,6 +921,8 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     const generationId = `higgsfield_t2v_${Date.now()}_${randomUUID().substring(0, 8)}`;
     const { modelId, modelDef } = this.resolveModelId(request.model, 'video');
     const estimatedCost = modelDef.costUsd;
+    const duration = request.duration || modelDef.defaultDuration || 4;
+    const aspectRatio = request.aspectRatio || '16:9';
 
     CostTrackingService.startGeneration({
       generationId,
@@ -832,28 +933,32 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       provider: 'higgsfield',
       model: modelId,
       operation: 'TEXT_TO_VIDEO',
-      duration: request.duration || 5,
-      resolution: request.resolution || '1080p',
+      duration,
+      resolution: request.resolution || '720p',
       estimatedCost
     });
 
     try {
       const toolName = this.resolveToolName('TEXT_TO_VIDEO');
-      let assetUrl: string | null = null;
+      console.log(`[Higgsfield MCP] Calling ${toolName} with model ${modelId} for Text-to-Video...`);
 
       const toolArgs = {
-        model: modelId,
-        mode: 'text2video',
         params: {
-          prompt: request.prompt,
-          aspectRatio: request.aspectRatio || '16:9'
+          model: modelId,
+          prompt: request.prompt || 'Cinematic futuristic visual scene',
+          aspect_ratio: aspectRatio,
+          duration,
+          count: 1
         }
       };
 
       const mcpResult = await this.callMCPTool(toolName, toolArgs);
-      const historyId = this.extractHistoryId(mcpResult);
-      if (historyId) {
-        assetUrl = await this.waitForCreation(historyId, 120, true);
+      const jobId = this.extractJobId(mcpResult);
+      let assetUrl: string | null = null;
+
+      if (jobId) {
+        request.onProgress?.(`Higgsfield MCP: Job ${jobId.substring(0, 8)} in progress...`);
+        assetUrl = await this.waitForJob(jobId, 120);
       } else {
         assetUrl = this.extractAssetUrlFromResult(mcpResult);
       }
@@ -872,6 +977,8 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       return {
         success: true,
         assetUrl,
+        videoUrl: assetUrl,
+        url: assetUrl,
         generationId,
         provider: 'higgsfield',
         model: modelId,

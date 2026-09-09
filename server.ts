@@ -1585,23 +1585,77 @@ async function startServer() {
   app.post('/api/fcc/higgsfield/test-generation', async (req, res) => {
     if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
     try {
-      const { prompt, imageUrl } = req.body;
+      const { prompt, imageUrl, model } = req.body;
       const { HiggsfieldMCPAdapter } = await import('./src/server/providers/HiggsfieldMCPAdapter');
       const adapter = new HiggsfieldMCPAdapter();
-      let videoUrl = '';
+      let result: any = null;
       if (imageUrl) {
-        videoUrl = await adapter.imageToVideo({
+        result = await adapter.imageToVideo({
           imageUrl,
           prompt: prompt || 'Smooth cinematic motion',
-          duration: 5
+          model: model || 'wan3_0',
+          duration: 4
         });
       } else {
-        videoUrl = await adapter.generateVideo({
+        result = await adapter.generateVideo({
           prompt: prompt || 'Cinematic futuristic city with vibrant neon lights',
-          duration: 5
+          model: model || 'veo3_1_lite',
+          duration: 4
         });
       }
-      res.json({ success: true, videoUrl });
+
+      const videoUrl = typeof result === 'string' ? result : (result?.videoUrl || result?.assetUrl || result?.url || '');
+      if (!videoUrl) {
+        throw new Error('Higgsfield MCP returned empty video URL');
+      }
+
+      // Automatically register finished video in Founder Dashboard / Showcase Gallery
+      const resolvedModel = result?.model || model || 'veo3_1_lite';
+      const projectId = `higgsfield-showcase-${Date.now()}`;
+      const projectRecord: any = {
+        id: projectId,
+        userId: 'founder',
+        title: `Higgsfield AI Master Video (${resolvedModel})`,
+        status: 'COMPLETED',
+        videoType: 'CINEMATIC',
+        finalVideoUrl: videoUrl,
+        showcaseEligible: true,
+        showcaseOrder: 1,
+        overallProgress: 100,
+        currentPhaseName: 'Finished (Higgsfield MCP Engine)',
+        scenes: [
+          {
+            id: 'scene-1',
+            duration: '4s',
+            visualDirection: prompt || 'Cinematic futuristic visual render via Higgsfield MCP',
+            status: 'COMPLETED',
+            videoStatus: 'COMPLETED',
+            videoUrl: videoUrl,
+            assetUrl: videoUrl,
+            model: resolvedModel
+          }
+        ],
+        brief: {
+          product: 'Higgsfield AI Studio Showcase',
+          angle: prompt || 'Cinematic futuristic city with vibrant neon lights'
+        },
+        createdAt: new Date().toISOString()
+      };
+
+      projects.set(projectId, projectRecord);
+      try {
+        saveProjects();
+      } catch (e) {}
+
+      res.json({
+        success: true,
+        videoUrl,
+        assetUrl: videoUrl,
+        projectId,
+        provider: 'higgsfield',
+        model: resolvedModel,
+        generationId: result?.generationId
+      });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

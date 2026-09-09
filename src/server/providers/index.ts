@@ -58,10 +58,17 @@ export function getVideoProvider(preferredType?: string, preferredProvider?: str
     return new OpenArtMCPAdapter();
   }
 
+  // Known Higgsfield models (when no explicit provider is specified)
+  const knownHiggsfieldModels = [
+    'veo3_1_lite', 'veo3_1', 'wan3_0', 'wan2_7', 'grok_video', 'gemini_omni',
+    'higgsfield-video-pro', 'higgsfield-anim'
+  ];
   if (
     typeClean === 'higgsfield' || 
     typeClean.startsWith('higgsfield-') || 
-    typeClean.includes('higgsfield')
+    typeClean.startsWith('higgsfield_') ||
+    typeClean.includes('higgsfield') ||
+    knownHiggsfieldModels.includes(typeClean)
   ) {
     return new HiggsfieldMCPAdapter();
   }

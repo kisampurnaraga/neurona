@@ -8,6 +8,12 @@ import { GoogleVeoAdapter } from './GoogleVeoAdapter';
 import { BytePlusAdapter } from './BytePlusAdapter';
 import { CostTrackingService } from '../../../server/services/costTrackingService';
 import { FounderService } from '../fcc/FounderService';
+import { 
+  normalizeHiggsfieldModelId, 
+  normalizeOpenArtModelId,
+  HIGGSFIELD_CATALOG_MODELS,
+  OPENART_CATALOG_MODELS
+} from '../../shared/modelCatalog';
 
 export type GenerationMode = 'ECONOMY' | 'BALANCED' | 'PREMIUM' | 'AUTO';
 
@@ -65,15 +71,32 @@ export class MediaProviderRouter {
     // -------------------------------------------------------------
     // EXPLICIT PROVIDER SELECTION (MUST ALWAYS WIN FIRST!)
     // -------------------------------------------------------------
+    if (preferredProvider === 'higgsfield') {
+      const canonicalModel = normalizeHiggsfieldModelId(preferredModel) || 'veo3_1_lite';
+      const modelDef = HIGGSFIELD_CATALOG_MODELS.find(m => m.internalModelId === canonicalModel) || HIGGSFIELD_CATALOG_MODELS[0];
+      return {
+        providerId: 'higgsfield',
+        providerName: 'Higgsfield MCP Media Provider',
+        model: canonicalModel,
+        tier: modelDef.tier,
+        estimatedCostUsd: modelDef.costUsd,
+        reason: 'Explicitly configured Higgsfield MCP Provider',
+        fallbackChain: [],
+        allowFallback: false
+      };
+    }
+
     if (preferredProvider === 'openart') {
       const isImg = operation === 'IMAGE';
-      const resolvedModel = preferredModel || (isImg ? 'kling-3-omni' : 'byte-plus-seedance-2-fast');
+      const canonicalModel = normalizeOpenArtModelId(preferredModel) || (isImg ? 'kling-3-omni' : 'byte-plus-seedance-2-fast');
+      const modelDef = OPENART_CATALOG_MODELS.find(m => m.internalModelId === canonicalModel) || 
+        (isImg ? OPENART_CATALOG_MODELS.find(m => m.internalModelId === 'kling-3-omni')! : OPENART_CATALOG_MODELS[0]);
       return {
         providerId: 'openart',
         providerName: 'OpenArt MCP Media Provider',
-        model: resolvedModel,
-        tier: 'balanced',
-        estimatedCostUsd: isImg ? 0.010 : 0.050,
+        model: canonicalModel,
+        tier: modelDef.tier,
+        estimatedCostUsd: modelDef.costUsd,
         reason: 'Explicitly configured OpenArt MCP Provider',
         fallbackChain: [],
         allowFallback: false
@@ -123,37 +146,28 @@ export class MediaProviderRouter {
       };
     }
 
-    if (preferredProvider === 'higgsfield') {
-      return {
-        providerId: 'higgsfield',
-        providerName: 'Higgsfield MCP Media Provider',
-        model: preferredModel || 'higgsfield-video-pro',
-        tier: 'premium',
-        estimatedCostUsd: 0.150,
-        reason: 'Explicitly configured Higgsfield MCP Provider',
-        fallbackChain: [],
-        allowFallback: false
-      };
-    }
-
     // -------------------------------------------------------------
     // IMPLICIT RESOLUTION BY MODEL ID (Only when no explicit provider)
     // -------------------------------------------------------------
     const knownHiggsfieldModels = [
+      'veo3_1_lite', 'veo3_1', 'wan3_0', 'wan2_7', 'grok_video', 'gemini_omni',
       'higgsfield-video-pro', 'higgsfield-anim'
     ];
 
     if (
       knownHiggsfieldModels.includes(preferredModelLower) ||
       preferredModelLower.startsWith('higgsfield-') ||
+      preferredModelLower.startsWith('higgsfield_') ||
       preferredModelLower.includes('higgsfield')
     ) {
+      const canonicalModel = normalizeHiggsfieldModelId(preferredModel) || 'veo3_1_lite';
+      const modelDef = HIGGSFIELD_CATALOG_MODELS.find(m => m.internalModelId === canonicalModel) || HIGGSFIELD_CATALOG_MODELS[0];
       return {
         providerId: 'higgsfield',
         providerName: 'Higgsfield MCP Media Provider',
-        model: preferredModel || 'higgsfield-video-pro',
-        tier: 'premium',
-        estimatedCostUsd: 0.150,
+        model: canonicalModel,
+        tier: modelDef.tier,
+        estimatedCostUsd: modelDef.costUsd,
         reason: 'Implicit Higgsfield MCP Model Match',
         fallbackChain: [],
         allowFallback: false
@@ -171,16 +185,19 @@ export class MediaProviderRouter {
     if (
       knownOpenArtModels.includes(preferredModelLower) ||
       preferredModelLower.startsWith('openart-') ||
+      preferredModelLower.startsWith('openart_') ||
       preferredModelLower.includes('openart')
     ) {
       const isImg = operation === 'IMAGE';
-      const resolvedModel = preferredModel || (isImg ? 'kling-3-omni' : 'byte-plus-seedance-2-fast');
+      const canonicalModel = normalizeOpenArtModelId(preferredModel) || (isImg ? 'kling-3-omni' : 'byte-plus-seedance-2-fast');
+      const modelDef = OPENART_CATALOG_MODELS.find(m => m.internalModelId === canonicalModel) || 
+        (isImg ? OPENART_CATALOG_MODELS.find(m => m.internalModelId === 'kling-3-omni')! : OPENART_CATALOG_MODELS[0]);
       return {
         providerId: 'openart',
         providerName: 'OpenArt MCP Media Provider',
-        model: resolvedModel,
-        tier: 'balanced',
-        estimatedCostUsd: isImg ? 0.010 : 0.050,
+        model: canonicalModel,
+        tier: modelDef.tier,
+        estimatedCostUsd: modelDef.costUsd,
         reason: 'Implicit OpenArt MCP Model Match',
         fallbackChain: [],
         allowFallback: false

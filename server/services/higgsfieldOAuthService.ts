@@ -242,44 +242,12 @@ export class HiggsfieldOAuthService {
   }
 
   /**
-   * Resolves a trusted, canonical application origin using strict exact matching.
-   * Rejects suffix wildcards and unapproved headers, falling back to canonical safe default.
+   * Resolves a trusted, canonical application origin using DomainConfigService.
+   * Ensures parity with OpenArt, rejecting arbitrary unapproved headers and avoiding
+   * incorrect localhost fallbacks in production.
    */
   public static getCanonicalTrustedOrigin(headers?: Record<string, string | string[] | undefined>, fallbackHost?: string): string {
-    const approvedOrigins = this.getExplicitApprovedOrigins();
-    const safeDefault = (process.env.APP_ORIGIN && process.env.APP_ORIGIN.trim())
-      ? process.env.APP_ORIGIN.trim().replace(/\/+$/, '')
-      : 'http://localhost:3000';
-
-    if (!headers && !fallbackHost) {
-      return safeDefault;
-    }
-
-    // 1. Read candidate headers from reverse proxy
-    const forwardedProto = (headers?.['x-forwarded-proto'] as string) || '';
-    const forwardedHost = (headers?.['x-forwarded-host'] as string) || '';
-    const rawHost = forwardedHost || fallbackHost || '';
-
-    if (!rawHost) {
-      return safeDefault;
-    }
-
-    const protocol = (forwardedProto === 'https' || forwardedProto === 'http')
-      ? forwardedProto
-      : (rawHost.includes('localhost') || rawHost.includes('127.0.0.1') ? 'http' : 'https');
-
-    const candidateOrigin = `${protocol}://${rawHost}`.trim().replace(/\/+$/, '');
-
-    // 2. Exact match against approved allowlist (no wildcard / suffix loose match)
-    const isApproved = approvedOrigins.some(allowed => allowed.toLowerCase() === candidateOrigin.toLowerCase());
-
-    if (isApproved) {
-      return candidateOrigin;
-    }
-
-    // 3. Reject unapproved or spoofed origin -> return safe default
-    console.warn(`[Higgsfield OAuth] Origin "${candidateOrigin}" not in approved allowlist. Defaulting to safe canonical origin: "${safeDefault}"`);
-    return safeDefault;
+    return DomainConfigService.getCanonicalTrustedOrigin(headers);
   }
 
   public static generatePKCE(): { verifier: string; challenge: string } {
@@ -414,9 +382,10 @@ export class HiggsfieldOAuthService {
 
     const authMeta = await this.discoverAuthorizationServerMetadata();
     const authEndpoint = authMeta.authorization_endpoint;
-    const scope = (authMeta.scopes_supported && authMeta.scopes_supported.length > 0)
-      ? authMeta.scopes_supported.join(' ')
-      : 'openid email offline_access';
+    // STRICT SECURITY: Must match the exact scopes registered with RFC 7591 dynamic client registration
+    // and requested by the Higgsfield MCP protected resource ('openid email offline_access').
+    // NEVER use raw authMeta.scopes_supported which contains Clerk user/org scopes disallowed for this client.
+    const scope = 'openid email offline_access';
 
     const { verifier, challenge } = this.generatePKCE();
     const state = `higgsfield_pkce_${Date.now()}_${crypto.randomBytes(16).toString('hex')}`;
@@ -766,6 +735,25 @@ export class HiggsfieldOAuthService {
       }
     } catch (e) {
       console.warn('[Higgsfield OAuth] cleanExpiredSessions error:', e);
+    }
+  }
+
+  /**
+   * Invalidate stale client registrations and stale unconsumed sessions specifically for Higgsfield.
+   * STRICT SAFETY: ONLY purges keys prefixed with 'higgsfield_oauth_client:' or 'higgsfield_oauth_session:'.
+   * Does NOT touch OpenArt, API keys, or any other global database settings.
+   */
+  public static invalidateStaleState(): void {
+    try {
+      const allRows = db.select().from(systemSettings).all();
+      for (const row of allRows) {
+        if (row.key.startsWith('higgsfield_oauth_client:') || row.key.startsWith('higgsfield_oauth_session:')) {
+          db.delete(systemSettings).where(eq(systemSettings.key, row.key)).run();
+        }
+      }
+      console.log('[Higgsfield OAuth] Invalidation of stale Higgsfield client registrations & sessions complete.');
+    } catch (e) {
+      console.warn('[Higgsfield OAuth] Invalidate stale state notice:', e);
     }
   }
 }

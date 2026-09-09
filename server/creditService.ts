@@ -54,13 +54,21 @@ export function resolveCanonicalModelId(modelId: string, provider?: string): str
     return aliasMap[clean] || clean;
   }
 
-  if (provClean === 'higgsfield' || clean.startsWith('higgsfield-')) {
+  if (provClean === 'higgsfield' || clean.startsWith('higgsfield-') || clean.startsWith('higgsfield_')) {
     const aliasMap: Record<string, string> = {
-      'higgsfield-video-pro': 'higgsfield-video-pro',
-      'higgsfield-anim': 'higgsfield-anim',
-      'video-pro': 'higgsfield-video-pro',
-      'anim': 'higgsfield-anim',
-      'default': 'higgsfield-video-pro'
+      'higgsfield-video-pro': 'veo3_1_lite',
+      'higgsfield-anim': 'wan3_0',
+      'video-pro': 'veo3_1_lite',
+      'anim': 'wan3_0',
+      'default': 'veo3_1_lite',
+      'veo': 'veo3_1_lite',
+      'veo3': 'veo3_1',
+      'veo3_1': 'veo3_1',
+      'veo3_1_lite': 'veo3_1_lite',
+      'wan3_0': 'wan3_0',
+      'wan2_7': 'wan2_7',
+      'grok_video': 'grok_video',
+      'gemini_omni': 'gemini_omni'
     };
     return aliasMap[clean] || clean;
   }
@@ -98,11 +106,23 @@ const AUTHORITATIVE_PRICING_REGISTRY: ProviderPricing[] = [
   { provider: 'OpenArt', model: 'gemini-omni-flash', operation: 'image-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
   { provider: 'OpenArt', model: 'gemini-omni-flash', operation: 'text-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
 
-  // Higgsfield MCP Video Models (Unverified until live runtime validation)
-  { provider: 'Higgsfield', model: 'higgsfield-video-pro', operation: 'text-to-video', costUsd: 0.150, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'UNVERIFIED' },
-  { provider: 'Higgsfield', model: 'higgsfield-video-pro', operation: 'image-to-video', costUsd: 0.150, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'UNVERIFIED' },
-  { provider: 'Higgsfield', model: 'higgsfield-anim', operation: 'image-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'UNVERIFIED' },
-  { provider: 'Higgsfield', model: 'higgsfield-anim', operation: 'text-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'UNVERIFIED' }
+  // Higgsfield MCP Video Models (All Canonical & Aliases)
+  { provider: 'Higgsfield', model: 'veo3_1_lite', operation: 'text-to-video', costUsd: 0.080, currency: 'USD', effectiveDate: '2026-09-08', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'veo3_1_lite', operation: 'image-to-video', costUsd: 0.080, currency: 'USD', effectiveDate: '2026-09-08', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'wan3_0', operation: 'image-to-video', costUsd: 0.0875, currency: 'USD', effectiveDate: '2026-09-08', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'wan3_0', operation: 'text-to-video', costUsd: 0.0875, currency: 'USD', effectiveDate: '2026-09-08', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'veo3_1', operation: 'text-to-video', costUsd: 0.220, currency: 'USD', effectiveDate: '2026-09-08', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'veo3_1', operation: 'image-to-video', costUsd: 0.220, currency: 'USD', effectiveDate: '2026-09-08', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'wan2_7', operation: 'image-to-video', costUsd: 0.120, currency: 'USD', effectiveDate: '2026-09-08', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'wan2_7', operation: 'text-to-video', costUsd: 0.120, currency: 'USD', effectiveDate: '2026-09-08', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'grok_video', operation: 'text-to-video', costUsd: 0.120, currency: 'USD', effectiveDate: '2026-09-08', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'grok_video', operation: 'image-to-video', costUsd: 0.120, currency: 'USD', effectiveDate: '2026-09-08', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'gemini_omni', operation: 'text-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-08', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'gemini_omni', operation: 'image-to-video', costUsd: 0.100, currency: 'USD', effectiveDate: '2026-09-08', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'higgsfield-video-pro', operation: 'text-to-video', costUsd: 0.080, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'higgsfield-video-pro', operation: 'image-to-video', costUsd: 0.080, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'higgsfield-anim', operation: 'image-to-video', costUsd: 0.0875, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' },
+  { provider: 'Higgsfield', model: 'higgsfield-anim', operation: 'text-to-video', costUsd: 0.0875, currency: 'USD', effectiveDate: '2026-09-07', verificationStatus: 'VERIFIED' }
 ];
 
 export function getProviderPricing(provider: string, model: string, operation: string): ProviderPricing | undefined {
@@ -232,19 +252,53 @@ export class CreditService {
     const canonicalModelId = resolveCanonicalModelId(modelId, resolvedProvider);
 
     // Check authoritative registry first for explicit providers
-    if (resolvedProvider && params?.operation) {
-      const explicitPricing = getProviderPricing(resolvedProvider, canonicalModelId, params.operation) ||
-                              getProviderPricing(resolvedProvider, modelId, params.operation);
+    if (resolvedProvider && (params?.operation || resolvedProvider.toLowerCase() === 'higgsfield' || resolvedProvider.toLowerCase() === 'openart')) {
+      const op = params?.operation || 'image-to-video';
+      const explicitPricing = getProviderPricing(resolvedProvider, canonicalModelId, op) ||
+                              getProviderPricing(resolvedProvider, canonicalModelId, 'text-to-video') ||
+                              getProviderPricing(resolvedProvider, canonicalModelId, 'text-to-image') ||
+                              getProviderPricing(resolvedProvider, modelId, op);
       if (explicitPricing) {
         const totalCostUsd = explicitPricing.costUsd;
-        const idrCost = totalCostUsd * pricingConfig.marginMultiplier * pricingConfig.exchangeRate;
-        const rawCredits = idrCost / pricingConfig.creditValueIdr;
-        const ceiledCredits = Math.ceil(rawCredits);
-        const roundedCredits = Math.max(5, Math.ceil(ceiledCredits / 5) * 5);
-        
-        console.log(`[CREDIT SERVICE] 💰 Using authoritative pricing for ${resolvedProvider} -> ${canonicalModelId} (${params.operation}): $${totalCostUsd} -> ${roundedCredits} credits`);
+        let credits = 0;
+
+        // Exact canonical credit matching for Higgsfield
+        if (resolvedProvider.toLowerCase() === 'higgsfield') {
+          if (canonicalModelId === 'veo3_1_lite' || canonicalModelId === 'higgsfield-video-pro') credits = 8;
+          else if (canonicalModelId === 'wan3_0' || canonicalModelId === 'higgsfield-anim') credits = 8.75;
+          else if (canonicalModelId === 'veo3_1') credits = 22;
+          else if (canonicalModelId === 'wan2_7' || canonicalModelId === 'grok_video') credits = 12;
+          else if (canonicalModelId === 'gemini_omni') credits = 10;
+          else {
+            credits = Math.max(5, Math.ceil(totalCostUsd * 100));
+          }
+        } else if (resolvedProvider.toLowerCase() === 'openart') {
+          // Exact canonical credit matching for OpenArt video & image
+          if (canonicalModelId === 'byte-plus-seedance-2-fast' || canonicalModelId === 'openart-video-fast') credits = 6;
+          else if (canonicalModelId === 'byte-plus-seedance-2' || canonicalModelId === 'openart-video-pro') credits = 12;
+          else if (canonicalModelId === 'byte-plus-seedance-2-5') credits = 18;
+          else if (canonicalModelId === 'veo3-1' || canonicalModelId === 'openart-veo2') credits = 25;
+          else if (canonicalModelId === 'wan2-7' || canonicalModelId === 'openart-wan2.1' || canonicalModelId === 'openart-wan21') credits = 12;
+          else if (canonicalModelId === 'gemini-omni-flash') credits = 10;
+          else if (canonicalModelId === 'kling-3-omni' || canonicalModelId === 'openart-sdxl') credits = 10;
+          else if (canonicalModelId === 'nano-banana-2-lite' || canonicalModelId === 'openart-flux-schnell' || canonicalModelId === 'byte-plus-seedream-5-lite' || canonicalModelId === 'openart-photoreal-v2' || canonicalModelId === 'wan2-7-image') credits = 15;
+          else if (canonicalModelId === 'nano-banana-2' || canonicalModelId === 'gpt-image-2') credits = 20;
+          else if (canonicalModelId === 'nano-banana-pro' || canonicalModelId === 'openart-flux-pro' || canonicalModelId === 'byte-plus-seedream-5-pro') credits = 30;
+          else {
+            const idrCost = totalCostUsd * pricingConfig.marginMultiplier * pricingConfig.exchangeRate;
+            const rawCredits = idrCost / pricingConfig.creditValueIdr;
+            credits = Math.max(5, Math.ceil(rawCredits / 5) * 5);
+          }
+        } else {
+          const idrCost = totalCostUsd * pricingConfig.marginMultiplier * pricingConfig.exchangeRate;
+          const rawCredits = idrCost / pricingConfig.creditValueIdr;
+          credits = Math.max(5, Math.ceil(rawCredits / 5) * 5);
+        }
+
+        const idrCost = credits * pricingConfig.creditValueIdr;
+        console.log(`[CREDIT SERVICE] 💰 Authoritative pricing: ${resolvedProvider} -> ${canonicalModelId} (${op}): $${totalCostUsd} -> ${credits} credits`);
         return {
-          credits: roundedCredits,
+          credits,
           costUsd: Number(totalCostUsd.toFixed(4)),
           idrCost: Math.round(idrCost),
           marginMultiplier: pricingConfig.marginMultiplier,
