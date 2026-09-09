@@ -24,7 +24,7 @@ export const HIGGSFIELD_DEFAULT_MODELS: HiggsfieldModelInfo[] = [
   {
     id: 'veo3_1_lite',
     name: 'Google Veo 3.1 Lite',
-    type: 'VIDEO',
+    type: 'UNIVERSAL',
     tier: 'economy',
     costUsd: 0.080,
     defaultDuration: 4,
@@ -34,7 +34,7 @@ export const HIGGSFIELD_DEFAULT_MODELS: HiggsfieldModelInfo[] = [
   {
     id: 'wan3_0',
     name: 'Wan 3.0',
-    type: 'VIDEO',
+    type: 'UNIVERSAL',
     tier: 'balanced',
     costUsd: 0.0875,
     defaultDuration: 5,
@@ -44,7 +44,7 @@ export const HIGGSFIELD_DEFAULT_MODELS: HiggsfieldModelInfo[] = [
   {
     id: 'veo3_1',
     name: 'Google Veo 3.1',
-    type: 'VIDEO',
+    type: 'UNIVERSAL',
     tier: 'premium',
     costUsd: 0.220,
     defaultDuration: 8,
@@ -54,7 +54,7 @@ export const HIGGSFIELD_DEFAULT_MODELS: HiggsfieldModelInfo[] = [
   {
     id: 'wan2_7',
     name: 'Wan 2.7 Video Engine',
-    type: 'VIDEO',
+    type: 'UNIVERSAL',
     tier: 'balanced',
     costUsd: 0.120,
     defaultDuration: 5,
@@ -64,7 +64,7 @@ export const HIGGSFIELD_DEFAULT_MODELS: HiggsfieldModelInfo[] = [
   {
     id: 'grok_video',
     name: 'Grok Video Engine',
-    type: 'VIDEO',
+    type: 'UNIVERSAL',
     tier: 'balanced',
     costUsd: 0.120,
     defaultDuration: 5,
@@ -74,7 +74,7 @@ export const HIGGSFIELD_DEFAULT_MODELS: HiggsfieldModelInfo[] = [
   {
     id: 'gemini_omni',
     name: 'Gemini Omni Video',
-    type: 'VIDEO',
+    type: 'UNIVERSAL',
     tier: 'balanced',
     costUsd: 0.100,
     defaultDuration: 5,
@@ -159,7 +159,7 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
 
   capabilities() {
     return {
-      textToImage: false,
+      textToImage: true,
       imageToVideo: true,
       textToVideo: true,
       imageEdit: false,

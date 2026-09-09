@@ -109,22 +109,24 @@ export interface ImageModelOption {
   badge: string;
   badgeColor: string;
   desc: string;
-  providerGroup?: 'openart' | 'fal' | 'google_veo';
+  providerGroup?: 'higgsfield' | 'openart' | 'fal' | 'google_veo';
 }
 
 export const IMAGE_MODEL_OPTIONS: ImageModelOption[] = getCanonicalImageModels().map((m: UnifiedModelInfo) => ({
   id: m.internalModelId as ImageModelId,
-  name: `${m.provider === 'openart' ? '🎨 OpenArt' : m.provider === 'google_veo' ? '🔷 Google Imagen' : '⚡ Fal.ai'} ${m.displayName} (${m.costCredits} Kredit)`,
+  name: `${m.provider === 'higgsfield' ? '🚀 Higgsfield' : m.provider === 'openart' ? '🎨 OpenArt' : m.provider === 'google_veo' ? '🔷 Google Imagen' : '⚡ Fal.ai'} ${m.displayName} (${m.costCredits} Kredit)`,
   shortName: `${m.displayName} (${m.costCredits} Cr)`,
   costPerImage: m.costCredits,
-  badge: m.provider === 'openart' ? 'OpenArt AI' : m.provider === 'google_veo' ? 'Google Imagen' : 'Fal.ai',
-  badgeColor: m.provider === 'openart' 
+  badge: m.provider === 'higgsfield' ? 'Higgsfield MCP' : m.provider === 'openart' ? 'OpenArt AI' : m.provider === 'google_veo' ? 'Google Imagen' : 'Fal.ai',
+  badgeColor: m.provider === 'higgsfield'
+    ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+    : m.provider === 'openart' 
     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
     : m.provider === 'google_veo' 
     ? 'bg-blue-500/20 text-blue-300 border-blue-500/40' 
     : 'bg-purple-500/20 text-purple-300 border-purple-500/40',
   desc: m.description,
-  providerGroup: (m.provider === 'google_veo' ? 'google_veo' : m.provider) as 'openart' | 'fal' | 'google_veo'
+  providerGroup: (m.provider === 'google_veo' ? 'google_veo' : m.provider) as 'higgsfield' | 'openart' | 'fal' | 'google_veo'
 }));
 
 export interface VideoModelOption {
@@ -1508,6 +1510,13 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
                     style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right .5rem center', backgroundSize: '.65em auto' }}
                   >
+                    <optgroup label="🚀 Higgsfield MCP (Tersedia)">
+                      {IMAGE_MODEL_OPTIONS.filter(o => o.providerGroup === 'higgsfield' || o.badge === 'Higgsfield MCP').map((opt) => (
+                        <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                          {opt.name}
+                        </option>
+                      ))}
+                    </optgroup>
                     <optgroup label="🎨 OpenArt AI MCP (Tersedia)">
                       {IMAGE_MODEL_OPTIONS.filter(o => o.providerGroup === 'openart' || o.badge === 'OpenArt AI').map((opt) => (
                         <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
@@ -2467,6 +2476,13 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                       }}
                                       className="bg-slate-900 border border-purple-500/30 font-bold text-purple-200 rounded px-1.5 py-0.5 outline-none cursor-pointer text-[10px]"
                                     >
+                                      <optgroup label="🚀 Higgsfield MCP">
+                                        {IMAGE_MODEL_OPTIONS.filter(o => o.providerGroup === 'higgsfield' || o.badge === 'Higgsfield MCP').map(opt => (
+                                          <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                            {opt.shortName}
+                                          </option>
+                                        ))}
+                                      </optgroup>
                                       <optgroup label="🎨 OpenArt MCP">
                                         {IMAGE_MODEL_OPTIONS.filter(o => o.providerGroup === 'openart' || o.badge === 'OpenArt AI').map(opt => (
                                           <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">

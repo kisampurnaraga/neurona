@@ -38,7 +38,7 @@ export const HIGGSFIELD_CATALOG_MODELS: UnifiedModelInfo[] = [
     provider: 'higgsfield',
     internalModelId: 'veo3_1_lite',
     displayName: 'Google Veo 3.1 Lite',
-    type: 'VIDEO',
+    type: 'HYBRID',
     tier: 'economy',
     costCredits: 8,
     costUsd: 0.080,
@@ -52,7 +52,7 @@ export const HIGGSFIELD_CATALOG_MODELS: UnifiedModelInfo[] = [
     provider: 'higgsfield',
     internalModelId: 'wan3_0',
     displayName: 'Wan 3.0',
-    type: 'VIDEO',
+    type: 'HYBRID',
     tier: 'balanced',
     costCredits: 8.75,
     costUsd: 0.0875,
@@ -65,7 +65,7 @@ export const HIGGSFIELD_CATALOG_MODELS: UnifiedModelInfo[] = [
     provider: 'higgsfield',
     internalModelId: 'veo3_1',
     displayName: 'Google Veo 3.1',
-    type: 'VIDEO',
+    type: 'HYBRID',
     tier: 'premium',
     costCredits: 22,
     costUsd: 0.220,
@@ -78,7 +78,7 @@ export const HIGGSFIELD_CATALOG_MODELS: UnifiedModelInfo[] = [
     provider: 'higgsfield',
     internalModelId: 'wan2_7',
     displayName: 'Wan 2.7 Video Engine',
-    type: 'VIDEO',
+    type: 'HYBRID',
     tier: 'balanced',
     costCredits: 12,
     costUsd: 0.120,
@@ -91,7 +91,7 @@ export const HIGGSFIELD_CATALOG_MODELS: UnifiedModelInfo[] = [
     provider: 'higgsfield',
     internalModelId: 'grok_video',
     displayName: 'Grok Video Engine',
-    type: 'VIDEO',
+    type: 'HYBRID',
     tier: 'balanced',
     costCredits: 12,
     costUsd: 0.120,
@@ -104,7 +104,7 @@ export const HIGGSFIELD_CATALOG_MODELS: UnifiedModelInfo[] = [
     provider: 'higgsfield',
     internalModelId: 'gemini_omni',
     displayName: 'Gemini Omni Video',
-    type: 'VIDEO',
+    type: 'HYBRID',
     tier: 'balanced',
     costCredits: 10,
     costUsd: 0.100,
@@ -485,11 +485,11 @@ export function getCanonicalVideoModels(): UnifiedModelInfo[] {
 }
 
 /**
- * Canonical Image Models - strictly OpenArt MCP, Fal.ai, and Google Direct.
- * Note: Higgsfield is intentionally excluded because it has no IMAGE capability.
+ * Canonical Image Models - strictly OpenArt MCP, Fal.ai, Google Direct, and Higgsfield MCP (HYBRID).
  */
 export function getCanonicalImageModels(): UnifiedModelInfo[] {
   return [
+    ...HIGGSFIELD_CATALOG_MODELS.filter(m => !m.isLegacyAlias && m.type === 'HYBRID'),
     ...OPENART_CATALOG_MODELS.filter(m => !m.isLegacyAlias && m.type === 'IMAGE'),
     ...FAL_IMAGE_MODELS,
     ...GOOGLE_IMAGE_MODELS
