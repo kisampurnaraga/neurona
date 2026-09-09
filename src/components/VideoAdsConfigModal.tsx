@@ -179,27 +179,11 @@ export const VideoAdsConfigModal: React.FC<VideoAdsConfigModalProps> = ({ isOpen
               </div>
             </div>
 
-            {/* Video Engine Selection */}
-            <div className="bg-[#0b1022] border border-slate-800/80 rounded-2xl p-3.5">
-              <UnifiedVideoModelSelector
-                selectedProvider={videoProvider}
-                selectedModelId={videoModel}
-                themeColor="emerald"
-                idPrefix="video-ads-engine"
-                compact={true}
-                onChange={(selection: SelectedModelData) => {
-                  setVideoProvider(selection.provider);
-                  setVideoModel(selection.internalModelId);
-                  setVideoModelDisplayName(selection.displayName);
-                }}
-              />
-            </div>
-
             {/* Bottom Actions */}
             <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between">
               <span className="text-[11px] text-slate-400 flex items-center gap-1">
                 <Sparkles size={12} className="text-amber-400" />
-                Diformulasikan secara psikologis untuk konversi tinggi
+                <span>Model AI Video dapat dipilih nanti di <strong className="text-emerald-300">Storyboard Matrix</strong></span>
               </span>
               <div className="flex gap-2">
                 <button

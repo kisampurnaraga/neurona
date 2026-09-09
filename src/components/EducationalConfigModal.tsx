@@ -518,56 +518,6 @@ export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
             </div>
           </div>
 
-          {/* AI Production Engine Selector */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-slate-950/80 border border-emerald-500/20 rounded-xl">
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-emerald-400 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-emerald-400" />
-                <span>Model AI Visual Edukasi (Image Engine)</span>
-              </label>
-              <select
-                id="select-edu-image-engine"
-                value={imageEngine}
-                onChange={(e) => setImageEngine(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-emerald-500 cursor-pointer"
-              >
-                <optgroup label="🎨 OpenArt AI MCP (Tersedia)">
-                  <option value="kling-3-omni">🎨 OpenArt Kling 3 Omni (10 CR)</option>
-                  <option value="nano-banana-pro">🍌 OpenArt Nano Banana Pro (30 CR)</option>
-                  <option value="byte-plus-seedream-5-pro">💎 OpenArt Seedream 5 Pro (30 CR)</option>
-                  <option value="gpt-image-2">🤖 OpenArt GPT Image 2 (30 CR)</option>
-                </optgroup>
-                <optgroup label="⚡ Fal.ai Engine (Standar)">
-                  <option value="standard">⚡ Fal.ai Nano Banana 2 (15 CR)</option>
-                  <option value="precision">🎯 Fal.ai Nano Banana Pro 4K (25 CR)</option>
-                  <option value="draft">⚡ Fal.ai FLUX.1 Schnell (5 CR)</option>
-                </optgroup>
-                <optgroup label="🔷 Google Imagen Direct">
-                  <option value="nano-asli-lite">✨ Google Imagen 3 Lite (5 CR)</option>
-                  <option value="nano-asli">🔷 Google Gemini Imagen 3 (10 CR)</option>
-                  <option value="nano-asli-pro">🌟 Google Gemini Imagen 3 Pro (15 CR)</option>
-                  <option value="nano-asli-premium">👑 Google Gemini Imagen 3 Ultra (25 CR)</option>
-                </optgroup>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <UnifiedVideoModelSelector
-                selectedProvider={videoProvider}
-                selectedModelId={videoModel}
-                themeColor="emerald"
-                idPrefix="edu-video-engine"
-                compact={true}
-                onChange={(selection: SelectedModelData) => {
-                  setVideoProvider(selection.provider);
-                  setVideoModel(selection.internalModelId);
-                  setVideoModelDisplayName(selection.displayName);
-                  setVideoEngine(selection.internalModelId);
-                }}
-              />
-            </div>
-          </div>
-
           {/* Footer Action */}
           <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
             <button

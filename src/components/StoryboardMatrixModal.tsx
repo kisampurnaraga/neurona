@@ -211,29 +211,36 @@ export interface VideoModelOption {
   shortName: string;
   desc: string;
   costPerVideo: number;
+  providerGroup?: 'higgsfield' | 'openart' | 'fal';
 }
 
 export const VIDEO_MODEL_OPTIONS: VideoModelOption[] = [
-  { id: 'byte-plus-seedance-2-fast', name: 'OpenArt SeaDance 2.0 Fast (MCP - 50 Cr)', shortName: 'OpenArt SeaDance (50 Cr)', desc: 'OpenArt MCP byte-plus-seedance-2-fast — Video gerak dinamis', costPerVideo: 50 },
-  { id: 'veo3-1', name: 'OpenArt Google Veo 3.1 Cinematic (MCP - 100 Cr)', shortName: 'OpenArt Veo 3.1 (100 Cr)', desc: 'OpenArt MCP veo3-1 — Video 1080p sinematik Google via OpenArt', costPerVideo: 100 },
-  { id: 'wan2-7', name: 'OpenArt Wan 2.7 Ultra Motion (MCP - 50 Cr)', shortName: 'OpenArt Wan 2.7 (50 Cr)', desc: 'OpenArt MCP wan2-7 — Video ultra motion 720p', costPerVideo: 50 },
-  { id: 'veo-asli-lite', name: 'Google Veo Asli Lite (Budget - 10 Cr)', shortName: 'Veo Asli Lite (10 Cr)', desc: 'Google Veo Resmi — Hemat & Cepat', costPerVideo: 10 },
-  { id: 'veo-asli', name: 'Google Veo Asli Standard (Balanced - 15 Cr)', shortName: 'Veo Asli Std (15 Cr)', desc: 'Google Veo Resmi — Kualitas Standar Sinematik', costPerVideo: 15 },
-  { id: 'veo-asli-pro', name: 'Google Veo Asli Pro (Premium - 25 Cr)', shortName: 'Veo Asli Pro (25 Cr)', desc: 'Google Veo Resmi — Resolusi & Gerak Ultra Pro', costPerVideo: 25 },
-  { id: 'fal-ai/veo3.1/lite/image-to-video', name: 'Veo 3.1 Lite Bisu (Budget Fal - 20 Cr)', shortName: 'Veo 3.1 Lite (20 Cr)', desc: 'Termurah dari Google via Fal.ai. Tanpa Audio.', costPerVideo: 20 },
-  { id: 'fal-ai/bytedance/seedance/v1/lite/image-to-video', name: 'Seedance 1.0 Lite (Budget Fal - 25 Cr)', shortName: 'Seedance 1.0 (25 Cr)', desc: 'Budget Bytedance via Fal.ai. Native Audio.', costPerVideo: 25 },
-  { id: 'fal-ai/wan-i2v', name: 'Wan 2.1 (Budget Fal - 45 Cr)', shortName: 'Wan 2.1 (45 Cr)', desc: 'Wan 2.1 14B I2V 720p via Fal.ai — Sangat efisien & stabil', costPerVideo: 45 },
-  { id: 'bytedance/seedance-2.0/fast/image-to-video', name: 'SeaDance 2.0 Fast (Budget Fal - 10 Cr)', shortName: 'SeaDance Fast (10 Cr)', desc: 'ByteDance SeaDance 2.0 Fast via Fal.ai — Render kilat', costPerVideo: 10 },
-  { id: 'fal-ai/hunyuan-video-image-to-video', name: 'Hunyuan Video (Budget Fal - 10 Cr)', shortName: 'Hunyuan Video (10 Cr)', desc: 'Tencent Hunyuan Video via Fal.ai — Stabil & efisien', costPerVideo: 10 },
-  { id: 'bytedance/seedance-2.0/image-to-video', name: 'SeaDance 2.0 Standard (Balanced Fal - 15 Cr)', shortName: 'SeaDance 2.0 Std (15 Cr)', desc: 'ByteDance SeaDance 2.0 Standard via Fal.ai — Kualitas 720p', costPerVideo: 15 },
-  { id: 'fal-ai/kling-video/v2.1/standard/image-to-video', name: 'Kling 2.1 Standard (Balanced Fal - 15 Cr)', shortName: 'Kling 2.1 Std (15 Cr)', desc: 'Kling 2.1 Standard I2V via Fal.ai — Sinematik & halus', costPerVideo: 15 },
-  { id: 'fal-ai/kling-video/o3/standard/image-to-video', name: 'Kling O3 Standard (Balanced Fal - 15 Cr)', shortName: 'Kling O3 Std (15 Cr)', desc: 'Kling O3 Standard via Fal.ai — Pencahayaan presisi', costPerVideo: 15 },
-  { id: 'fal-ai/minimax/video-01/image-to-video', name: 'MiniMax Video 01 (Balanced Fal - 15 Cr)', shortName: 'MiniMax Video 01 (15 Cr)', desc: 'MiniMax Video 01 via Fal.ai — Konsistensi karakter tinggi', costPerVideo: 15 },
-  { id: 'fal-ai/minimax/video-01-live/image-to-video', name: 'MiniMax Video 01 Live (Balanced Fal - 15 Cr)', shortName: 'MiniMax Live (15 Cr)', desc: 'MiniMax Video 01 Live via Fal.ai — Dinamika gerak natural', costPerVideo: 15 },
-  { id: 'fal-ai/minimax/hailuo-02/standard/image-to-video', name: 'Hailuo 02 Standard (Balanced Fal - 15 Cr)', shortName: 'Hailuo 02 (15 Cr)', desc: 'MiniMax Hailuo 02 via Fal.ai — Gerakan ekspresif', costPerVideo: 15 },
-  { id: 'bytedance/seedance-2.5/image-to-video', name: 'SeaDance 2.5 (Premium Native 30s Fal - 20 Cr)', shortName: 'SeaDance 2.5 (20 Cr)', desc: 'ByteDance SeaDance 2.5 via Fal.ai — Native 30s sinematik', costPerVideo: 20 },
-  { id: 'fal-ai/kling-video/v3/pro/image-to-video', name: 'Kling 3.0 Pro 1080p (Premium Fal - 25 Cr)', shortName: 'Kling 3.0 Pro (25 Cr)', desc: 'Kling 3.0 Pro 1080p via Fal.ai — Resolusi ultra jernih', costPerVideo: 25 },
-  { id: 'byteplus', name: 'BytePlus PixelDance (15 Cr)', shortName: 'BytePlus PixelDance (15 Cr)', desc: 'BytePlus PixelDance — Komersial dinamis', costPerVideo: 15 }
+  // 1. HIGGSFIELD MCP VIDEO MODELS
+  { id: 'veo3_1_lite', name: 'Higgsfield Google Veo 3.1 Lite (8 Cr)', shortName: 'Veo 3.1 Lite (8 Cr)', desc: 'Higgsfield MCP veo3_1_lite — 720p ultra-cepat & hemat', costPerVideo: 8, providerGroup: 'higgsfield' },
+  { id: 'wan3_0', name: 'Higgsfield Wan 3.0 Multimodal (8.75 Cr)', shortName: 'Wan 3.0 (8.75 Cr)', desc: 'Higgsfield MCP wan3_0 — Animasi karakter & gerakan organik', costPerVideo: 8.75, providerGroup: 'higgsfield' },
+  { id: 'veo3_1', name: 'Higgsfield Google Veo 3.1 Cinema (22 Cr)', shortName: 'Veo 3.1 1080p (22 Cr)', desc: 'Higgsfield MCP veo3_1 — Sinematik fotorealistik 1080p', costPerVideo: 22, providerGroup: 'higgsfield' },
+  { id: 'wan2_7', name: 'Higgsfield Wan 2.7 Video (12 Cr)', shortName: 'Wan 2.7 (12 Cr)', desc: 'Higgsfield MCP wan2_7 — Kestabilan fisika scene & ekspresi dinamis', costPerVideo: 12, providerGroup: 'higgsfield' },
+  { id: 'grok_video', name: 'Higgsfield Grok Video Action (12 Cr)', shortName: 'Grok Video (12 Cr)', desc: 'Higgsfield MCP grok_video — Dinamika aksi & kamera bergerak', costPerVideo: 12, providerGroup: 'higgsfield' },
+  { id: 'gemini_omni', name: 'Higgsfield Gemini Omni Video (10 Cr)', shortName: 'Gemini Omni (10 Cr)', desc: 'Higgsfield MCP gemini_omni — Sintesis video multimodal reasoning', costPerVideo: 10, providerGroup: 'higgsfield' },
+
+  // 2. OPENART MCP VIDEO MODELS
+  { id: 'byte-plus-seedance-2-fast', name: 'OpenArt SeaDance 2.0 Fast (6 Cr)', shortName: 'SeaDance Fast (6 Cr)', desc: 'OpenArt MCP byte-plus-seedance-2-fast — Gerakan dinamis fluid', costPerVideo: 6, providerGroup: 'openart' },
+  { id: 'byte-plus-seedance-2', name: 'OpenArt SeaDance 2.0 Standard (12 Cr)', shortName: 'SeaDance 2.0 (12 Cr)', desc: 'OpenArt MCP byte-plus-seedance-2 — Animasi karakter stabil', costPerVideo: 12, providerGroup: 'openart' },
+  { id: 'byte-plus-seedance-2-5', name: 'OpenArt SeaDance 2.5 Cinema (18 Cr)', shortName: 'SeaDance 2.5 (18 Cr)', desc: 'OpenArt MCP byte-plus-seedance-2-5 — Resolusi sinematik tinggi', costPerVideo: 18, providerGroup: 'openart' },
+  { id: 'veo3-1', name: 'OpenArt Google Veo 3.1 Cinematic (25 Cr)', shortName: 'OpenArt Veo 3.1 (25 Cr)', desc: 'OpenArt MCP veo3-1 — Video 1080p sinematik Google via OpenArt', costPerVideo: 25, providerGroup: 'openart' },
+  { id: 'wan2-7', name: 'OpenArt Wan 2.7 Ultra Motion (12 Cr)', shortName: 'OpenArt Wan 2.7 (12 Cr)', desc: 'OpenArt MCP wan2-7 — Video ultra motion 720p', costPerVideo: 12, providerGroup: 'openart' },
+  { id: 'gemini-omni-flash', name: 'OpenArt Gemini Omni Flash (10 Cr)', shortName: 'OpenArt Omni Flash (10 Cr)', desc: 'OpenArt MCP gemini-omni-flash — Sintesis kilat', costPerVideo: 10, providerGroup: 'openart' },
+
+  // 3. FAL.AI & GOOGLE UNIVERSAL GATEWAY
+  { id: 'fal-ai/veo3.1/lite/image-to-video', name: 'Fal.ai Google Veo 3.1 Lite (20 Cr)', shortName: 'Fal Veo 3.1 Lite (20 Cr)', desc: 'Google Veo 3.1 Lite universal via Fal.ai', costPerVideo: 20, providerGroup: 'fal' },
+  { id: 'fal-ai/kling-video/v2.1/standard/image-to-video', name: 'Fal.ai Kling 2.1 Standard (15 Cr)', shortName: 'Fal Kling 2.1 (15 Cr)', desc: 'Kling 2.1 Standard I2V via Fal.ai — Sinematik & halus', costPerVideo: 15, providerGroup: 'fal' },
+  { id: 'fal-ai/wan-i2v', name: 'Fal.ai Wan 2.1 14B (45 Cr)', shortName: 'Fal Wan 2.1 (45 Cr)', desc: 'Wan 2.1 14B I2V via Fal.ai — Kualitas tinggi & stabil', costPerVideo: 45, providerGroup: 'fal' },
+  { id: 'fal-ai/kling-video/v3/pro/image-to-video', name: 'Fal.ai Kling 3.0 Pro 1080p (25 Cr)', shortName: 'Fal Kling 3.0 Pro (25 Cr)', desc: 'Kling 3.0 Pro 1080p via Fal.ai — Resolusi ultra jernih', costPerVideo: 25, providerGroup: 'fal' },
+  { id: 'bytedance/seedance-2.5/image-to-video', name: 'Fal.ai SeaDance 2.5 (20 Cr)', shortName: 'Fal SeaDance 2.5 (20 Cr)', desc: 'ByteDance SeaDance 2.5 via Fal.ai — Sinematik 720p', costPerVideo: 20, providerGroup: 'fal' },
+  { id: 'fal-ai/minimax/video-01/image-to-video', name: 'Fal.ai MiniMax Video 01 (15 Cr)', shortName: 'Fal MiniMax (15 Cr)', desc: 'MiniMax Video 01 via Fal.ai — Konsistensi karakter tinggi', costPerVideo: 15, providerGroup: 'fal' },
+  { id: 'veo-asli-lite', name: 'Google Veo Asli Lite (10 Cr)', shortName: 'Veo Asli Lite (10 Cr)', desc: 'Google Veo Resmi — Hemat & Cepat', costPerVideo: 10, providerGroup: 'fal' },
+  { id: 'veo-asli', name: 'Google Veo Asli Standard (15 Cr)', shortName: 'Veo Asli Std (15 Cr)', desc: 'Google Veo Resmi — Kualitas Standar Sinematik', costPerVideo: 15, providerGroup: 'fal' },
+  { id: 'veo-asli-pro', name: 'Google Veo Asli Pro (25 Cr)', shortName: 'Veo Asli Pro (25 Cr)', desc: 'Google Veo Resmi — Resolusi & Gerak Ultra Pro', costPerVideo: 25, providerGroup: 'fal' }
 ];
 
 const getSceneAmplitudes = (sc: any, barCount = 10): number[] => {
@@ -1550,11 +1557,27 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
                     style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right .5rem center', backgroundSize: '.65em auto' }}
                   >
-                    {IMAGE_MODEL_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
-                        {opt.name}
-                      </option>
-                    ))}
+                    <optgroup label="🎨 OpenArt AI MCP (Tersedia)">
+                      {IMAGE_MODEL_OPTIONS.filter(o => o.badge === 'OpenArt AI').map((opt) => (
+                        <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                          {opt.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="⚡ Fal.ai Engine (Standar)">
+                      {IMAGE_MODEL_OPTIONS.filter(o => o.desc.includes('fal-ai')).map((opt) => (
+                        <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                          {opt.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="🔷 Google Imagen Direct">
+                      {IMAGE_MODEL_OPTIONS.filter(o => o.desc.includes('Google')).map((opt) => (
+                        <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                          {opt.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
 
@@ -1572,11 +1595,27 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
                     style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right .5rem center', backgroundSize: '.65em auto' }}
                   >
-                    {VIDEO_MODEL_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
-                        {opt.name}
-                      </option>
-                    ))}
+                    <optgroup label="🚀 Higgsfield AI MCP">
+                      {VIDEO_MODEL_OPTIONS.filter(o => o.providerGroup === 'higgsfield').map((opt) => (
+                        <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                          {opt.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="🎨 OpenArt AI MCP">
+                      {VIDEO_MODEL_OPTIONS.filter(o => o.providerGroup === 'openart').map((opt) => (
+                        <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                          {opt.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="⚡ Fal.ai & Google Gateway">
+                      {VIDEO_MODEL_OPTIONS.filter(o => o.providerGroup === 'fal').map((opt) => (
+                        <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                          {opt.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
               </div>
@@ -2467,11 +2506,27 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                       }}
                                       className="bg-slate-900 border border-purple-500/30 font-bold text-purple-200 rounded px-1.5 py-0.5 outline-none cursor-pointer text-[10px]"
                                     >
-                                      {IMAGE_MODEL_OPTIONS.map(opt => (
-                                        <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
-                                          {opt.shortName}
-                                        </option>
-                                      ))}
+                                      <optgroup label="🎨 OpenArt MCP">
+                                        {IMAGE_MODEL_OPTIONS.filter(o => o.badge === 'OpenArt AI').map(opt => (
+                                          <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                            {opt.shortName}
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                      <optgroup label="⚡ Fal.ai">
+                                        {IMAGE_MODEL_OPTIONS.filter(o => o.desc.includes('fal-ai')).map(opt => (
+                                          <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                            {opt.shortName}
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                      <optgroup label="🔷 Google Imagen">
+                                        {IMAGE_MODEL_OPTIONS.filter(o => o.desc.includes('Google')).map(opt => (
+                                          <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                            {opt.shortName}
+                                          </option>
+                                        ))}
+                                      </optgroup>
                                     </select>
                                   </div>
 
@@ -2484,13 +2539,29 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                         const val = e.target.value;
                                         setSceneVideoModels(prev => ({ ...prev, [scene.id]: val }));
                                       }}
-                                      className="bg-slate-900 border border-amber-500/30 font-bold text-amber-200 rounded px-1.5 py-0.5 outline-none cursor-pointer text-[10px] max-w-[130px] truncate"
+                                      className="bg-slate-900 border border-amber-500/30 font-bold text-amber-200 rounded px-1.5 py-0.5 outline-none cursor-pointer text-[10px] max-w-[140px] truncate"
                                     >
-                                      {VIDEO_MODEL_OPTIONS.map(opt => (
-                                        <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
-                                          {opt.shortName}
-                                        </option>
-                                      ))}
+                                      <optgroup label="🚀 Higgsfield MCP">
+                                        {VIDEO_MODEL_OPTIONS.filter(o => o.providerGroup === 'higgsfield').map(opt => (
+                                          <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                            {opt.shortName}
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                      <optgroup label="🎨 OpenArt MCP">
+                                        {VIDEO_MODEL_OPTIONS.filter(o => o.providerGroup === 'openart').map(opt => (
+                                          <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                            {opt.shortName}
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                      <optgroup label="⚡ Fal.ai & Google">
+                                        {VIDEO_MODEL_OPTIONS.filter(o => o.providerGroup === 'fal').map(opt => (
+                                          <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                            {opt.shortName}
+                                          </option>
+                                        ))}
+                                      </optgroup>
                                     </select>
                                   </div>
                                 </div>

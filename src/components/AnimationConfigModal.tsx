@@ -285,7 +285,25 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
   const handleGenerateCharacterSheet = async () => {
     if (!characterDescription.trim()) return;
     setIsGeneratingChar(true);
-    const engineName = imageEngine === 'precision' ? 'Nano Banana Pro Edit' : imageEngine === 'draft' ? 'Flux Schnell' : 'Nano Banana 2';
+    const engineNames: Record<string, string> = {
+      'wan3_0': 'Higgsfield Wan 3.0 Character',
+      'veo3_1_lite': 'Higgsfield Veo 3.1 Lite',
+      'veo3_1': 'Higgsfield Veo 3.1 Cinema',
+      'wan2_7': 'Higgsfield Wan 2.7',
+      'gemini_omni': 'Higgsfield Gemini Omni',
+      'kling-3-omni': 'OpenArt Kling 3 Omni',
+      'nano-banana-pro': 'OpenArt Nano Banana Pro',
+      'byte-plus-seedream-5-pro': 'OpenArt Seedream 5 Pro',
+      'gpt-image-2': 'OpenArt GPT Image 2',
+      'standard': 'Fal Nano Banana 2',
+      'precision': 'Fal Nano Banana Pro 4K',
+      'draft': 'Fal Flux Schnell',
+      'nano-asli-lite': 'Google Imagen 3 Lite',
+      'nano-asli': 'Google Gemini Imagen 3',
+      'nano-asli-pro': 'Google Gemini Imagen 3 Pro',
+      'nano-asli-premium': 'Google Gemini Imagen 3 Ultra'
+    };
+    const engineName = engineNames[imageEngine] || imageEngine;
     neuronaVoice.speak(`Membuat lembar referensi karakter menggunakan engine ${engineName}...`);
     try {
       const res = await fetch('/api/generate-character-sheet', {
@@ -535,6 +553,13 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
                     onChange={(e) => setImageEngine(e.target.value)}
                     className="bg-transparent text-xs text-cyan-300 font-semibold outline-none cursor-pointer pr-1"
                   >
+                    <optgroup label="🚀 Higgsfield AI MCP (Tersedia)">
+                      <option value="wan3_0" className="bg-slate-900 text-slate-200">🚀 Higgsfield Wan 3.0 Character (8.75 CR)</option>
+                      <option value="veo3_1_lite" className="bg-slate-900 text-slate-200">🚀 Higgsfield Veo 3.1 Frame (8 CR)</option>
+                      <option value="veo3_1" className="bg-slate-900 text-slate-200">🚀 Higgsfield Veo 3.1 Ultra (22 CR)</option>
+                      <option value="wan2_7" className="bg-slate-900 text-slate-200">🚀 Higgsfield Wan 2.7 (12 CR)</option>
+                      <option value="gemini_omni" className="bg-slate-900 text-slate-200">🚀 Higgsfield Gemini Omni (10 CR)</option>
+                    </optgroup>
                     <optgroup label="🎨 OpenArt AI MCP (Tersedia)">
                       <option value="kling-3-omni" className="bg-slate-900 text-slate-200">🎨 OpenArt Kling 3 Omni (10 CR)</option>
                       <option value="nano-banana-pro" className="bg-slate-900 text-slate-200">🍌 OpenArt Nano Banana Pro (30 CR)</option>
@@ -1083,56 +1108,6 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
                   <span>9:16 Vertikal (TikTok / Reels)</span>
                 </button>
               </div>
-            </div>
-          </div>
-
-          {/* AI Production Engine Selector */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-slate-950/80 border border-cyan-500/20 rounded-xl">
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-cyan-400 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-cyan-400" />
-                <span>Model AI Visual Animasi (Image Engine)</span>
-              </label>
-              <select
-                id="select-anim-image-engine-bottom"
-                value={imageEngine}
-                onChange={(e) => setImageEngine(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-cyan-500 cursor-pointer"
-              >
-                <optgroup label="🎨 OpenArt AI MCP (Tersedia)">
-                  <option value="kling-3-omni">🎨 OpenArt Kling 3 Omni (10 CR)</option>
-                  <option value="nano-banana-pro">🍌 OpenArt Nano Banana Pro (30 CR)</option>
-                  <option value="byte-plus-seedream-5-pro">💎 OpenArt Seedream 5 Pro (30 CR)</option>
-                  <option value="gpt-image-2">🤖 OpenArt GPT Image 2 (30 CR)</option>
-                </optgroup>
-                <optgroup label="⚡ Fal.ai Engine (Standar)">
-                  <option value="standard">⚡ Fal.ai Nano Banana 2 (15 CR)</option>
-                  <option value="precision">🎯 Fal.ai Nano Banana Pro 4K (25 CR)</option>
-                  <option value="draft">⚡ Fal.ai FLUX.1 Schnell (5 CR)</option>
-                </optgroup>
-                <optgroup label="🔷 Google Imagen Direct">
-                  <option value="nano-asli-lite">✨ Google Imagen 3 Lite (5 CR)</option>
-                  <option value="nano-asli">🔷 Google Gemini Imagen 3 (10 CR)</option>
-                  <option value="nano-asli-pro">🌟 Google Gemini Imagen 3 Pro (15 CR)</option>
-                  <option value="nano-asli-premium">👑 Google Gemini Imagen 3 Ultra (25 CR)</option>
-                </optgroup>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <UnifiedVideoModelSelector
-                selectedProvider={videoProvider}
-                selectedModelId={videoModel}
-                themeColor="purple"
-                idPrefix="anim-video-engine"
-                compact={true}
-                onChange={(selection: SelectedModelData) => {
-                  setVideoProvider(selection.provider);
-                  setVideoModel(selection.internalModelId);
-                  setVideoModelDisplayName(selection.displayName);
-                  setVideoEngine(selection.internalModelId);
-                }}
-              />
             </div>
           </div>
 
