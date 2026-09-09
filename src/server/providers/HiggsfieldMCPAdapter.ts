@@ -24,7 +24,7 @@ export const HIGGSFIELD_DEFAULT_MODELS: HiggsfieldModelInfo[] = [
   {
     id: 'veo3_1_lite',
     name: 'Google Veo 3.1 Lite',
-    type: 'UNIVERSAL',
+    type: 'VIDEO',
     tier: 'economy',
     costUsd: 0.080,
     defaultDuration: 4,
@@ -34,7 +34,7 @@ export const HIGGSFIELD_DEFAULT_MODELS: HiggsfieldModelInfo[] = [
   {
     id: 'wan3_0',
     name: 'Wan 3.0',
-    type: 'UNIVERSAL',
+    type: 'VIDEO',
     tier: 'balanced',
     costUsd: 0.0875,
     defaultDuration: 5,
@@ -44,7 +44,7 @@ export const HIGGSFIELD_DEFAULT_MODELS: HiggsfieldModelInfo[] = [
   {
     id: 'veo3_1',
     name: 'Google Veo 3.1',
-    type: 'UNIVERSAL',
+    type: 'VIDEO',
     tier: 'premium',
     costUsd: 0.220,
     defaultDuration: 8,
@@ -54,7 +54,7 @@ export const HIGGSFIELD_DEFAULT_MODELS: HiggsfieldModelInfo[] = [
   {
     id: 'wan2_7',
     name: 'Wan 2.7 Video Engine',
-    type: 'UNIVERSAL',
+    type: 'VIDEO',
     tier: 'balanced',
     costUsd: 0.120,
     defaultDuration: 5,
@@ -64,7 +64,7 @@ export const HIGGSFIELD_DEFAULT_MODELS: HiggsfieldModelInfo[] = [
   {
     id: 'grok_video',
     name: 'Grok Video Engine',
-    type: 'UNIVERSAL',
+    type: 'VIDEO',
     tier: 'balanced',
     costUsd: 0.120,
     defaultDuration: 5,
@@ -74,12 +74,75 @@ export const HIGGSFIELD_DEFAULT_MODELS: HiggsfieldModelInfo[] = [
   {
     id: 'gemini_omni',
     name: 'Gemini Omni Video',
-    type: 'UNIVERSAL',
+    type: 'VIDEO',
     tier: 'balanced',
     costUsd: 0.100,
     defaultDuration: 5,
     description: 'Gemini Omni Video multimodal reasoning & video synthesis (10 credits)',
     supportedAspectRatios: ['16:9', '9:16']
+  },
+  {
+    id: 'soul_2',
+    name: 'Soul 2.0',
+    type: 'IMAGE',
+    tier: 'balanced',
+    costUsd: 0.080,
+    description: 'Realistic UGC, fashion editorial and character generation (8 credits)',
+    supportedAspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3']
+  },
+  {
+    id: 'soul_cinematic',
+    name: 'Soul Cinema',
+    type: 'IMAGE',
+    tier: 'balanced',
+    costUsd: 0.080,
+    description: 'Cinema-grade stills and concept art (8 credits)',
+    supportedAspectRatios: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9']
+  },
+  {
+    id: 'cinematic_studio_2_5',
+    name: 'Cinema Studio Image 2.5',
+    type: 'IMAGE',
+    tier: 'premium',
+    costUsd: 0.150,
+    description: 'Cinematic stills, up to 4K resolution (15 credits)',
+    supportedAspectRatios: ['1:1', '3:2', '2:3', '4:3', '3:4', '4:5', '5:4', '16:9', '9:16', '21:9']
+  },
+  {
+    id: 'marketing_studio_image',
+    name: 'Marketing Studio Image',
+    type: 'IMAGE',
+    tier: 'balanced',
+    costUsd: 0.080,
+    description: 'One-click product image ads for social campaigns (8 credits)',
+    supportedAspectRatios: ['1:1', '3:2', '2:3', '4:3', '3:4', '4:5', '5:4', '9:16', '16:9', '21:9']
+  },
+  {
+    id: 'nano_banana_pro',
+    name: 'Nano Banana Pro',
+    type: 'IMAGE',
+    tier: 'premium',
+    costUsd: 0.200,
+    description: 'Highest-fidelity image references, text posters & consistency (20 credits)',
+    supportedAspectRatios: ['1:1', '3:2', '2:3', '4:3', '3:4']
+  },
+  {
+    id: 'flux_kontext',
+    name: 'Flux Kontext',
+    type: 'IMAGE',
+    tier: 'balanced',
+    costUsd: 0.120,
+    description: 'Contextual image reference and composition model (12 credits)',
+    supportedAspectRatios: ['1:1', '4:3', '3:4', '16:9']
+  },
+  {
+    id: 'grok_image',
+    name: 'Grok Image',
+    type: 'IMAGE',
+    tier: 'balanced',
+    costUsd: 0.100,
+    description: 'High-quality expressive image generation via Grok (10 credits)',
+    supportedAspectRatios: ['1:1', '16:9', '9:16']
   },
   {
     id: 'higgsfield-video-pro',
@@ -348,10 +411,12 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
 
   public resolveModelId(inputModel?: string, mediaType: 'image' | 'video' = 'video'): { modelId: string; modelDef: HiggsfieldModelInfo } {
     const model = (inputModel || '').trim();
+    const defaultId = mediaType === 'image' ? 'soul_2' : 'veo3_1_lite';
+    
     const aliasMap: Record<string, string> = {
       'higgsfield-video-pro': 'veo3_1_lite',
       'higgsfield-anim': 'wan3_0',
-      'default': 'veo3_1_lite',
+      'default': defaultId,
       'veo': 'veo3_1_lite',
       'veo3': 'veo3',
       'veo3_1': 'veo3_1',
@@ -362,9 +427,10 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       'gemini_omni': 'gemini_omni'
     };
 
-    const targetId = aliasMap[model] || (model && model !== 'default' ? model : 'veo3_1_lite');
+    const targetId = aliasMap[model] || (model && model !== 'default' ? model : defaultId);
     const modelDef = HIGGSFIELD_DEFAULT_MODELS.find(m => m.id === targetId) ||
       HIGGSFIELD_DEFAULT_MODELS.find(m => m.id === model) ||
+      HIGGSFIELD_DEFAULT_MODELS.find(m => m.id === defaultId) ||
       HIGGSFIELD_DEFAULT_MODELS[0];
 
     return { modelId: targetId, modelDef };
@@ -999,11 +1065,14 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     const estimatedCost = modelDef?.costUsd || 0.05;
     const aspectRatio = request.aspectRatio || '16:9';
 
+    // Extract reference image URL/UUID/DataUri
+    const refImg = request.mediaId || request.referenceImage || (Array.isArray(request.referenceImageUrls) && request.referenceImageUrls[0]) || null;
+
     try {
       const toolName = this.resolveToolName('TEXT_TO_IMAGE');
       console.log(`[Higgsfield MCP] Calling ${toolName} with model ${modelId} for Text-to-Image...`);
 
-      const toolArgs = {
+      const toolArgs: any = {
         params: {
           model: modelId,
           prompt: request.prompt || 'High quality cinematic character concept artwork',
@@ -1011,6 +1080,13 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
           count: 1
         }
       };
+
+      if (refImg) {
+        console.log(`[Higgsfield MCP] Image reference detected: ${refImg}. Adding medias parameters.`);
+        toolArgs.params.medias = [
+          { value: refImg, role: 'image' }
+        ];
+      }
 
       const mcpResult = await this.callMCPTool(toolName, toolArgs);
       const jobId = this.extractJobId(mcpResult);

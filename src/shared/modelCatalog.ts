@@ -34,11 +34,12 @@ export interface UnifiedModelInfo {
 // 1. HIGGSFIELD ALL SUPPORTED MODELS CATALOG
 // ---------------------------------------------------------------------------
 export const HIGGSFIELD_CATALOG_MODELS: UnifiedModelInfo[] = [
+  // Video Models (Strictly set type: 'VIDEO' to avoid leaking into T2I)
   {
     provider: 'higgsfield',
     internalModelId: 'veo3_1_lite',
     displayName: 'Google Veo 3.1 Lite',
-    type: 'HYBRID',
+    type: 'VIDEO',
     tier: 'economy',
     costCredits: 8,
     costUsd: 0.080,
@@ -52,7 +53,7 @@ export const HIGGSFIELD_CATALOG_MODELS: UnifiedModelInfo[] = [
     provider: 'higgsfield',
     internalModelId: 'wan3_0',
     displayName: 'Wan 3.0',
-    type: 'HYBRID',
+    type: 'VIDEO',
     tier: 'balanced',
     costCredits: 8.75,
     costUsd: 0.0875,
@@ -65,7 +66,7 @@ export const HIGGSFIELD_CATALOG_MODELS: UnifiedModelInfo[] = [
     provider: 'higgsfield',
     internalModelId: 'veo3_1',
     displayName: 'Google Veo 3.1',
-    type: 'HYBRID',
+    type: 'VIDEO',
     tier: 'premium',
     costCredits: 22,
     costUsd: 0.220,
@@ -78,7 +79,7 @@ export const HIGGSFIELD_CATALOG_MODELS: UnifiedModelInfo[] = [
     provider: 'higgsfield',
     internalModelId: 'wan2_7',
     displayName: 'Wan 2.7 Video Engine',
-    type: 'HYBRID',
+    type: 'VIDEO',
     tier: 'balanced',
     costCredits: 12,
     costUsd: 0.120,
@@ -91,7 +92,7 @@ export const HIGGSFIELD_CATALOG_MODELS: UnifiedModelInfo[] = [
     provider: 'higgsfield',
     internalModelId: 'grok_video',
     displayName: 'Grok Video Engine',
-    type: 'HYBRID',
+    type: 'VIDEO',
     tier: 'balanced',
     costCredits: 12,
     costUsd: 0.120,
@@ -104,7 +105,7 @@ export const HIGGSFIELD_CATALOG_MODELS: UnifiedModelInfo[] = [
     provider: 'higgsfield',
     internalModelId: 'gemini_omni',
     displayName: 'Gemini Omni Video',
-    type: 'HYBRID',
+    type: 'VIDEO',
     tier: 'balanced',
     costCredits: 10,
     costUsd: 0.100,
@@ -112,6 +113,99 @@ export const HIGGSFIELD_CATALOG_MODELS: UnifiedModelInfo[] = [
     capabilities: ['Text-to-Video', 'Multimodal Coherence', 'Prompt Adherence', 'Clean Render'],
     supportedAspectRatios: ['16:9', '9:16'],
     badge: 'HIGGSFIELD OMNI'
+  },
+
+  // Image Models (Strictly set type: 'IMAGE' to expose to T2I selection)
+  {
+    provider: 'higgsfield',
+    internalModelId: 'soul_2',
+    displayName: 'Soul 2.0',
+    type: 'IMAGE',
+    tier: 'balanced',
+    costCredits: 8,
+    costUsd: 0.080,
+    description: 'Realistic UGC, fashion editorial and character generation (8 Kredit)',
+    capabilities: ['Text-to-Image', 'Realistic UGC', 'Fashion Editorial', 'Character Portrait'],
+    supportedAspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'],
+    badge: 'HIGGSFIELD SOUL'
+  },
+  {
+    provider: 'higgsfield',
+    internalModelId: 'soul_cinematic',
+    displayName: 'Soul Cinema',
+    type: 'IMAGE',
+    tier: 'balanced',
+    costCredits: 8,
+    costUsd: 0.080,
+    description: 'Cinema-grade stills and concept art (8 Kredit)',
+    capabilities: ['Text-to-Image', 'Cinematic Dramatic', 'Concept Art', 'Film Lighting'],
+    supportedAspectRatios: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9'],
+    badge: 'HIGGSFIELD CINEMATIC'
+  },
+  {
+    provider: 'higgsfield',
+    internalModelId: 'cinematic_studio_2_5',
+    displayName: 'Cinema Studio Image 2.5',
+    type: 'IMAGE',
+    tier: 'premium',
+    costCredits: 15,
+    costUsd: 0.150,
+    description: 'Cinematic stills, up to 4K resolution (15 Kredit)',
+    capabilities: ['Text-to-Image', '4K High-Res', 'Dramatic lighting', 'Film Stills'],
+    supportedAspectRatios: ['1:1', '3:2', '2:3', '4:3', '3:4', '4:5', '5:4', '16:9', '9:16', '21:9'],
+    badge: 'HIGGSFIELD PREMIUM'
+  },
+  {
+    provider: 'higgsfield',
+    internalModelId: 'marketing_studio_image',
+    displayName: 'Marketing Studio Image',
+    type: 'IMAGE',
+    tier: 'balanced',
+    costCredits: 8,
+    costUsd: 0.080,
+    description: 'One-click product image ads for social campaigns (8 Kredit)',
+    capabilities: ['Text-to-Image', 'Marketing Ads', 'Product Social Media'],
+    supportedAspectRatios: ['1:1', '3:2', '2:3', '4:3', '3:4', '4:5', '5:4', '9:16', '16:9', '21:9'],
+    badge: 'HIGGSFIELD MARKETING'
+  },
+  {
+    provider: 'higgsfield',
+    internalModelId: 'nano_banana_pro',
+    displayName: 'Nano Banana Pro',
+    type: 'IMAGE',
+    tier: 'premium',
+    costCredits: 20,
+    costUsd: 0.200,
+    description: 'Highest-fidelity image references, text posters & consistency (20 Kredit)',
+    capabilities: ['Text-to-Image', 'High Fidelity References', 'Typography Posters'],
+    supportedAspectRatios: ['1:1', '3:2', '2:3', '4:3', '3:4'],
+    badge: 'HIGGSFIELD BANANA'
+  },
+  {
+    provider: 'higgsfield',
+    internalModelId: 'flux_kontext',
+    displayName: 'Flux Kontext',
+    type: 'IMAGE',
+    tier: 'balanced',
+    costCredits: 12,
+    costUsd: 0.120,
+    description: 'Contextual image reference and composition model (12 Kredit)',
+    capabilities: ['Text-to-Image', 'Layout Context', 'Photorealism'],
+    supportedAspectRatios: ['1:1', '4:3', '3:4', '16:9'],
+    badge: 'HIGGSFIELD FLUX'
+  },
+  {
+    provider: 'higgsfield',
+    internalModelId: 'grok_image',
+    displayName: 'Grok Image',
+    type: 'IMAGE',
+    tier: 'balanced',
+    costCredits: 10,
+    costUsd: 0.100,
+    description: 'High-quality expressive image generation via Grok (10 Kredit)',
+    capabilities: ['Text-to-Image', 'Action Stills', 'High Contrast'],
+    supportedAspectRatios: ['1:1', '16:9', '9:16'],
+    badge: 'HIGGSFIELD GROK'
   },
 
   // Backward-Compatible Legacy Aliases (Must normalize to canonical ID)
@@ -478,18 +572,18 @@ export const ALL_UNIFIED_MODELS: UnifiedModelInfo[] = [
  */
 export function getCanonicalVideoModels(): UnifiedModelInfo[] {
   return [
-    ...HIGGSFIELD_CATALOG_MODELS.filter(m => !m.isLegacyAlias),
+    ...HIGGSFIELD_CATALOG_MODELS.filter(m => !m.isLegacyAlias && m.type === 'VIDEO'),
     ...OPENART_CATALOG_MODELS.filter(m => !m.isLegacyAlias && (m.type === 'VIDEO' || m.type === 'IMAGE_TO_VIDEO')),
     ...FAL_CATALOG_MODELS.filter(m => !m.isLegacyAlias && (m.type === 'VIDEO' || m.type === 'IMAGE_TO_VIDEO'))
   ];
 }
 
 /**
- * Canonical Image Models - strictly OpenArt MCP, Fal.ai, Google Direct, and Higgsfield MCP (HYBRID).
+ * Canonical Image Models - strictly OpenArt MCP, Fal.ai, Google Direct, and Higgsfield MCP (IMAGE).
  */
 export function getCanonicalImageModels(): UnifiedModelInfo[] {
   return [
-    ...HIGGSFIELD_CATALOG_MODELS.filter(m => !m.isLegacyAlias && m.type === 'HYBRID'),
+    ...HIGGSFIELD_CATALOG_MODELS.filter(m => !m.isLegacyAlias && m.type === 'IMAGE'),
     ...OPENART_CATALOG_MODELS.filter(m => !m.isLegacyAlias && m.type === 'IMAGE'),
     ...FAL_IMAGE_MODELS,
     ...GOOGLE_IMAGE_MODELS

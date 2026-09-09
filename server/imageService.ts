@@ -1019,6 +1019,7 @@ export class ImageGenerationService {
     // Prepare Reference Images based on Selected Engine Route
     // -----------------------------------------------------------------------
     let referenceImageUrls: string[] = [];
+    let rawCharList: string[] = [];
     let localGeminiParts: Array<{ inlineData: { data: string; mimeType: string } }> = [];
     const activeFalKey = isFalEngine ? (keyRotator.getNextFalKey() || process.env.FAL_KEY || process.env.FAL_API_KEY || undefined) : undefined;
 
@@ -1114,7 +1115,7 @@ export class ImageGenerationService {
       const registeredChars = (animationConfig as any)?.characters || (animationConfig as any)?.characterProfiles;
       const sceneCharNames: string[] = (scene as any).characters || ((scene as any).characterName ? [(scene as any).characterName] : []);
 
-      const rawCharList: string[] = [];
+      rawCharList = [];
       if (Array.isArray(registeredChars) && registeredChars.length > 0 && sceneCharNames.length > 0) {
         for (const charObj of registeredChars) {
           const isFeatured = sceneCharNames.some(n => 
@@ -1128,7 +1129,9 @@ export class ImageGenerationService {
       } else if (sceneChar) {
         rawCharList.push(sceneChar);
       } else {
-        const rawChar = masterCharacterImageUrl 
+        const rawChar = (scene as any).characterReferenceUrl
+          || (scene as any).referenceImageUrl
+          || masterCharacterImageUrl 
           || characterProfile?.referenceImageUrl 
           || (Array.isArray(characterProfile?.referenceImageUrls) && characterProfile.referenceImageUrls[0]);
         if (rawChar) rawCharList.push(rawChar);
@@ -1502,7 +1505,8 @@ export class ImageGenerationService {
           prompt: finalPrompt,
           model: rawEngine,
           aspectRatio: cleanAspect,
-          sceneId: scene.id
+          sceneId: scene.id,
+          referenceImageUrls: videoType === 'AFFILIATE' ? referenceImageUrls : rawCharList
         });
         if (imgResult && imgResult.success && imgResult.assetUrl) {
           if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate via Higgsfield MCP [${rawEngine}]!`, 'SUCCESS');

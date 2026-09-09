@@ -418,6 +418,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
   const [activeMediaView, setActiveMediaView] = useState<Record<string, 'video' | 'image'>>({});
+  const [sceneReferenceImages, setSceneReferenceImages] = useState<Record<string, string>>({});
   const [isProcessingAction, setIsProcessingAction] = useState<string | null>(null);
   const [isStitching, setIsStitching] = useState(false);
   const [clientConfig, setClientConfig] = useState({ qaMinScoreThreshold: 70, qaAutoFixThreshold: 80 });
@@ -2544,6 +2545,122 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                     </select>
                                   </div>
                                 </div>
+
+                                {/* Higgsfield Reference Image Selector (Avatar / ID Image) */}
+                                {(curImgOpt.providerGroup === 'higgsfield' || curImgOpt.id.includes('soul') || curImgOpt.id.includes('cinematic') || curImgOpt.id.includes('marketing') || curImgOpt.id.includes('grok')) && (
+                                  <div className="bg-purple-950/20 border border-purple-500/20 rounded-lg p-2.5 mt-2 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-1.5">
+                                        <Sparkles size={12} className="text-purple-400 shrink-0" />
+                                        <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider">Higgsfield Image Reference Engine</span>
+                                      </div>
+                                      {(scene.characterReferenceUrl || (scene as any).referenceImageUrl) && (
+                                        <span className="text-[8px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded-full font-bold">✓ Terpasang</span>
+                                      )}
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-3">
+                                      {/* Thumbnail view */}
+                                      <div className="w-12 h-12 rounded-lg bg-slate-900 border border-purple-500/30 flex-shrink-0 overflow-hidden flex items-center justify-center relative group/ref">
+                                        {(scene.characterReferenceUrl || (scene as any).referenceImageUrl || project.characterProfile?.referenceImageUrl || project.affiliateConfig?.characterImage) ? (
+                                          <>
+                                            <img 
+                                              src={scene.characterReferenceUrl || (scene as any).referenceImageUrl || project.characterProfile?.referenceImageUrl || project.affiliateConfig?.characterImage} 
+                                              className="w-full h-full object-cover" 
+                                              referrerPolicy="no-referrer"
+                                              alt="Reference" 
+                                            />
+                                            {(scene.characterReferenceUrl || (scene as any).referenceImageUrl) && (
+                                              <button 
+                                                onClick={async () => {
+                                                  try {
+                                                    await fetch(`/api/projects/${project.id}/override-scene`, {
+                                                      method: 'POST',
+                                                      headers: { 'Content-Type': 'application/json' },
+                                                      body: JSON.stringify({ sceneId: scene.id, characterReferenceUrl: null, referenceImageUrl: null })
+                                                    });
+                                                    scene.characterReferenceUrl = undefined;
+                                                    (scene as any).referenceImageUrl = undefined;
+                                                    setSceneReferenceImages(prev => ({ ...prev, [scene.id]: '' }));
+                                                  } catch (e) {
+                                                    console.error(e);
+                                                  }
+                                                }}
+                                                className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 flex items-center justify-center text-[9px] text-red-400 font-bold transition cursor-pointer"
+                                              >
+                                                Hapus
+                                              </button>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <span className="text-[9px] text-slate-500 text-center px-1 font-medium">No Image</span>
+                                        )}
+                                      </div>
+
+                                      <div className="flex-1 space-y-1.5">
+                                        <div className="flex items-center gap-2">
+                                          {/* Direct Text URL/ID input */}
+                                          <input 
+                                            type="text"
+                                            placeholder="Tempel URL atau ID Foto Referensi Wajah..."
+                                            value={sceneReferenceImages[scene.id] || scene.characterReferenceUrl || (scene as any).referenceImageUrl || ''}
+                                            onChange={async (e) => {
+                                              const val = e.target.value;
+                                              setSceneReferenceImages(prev => ({ ...prev, [scene.id]: val }));
+                                              try {
+                                                await fetch(`/api/projects/${project.id}/override-scene`, {
+                                                  method: 'POST',
+                                                  headers: { 'Content-Type': 'application/json' },
+                                                  body: JSON.stringify({ sceneId: scene.id, characterReferenceUrl: val, referenceImageUrl: val })
+                                                });
+                                                scene.characterReferenceUrl = val;
+                                                (scene as any).referenceImageUrl = val;
+                                              } catch (e) {
+                                                console.error(e);
+                                              }
+                                            }}
+                                            className="flex-1 bg-slate-900 border border-slate-700 hover:border-purple-500/40 focus:border-purple-500 text-slate-200 rounded px-2 py-1 text-[10px] outline-none"
+                                          />
+                                          
+                                          {/* Upload Button */}
+                                          <label className="py-1 px-2.5 rounded bg-purple-900/50 hover:bg-purple-800 border border-purple-500/30 text-purple-200 text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shrink-0">
+                                            <Upload size={10} />
+                                            <span>Unggah</span>
+                                            <input 
+                                              type="file"
+                                              accept="image/*"
+                                              className="hidden"
+                                              onChange={(e) => {
+                                                if (e.target.files && e.target.files[0]) {
+                                                  const reader = new FileReader();
+                                                  reader.onload = async (event) => {
+                                                    const dataUrl = event.target?.result as string;
+                                                    setSceneReferenceImages(prev => ({ ...prev, [scene.id]: dataUrl }));
+                                                    try {
+                                                      await fetch(`/api/projects/${project.id}/override-scene`, {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({ sceneId: scene.id, characterReferenceUrl: dataUrl, referenceImageUrl: dataUrl })
+                                                      });
+                                                      scene.characterReferenceUrl = dataUrl;
+                                                      (scene as any).referenceImageUrl = dataUrl;
+                                                    } catch (err) {
+                                                      console.error(err);
+                                                    }
+                                                  };
+                                                  reader.readAsDataURL(e.target.files[0]);
+                                                }
+                                              }}
+                                            />
+                                          </label>
+                                        </div>
+                                        <p className="text-[9px] text-slate-500">
+                                          Gunakan foto wajah konsisten untuk scene ini. Kosongkan untuk menggunakan foto profil karakter utama proyek.
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
 
                                 {/* Low QA Score Alert Banner */}
                                 {scene.qaScore !== undefined && scene.qaScore < clientConfig.qaMinScoreThreshold && (
