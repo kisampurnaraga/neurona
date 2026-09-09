@@ -1044,6 +1044,9 @@ export class OpenArtMCPAdapter implements VideoGenerationProvider {
    * Wait for asynchronous OpenArt creation to finish and return final asset URL
    */
   private async waitForCreation(historyId: string, timeoutSeconds = 90, isVideo = false): Promise<string> {
+    if (historyId === 'submit-failed' || historyId.includes('error') || historyId.includes('fail')) {
+      throw new Error(`OpenArt MCP Server gagal memproses permintaan (historyId: ${historyId}). Kemungkinan prompt melanggar kebijakan konten atau terjadi masalah pada server provider.`);
+    }
     console.log(`[OpenArt MCP] Awaiting creation completion (historyId: ${historyId}, isVideo: ${isVideo}, timeout: ${timeoutSeconds}s)...`);
     
     // 1. Try native openart_creation_wait MCP tool

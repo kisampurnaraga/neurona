@@ -36,6 +36,24 @@ export class DomainConfigService {
   private static readonly DB_KEY = 'domain_url_management_config';
 
   // Default baseline origins for out-of-the-box local and AI Studio container operation
+  
+  /**
+   * Resolves the runtime public canonical URL dynamically.
+   * Priority: DB Config -> ENV Config -> Cloud Run Service URL -> Hardcoded fallback
+   */
+  private static getRuntimePublicCanonical(config?: Partial<DomainConfig>): string {
+    return (
+      (config?.canonicalUrl) ||
+      (config?.productionAppUrl) ||
+      process.env.CANONICAL_URL ||
+      process.env.APP_ORIGIN ||
+      process.env.PRODUCTION_APP_URL ||
+      process.env.PUBLIC_URL ||
+      process.env.APP_URL ||
+      'https://app.neurona.ai'
+    );
+  }
+
   private static readonly DEFAULT_ORIGINS = [
     'http://localhost:3000',
     'https://app.neurona.ai',
@@ -274,7 +292,7 @@ export class DomainConfigService {
     // If we are in ANY kind of public/cloud deployment (AI Studio, Cloud Run, etc)
     // we MUST NEVER use localhost for OAuth callbacks.
     if (isCloudRun || !isCandidateLocalhost || config.environment !== 'development') {
-      cleanOrigin = config.canonicalUrl || config.productionAppUrl || 'https://app.neurona.ai';
+      cleanOrigin = this.getRuntimePublicCanonical(config);
     }
 
     return {
@@ -305,8 +323,8 @@ export class DomainConfigService {
 
     // Default Baseline
     const defaultEnv: AppEnvironment = (process.env.APP_ENV as AppEnvironment) || (process.env.NODE_ENV === 'production' ? 'production' : 'development');
-    const defaultProdUrl = process.env.APP_ORIGIN || process.env.PRODUCTION_APP_URL || 'https://app.neurona.ai';
-    const defaultCanonical = process.env.CANONICAL_URL || process.env.APP_ORIGIN || defaultProdUrl;
+    const defaultProdUrl = this.getRuntimePublicCanonical();
+    const defaultCanonical = defaultProdUrl;
     const defaultPublic = process.env.PUBLIC_URL || defaultCanonical;
 
     // Build allowlist combining defaults + env + saved
@@ -403,16 +421,21 @@ export class DomainConfigService {
     const config = this.getActiveConfig();
     const approvedOrigins = new Set<string>(config.allowedOrigins.map(o => this.normalizeUrl(o)));
 
+
     // Add configured canonical & production URLs
     if (config.canonicalUrl) approvedOrigins.add(this.normalizeUrl(config.canonicalUrl));
     if (config.productionAppUrl) approvedOrigins.add(this.normalizeUrl(config.productionAppUrl));
     if (config.developmentAppUrl) {
       approvedOrigins.add(this.normalizeUrl(config.developmentAppUrl));
     }
+    if (process.env.APP_URL) {
+      approvedOrigins.add(this.normalizeUrl(process.env.APP_URL));
+    }
+
 
     // NEW RULE: Public fallback MUST be the configured canonical/production URL.
     // We NEVER fallback to localhost blindly just because APP_ENV=development.
-    const publicCanonical = config.canonicalUrl || config.productionAppUrl || 'https://app.neurona.ai';
+    const publicCanonical = this.getRuntimePublicCanonical(config);
 
     if (!reqHeaders) {
       return publicCanonical;
