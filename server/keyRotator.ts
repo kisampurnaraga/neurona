@@ -80,9 +80,30 @@ class ApiKeyRotatorService {
 
       return false;
     } catch (e) {
-      console.error(`[KeyRotator] hasActiveKey error for ${provider}:`, e);
+      console.log(`[KeyRotator] hasActiveKey error for ${provider}:`, e);
       return false;
     }
+  }
+
+  /**
+   * Check if a specific key has been marked as disabled
+   */
+  public isKeyDisabled(key?: string): boolean {
+    if (!key || typeof key !== 'string') return true;
+    const cleanKey = key.trim();
+    if (!cleanKey) return true;
+    if (this.disabledEnvKeys.has(cleanKey)) return true;
+    try {
+      const rows = db.select().from(apiKeys).all();
+      const match = rows.find(r => {
+        const decrypted = decryptSecret(r.keyEncrypted);
+        return decrypted === cleanKey || r.maskedKey === this.maskKey(cleanKey);
+      });
+      if (match && match.status === 'DISABLED') return true;
+    } catch {
+      // ignore
+    }
+    return false;
   }
 
   /**
@@ -331,7 +352,7 @@ class ApiKeyRotatorService {
           })
           .where(eq(apiKeys.id, targetRow.id))
           .run();
-        console.error(`[KeyRotator] ${provider.toUpperCase()} Key (${targetRow.maskedKey}) marked as DISABLED in DB: ${errMsg}`);
+        console.log(`[KeyRotator] ${provider.toUpperCase()} Key (${targetRow.maskedKey}) marked as DISABLED in DB: ${errMsg}`);
       } else if (isRateLimit) {
         let cooldownMs = 60 * 1000;
         const match = errMsg.match(/retry in ([0-9.]+)s/);

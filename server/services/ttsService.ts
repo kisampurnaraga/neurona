@@ -236,8 +236,11 @@ export class TTSService {
    */
   public static async generateOpenAITTS(text: string, voiceName = 'nova', speed = 1.0): Promise<{ buffer: Buffer; tempFilePath: string } | null> {
     const openAIConfig = FounderService.getOpenAIConfig();
-    const openAIKey = openAIConfig.apiKey || process.env.OPENAI_API_KEY;
+    const openAIKey = keyRotator.getNextOpenAIKey() || openAIConfig.apiKey || process.env.OPENAI_API_KEY;
     if (!openAIKey) return null;
+    if (keyRotator.isKeyDisabled(openAIKey)) {
+      return null;
+    }
 
     const normalizedVoice = voiceName.replace('openai-', '').replace('female-', '').replace('male-', '').replace('neutral-', '').toLowerCase();
     const validVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
@@ -271,9 +274,9 @@ export class TTSService {
       const errTxt = await response.text().catch(() => '');
       if (response.status === 401 || response.status === 403) {
         keyRotator.reportKeyError('openai', openAIKey, `HTTP ${response.status}: ${errTxt}`);
-        console.log(`[TTSService] OpenAI TTS error (${response.status}): Invalid or unauthorized API key. Key auto-disabled; falling back.`);
+        console.log(`[TTSService] OpenAI TTS response (${response.status}): Key unauthorized or invalid; auto-disabled, routing to next provider.`);
       } else {
-        console.log(`[TTSService] OpenAI TTS error (${response.status}): ${errTxt}`);
+        console.log(`[TTSService] OpenAI TTS response (${response.status}): ${errTxt || 'Non-200'}`);
       }
       return null;
     }
@@ -343,7 +346,7 @@ export class TTSService {
       }
     } else {
       const errTxt = await response.text().catch(() => '');
-      console.log(`[TTSService] Fal.ai TTS error (${response.status}): ${errTxt}`);
+      console.log(`[TTSService] Fal.ai TTS status (${response.status}): ${errTxt || 'Non-200'}`);
     }
     return null;
   }
@@ -374,8 +377,8 @@ export class TTSService {
       try {
         const openAiRes = await this.generateOpenAITTS(cleanText, voiceType, extraConfig?.speed || 1.0);
         if (openAiRes) return openAiRes;
-      } catch (err) {
-        console.log('[TTSService] OpenAI TTS error, trying fallbacks...', err);
+      } catch (err: any) {
+        console.log('[TTSService] OpenAI TTS bypassed, switching to fallback providers...', err?.message || err);
       }
     }
 
@@ -385,8 +388,8 @@ export class TTSService {
         const falModel = ('model' in preset ? (preset as any).model : undefined) || extraConfig?.model || 'fal-ai/minimax-voice';
         const falRes = await this.generateFalTTS(cleanText, falModel, { ...preset, ...extraConfig });
         if (falRes) return falRes;
-      } catch (err) {
-        console.log('[TTSService] Fal.ai TTS error, trying fallbacks...', err);
+      } catch (err: any) {
+        console.log('[TTSService] Fal.ai TTS notice, switching to fallback providers...', err?.message || err);
       }
     }
 
@@ -549,7 +552,7 @@ export class TTSService {
         return { buffer: fullBuffer, tempFilePath: tempPath };
       }
     } catch (gtErr: any) {
-      console.log('[TTSService] Google Speech fallback error:', gtErr?.message || gtErr);
+      console.log('[TTSService] Google Speech notice:', gtErr?.message || gtErr);
     }
     return null;
   }
