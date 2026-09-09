@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BookOpen, X, GraduationCap, Layers, Globe, Lightbulb, Users, Video, Volume2, Check, UserCheck, MapPin, Sparkles } from 'lucide-react';
 import { EducationalConfig } from '../shared/types';
 import { neuronaVoice } from '../utils/speechSynthesis';
+import { UnifiedVideoModelSelector, SelectedModelData } from './UnifiedVideoModelSelector';
 
 interface EducationalConfigModalProps {
   isOpen: boolean;
@@ -95,7 +96,10 @@ export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
   const [narratorTone, setNarratorTone] = useState<EducationalConfig['narratorTone']>('FRIENDLY_EXPLAINER');
   const [aspectRatio, setAspectRatio] = useState<EducationalConfig['aspectRatio']>('16:9');
   const [imageEngine, setImageEngine] = useState<string>('kling-3-omni');
-  const [videoEngine, setVideoEngine] = useState<string>('fal-ai/kling-video/v2.1/standard/image-to-video');
+  const [videoProvider, setVideoProvider] = useState<string>('higgsfield');
+  const [videoModel, setVideoModel] = useState<string>('veo3_1_lite');
+  const [videoModelDisplayName, setVideoModelDisplayName] = useState<string>('Google Veo 3.1 Lite');
+  const [videoEngine, setVideoEngine] = useState<string>('veo3_1_lite');
 
   // Sync initial values when opened
   useEffect(() => {
@@ -130,7 +134,10 @@ export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
       worldSetting,
       sceneCount,
       imageEngine,
-      videoEngine
+      videoEngine: videoModel,
+      videoProvider,
+      videoModel,
+      videoModelDisplayName
     };
 
     const prompt = `Buatkan video pembelajaran edukatif ${visualStyle.replace(/_/g, ' ')} tentang "${subjectTitle}" untuk audiens ${targetAudience} kategori ${category}. Karakter presenter/maskot: ${characterDescription}. Latar visual: ${worldSetting}. Poin inti: ${keyTakeaways}. Bahasa: ${language}.`;
@@ -545,35 +552,19 @@ export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
             </div>
 
             <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-teal-400 flex items-center gap-1">
-                <Video className="w-3 h-3 text-teal-400" />
-                <span>Model AI Video Edukasi (Video Engine)</span>
-              </label>
-              <select
-                id="select-edu-video-engine"
-                value={videoEngine}
-                onChange={(e) => setVideoEngine(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-teal-500 cursor-pointer"
-              >
-                <optgroup label="🎬 OpenArt AI MCP Video">
-                  <option value="byte-plus-seedance-2-fast">⚡ OpenArt SeaDance 2.0 Fast (50 CR)</option>
-                  <option value="veo3-1">🎬 OpenArt Google Veo 3.1 Cinematic (100 CR)</option>
-                  <option value="wan2-7">🌊 OpenArt Wan 2.7 Ultra Motion (50 CR)</option>
-                </optgroup>
-                <optgroup label="⚡ Fal.ai Video Engine (Standar)">
-                  <option value="fal-ai/kling-video/v2.1/standard/image-to-video">Kling 2.1 Standard Explainer (15 CR)</option>
-                  <option value="bytedance/seedance-2.0/fast/image-to-video">ByteDance SeaDance 2.0 Fast (10 CR)</option>
-                  <option value="bytedance/seedance-2.0/image-to-video">ByteDance SeaDance 2.0 Std (15 CR)</option>
-                  <option value="fal-ai/veo3.1/lite/image-to-video">Google Veo 3.1 Lite Fal (20 CR)</option>
-                  <option value="fal-ai/wan-i2v">Wan 2.1 14B I2V (45 CR)</option>
-                  <option value="fal-ai/minimax/video-01/image-to-video">MiniMax Video 01 (15 CR)</option>
-                </optgroup>
-                <optgroup label="🔷 Google Veo Direct">
-                  <option value="veo-asli-lite">⚡ Google Veo Asli Lite (10 CR/Scene)</option>
-                  <option value="veo-asli">🎬 Google Veo Asli Standard (15 CR/Scene)</option>
-                  <option value="veo-asli-pro">🌟 Google Veo Asli Pro (25 CR/Scene)</option>
-                </optgroup>
-              </select>
+              <UnifiedVideoModelSelector
+                selectedProvider={videoProvider}
+                selectedModelId={videoModel}
+                themeColor="emerald"
+                idPrefix="edu-video-engine"
+                compact={true}
+                onChange={(selection: SelectedModelData) => {
+                  setVideoProvider(selection.provider);
+                  setVideoModel(selection.internalModelId);
+                  setVideoModelDisplayName(selection.displayName);
+                  setVideoEngine(selection.internalModelId);
+                }}
+              />
             </div>
           </div>
 

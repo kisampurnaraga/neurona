@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QuickCreateConfig } from '../shared/types';
+import { UnifiedVideoModelSelector, SelectedModelData } from './UnifiedVideoModelSelector';
 
 interface QuickCreateModalProps {
   isOpen: boolean;
@@ -16,6 +17,9 @@ export const QuickCreateModal: React.FC<QuickCreateModalProps> = ({ isOpen, onCl
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('9:16');
   const [targetAudience, setTargetAudience] = useState('');
   const [style, setStyle] = useState<QuickCreateConfig['style']>('CINEMATIC');
+  const [videoProvider, setVideoProvider] = useState<string>('higgsfield');
+  const [videoModel, setVideoModel] = useState<string>('veo3_1_lite');
+  const [videoModelDisplayName, setVideoModelDisplayName] = useState<string>('Google Veo 3.1 Lite');
 
   if (!isOpen) return null;
 
@@ -27,7 +31,11 @@ export const QuickCreateModal: React.FC<QuickCreateModalProps> = ({ isOpen, onCl
       topic,
       aspectRatio,
       targetAudience: targetAudience || 'Umum',
-      style
+      style,
+      videoEngine: videoModel,
+      videoProvider,
+      videoModel,
+      videoModelDisplayName
     };
 
     const generatedPrompt = `Buatkan video ekspres bertema "${topic}" dengan gaya visual ${style} untuk audiens ${targetAudience || 'Umum'}.`;
@@ -129,6 +137,22 @@ export const QuickCreateModal: React.FC<QuickCreateModalProps> = ({ isOpen, onCl
                   ))}
                 </div>
               </div>
+            </div>
+
+            {/* Video Engine Selection */}
+            <div className="bg-[#0b1022] border border-slate-800/80 rounded-2xl p-3.5">
+              <UnifiedVideoModelSelector
+                selectedProvider={videoProvider}
+                selectedModelId={videoModel}
+                themeColor="indigo"
+                idPrefix="quick-video-engine"
+                compact={true}
+                onChange={(selection: SelectedModelData) => {
+                  setVideoProvider(selection.provider);
+                  setVideoModel(selection.internalModelId);
+                  setVideoModelDisplayName(selection.displayName);
+                }}
+              />
             </div>
 
             {/* Bottom Actions */}

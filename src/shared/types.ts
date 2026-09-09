@@ -56,6 +56,9 @@ export interface Scene {
   remoteUrl?: string;
   falUrl?: string;
   remoteVideoUrl?: string;
+  videoProvider?: string;
+  videoModel?: string;
+  videoModelDisplayName?: string;
   styleKeywords?: string[];
   imageCreditCost?: number; // e.g. 5 credits
   videoCreditCost?: number; // e.g. 15 credits
@@ -111,6 +114,9 @@ export interface AffiliateConfig {
   sceneCount?: number;
   imageEngine?: string;
   videoEngine?: string;
+  videoProvider?: string;
+  videoModel?: string;
+  videoModelDisplayName?: string;
 }
 
 export interface User {
@@ -138,6 +144,9 @@ export interface AnimationConfig {
   sceneCount?: number;
   imageEngine?: string;
   videoEngine?: string;
+  videoProvider?: string;
+  videoModel?: string;
+  videoModelDisplayName?: string;
   characterVisualAnalysis?: string;
   characterReferenceUrl?: string;
   characterReferenceUrls?: string[];
@@ -158,6 +167,9 @@ export interface EducationalConfig {
   sceneCount?: number;
   imageEngine?: string;
   videoEngine?: string;
+  videoProvider?: string;
+  videoModel?: string;
+  videoModelDisplayName?: string;
 }
 
 export interface FilmConfig {
@@ -171,6 +183,9 @@ export interface FilmConfig {
   sceneCount?: number;
   imageEngine?: string;
   videoEngine?: string;
+  videoProvider?: string;
+  videoModel?: string;
+  videoModelDisplayName?: string;
 }
 
 export interface VideoAdsConfig {
@@ -184,6 +199,9 @@ export interface VideoAdsConfig {
   sceneCount?: number;
   imageEngine?: string;
   videoEngine?: string;
+  videoProvider?: string;
+  videoModel?: string;
+  videoModelDisplayName?: string;
 }
 
 export interface QuickCreateConfig {
@@ -191,6 +209,10 @@ export interface QuickCreateConfig {
   aspectRatio: '16:9' | '9:16' | '1:1';
   targetAudience: string;
   style: 'CINEMATIC' | 'MODERN_MINIMALIST' | 'ANIME' | 'UGC';
+  videoEngine?: string;
+  videoProvider?: string;
+  videoModel?: string;
+  videoModelDisplayName?: string;
 }
 
 export interface AgentTelemetry {
@@ -235,6 +257,8 @@ export interface ProductionProject {
   status: ProductionState;
   videoType: VideoType;
   videoModel?: 'kling' | 'seedance' | 'wan' | 'hunyuan' | 'minimax' | string;
+  videoProvider?: 'higgsfield' | 'openart' | 'fal' | 'google_veo' | string;
+  videoModelDisplayName?: string;
   ttsVoiceConfig?: TTSVoiceConfig;
   overallProgress?: number; // 0 to 100%
   progress?: number; // Standardized alias for overallProgress (0 to 100%)

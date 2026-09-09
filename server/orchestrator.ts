@@ -1109,6 +1109,8 @@ export interface ProductionStartOptions {
   prompt: string;
   videoType?: VideoType;
   videoModel?: string;
+  videoProvider?: string;
+  videoModelDisplayName?: string;
   ttsVoiceConfig?: any;
   attachedAssets?: ProductAsset[];
   affiliateConfig?: AffiliateConfig;
@@ -1127,7 +1129,7 @@ export class ProductionOrchestrator {
 
   static async startProduction(input: string | ProductionStartOptions) {
     const options: ProductionStartOptions = typeof input === 'string' ? { prompt: input } : input;
-    const { prompt, videoType, videoModel, ttsVoiceConfig, attachedAssets, affiliateConfig, animationConfig, educationalConfig, filmConfig, videoAdsConfig, quickCreateConfig, userRole } = options;
+    const { prompt, videoType, videoModel, videoProvider, videoModelDisplayName, ttsVoiceConfig, attachedAssets, affiliateConfig, animationConfig, educationalConfig, filmConfig, videoAdsConfig, quickCreateConfig, userRole } = options;
 
     const id = crypto.randomUUID();
     
@@ -1161,7 +1163,9 @@ export class ProductionOrchestrator {
 
     const telemetry = createDefaultTelemetry();
 
-    const selectedVideoModel = videoModel || (prompt.toLowerCase().includes('seedance') ? 'fal-seedance25' : prompt.toLowerCase().includes('kling') ? 'fal-kling21' : prompt.toLowerCase().includes('wan') ? 'fal-wan21' : prompt.toLowerCase().includes('minimax') ? 'fal-minimax' : 'fal-wan21');
+    const selectedVideoProvider = videoProvider || affiliateConfig?.videoProvider || animationConfig?.videoProvider || educationalConfig?.videoProvider || filmConfig?.videoProvider || videoAdsConfig?.videoProvider || quickCreateConfig?.videoProvider || (videoModel?.includes('veo3-1') || videoModel?.includes('byte-plus') ? 'openart' : 'higgsfield');
+    const selectedVideoModel = videoModel || affiliateConfig?.videoModel || animationConfig?.videoModel || educationalConfig?.videoModel || filmConfig?.videoModel || videoAdsConfig?.videoModel || quickCreateConfig?.videoModel || affiliateConfig?.videoEngine || animationConfig?.videoEngine || educationalConfig?.videoEngine || filmConfig?.videoEngine || videoAdsConfig?.videoEngine || (prompt.toLowerCase().includes('seedance') ? 'fal-seedance25' : prompt.toLowerCase().includes('kling') ? 'fal-kling21' : prompt.toLowerCase().includes('wan') ? 'wan3_0' : prompt.toLowerCase().includes('minimax') ? 'fal-minimax' : 'veo3_1_lite');
+    const selectedVideoModelDisplayName = videoModelDisplayName || affiliateConfig?.videoModelDisplayName || animationConfig?.videoModelDisplayName || educationalConfig?.videoModelDisplayName || filmConfig?.videoModelDisplayName || videoAdsConfig?.videoModelDisplayName || quickCreateConfig?.videoModelDisplayName;
     const selectedTTS = ttsVoiceConfig || {
       provider: prompt.toLowerCase().includes('tryaudio') ? 'tryaudio' : prompt.toLowerCase().includes('elevenlabs') ? 'elevenlabs' : 'webspeech',
       voiceGender: prompt.toLowerCase().includes('laki') || prompt.toLowerCase().includes('pria') || prompt.toLowerCase().includes('cowok') ? 'male' : 'female',
@@ -1173,7 +1177,9 @@ export class ProductionOrchestrator {
       title: defaultTitle,
       status: 'BRIEFING',
       videoType: resolvedType,
+      videoProvider: selectedVideoProvider,
       videoModel: selectedVideoModel,
+      videoModelDisplayName: selectedVideoModelDisplayName,
       ttsVoiceConfig: selectedTTS,
       overallProgress: 10,
       progress: 10,

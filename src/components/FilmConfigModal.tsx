@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FilmConfig } from '../shared/types';
+import { UnifiedVideoModelSelector, SelectedModelData } from './UnifiedVideoModelSelector';
 
 interface FilmConfigModalProps {
   isOpen: boolean;
@@ -19,6 +20,9 @@ export const FilmConfigModal: React.FC<FilmConfigModalProps> = ({ isOpen, onClos
   const [charactersDescription, setCharactersDescription] = useState('');
   const [voiceTone, setVoiceTone] = useState('DEEP_CINEMATIC');
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9');
+  const [videoProvider, setVideoProvider] = useState<string>('higgsfield');
+  const [videoModel, setVideoModel] = useState<string>('veo3_1');
+  const [videoModelDisplayName, setVideoModelDisplayName] = useState<string>('Google Veo 3.1 Cinematic');
 
   if (!isOpen) return null;
 
@@ -34,7 +38,11 @@ export const FilmConfigModal: React.FC<FilmConfigModalProps> = ({ isOpen, onClos
       charactersDescription,
       voiceTone,
       aspectRatio,
-      sceneCount: 4
+      sceneCount: 4,
+      videoEngine: videoModel,
+      videoProvider,
+      videoModel,
+      videoModelDisplayName
     };
 
     const generatedPrompt = `Buatkan film sinematik berjudul "${title}" bergenre ${genre} dengan gaya visual ${style}. Logline: ${logline}. Karakter: ${charactersDescription || 'Tanpa deskripsi tambahan'}.`;
@@ -175,6 +183,22 @@ export const FilmConfigModal: React.FC<FilmConfigModalProps> = ({ isOpen, onClos
                   ))}
                 </div>
               </div>
+            </div>
+
+            {/* Video Engine Selection */}
+            <div className="bg-[#0b1022] border border-slate-800/80 rounded-2xl p-3.5">
+              <UnifiedVideoModelSelector
+                selectedProvider={videoProvider}
+                selectedModelId={videoModel}
+                themeColor="indigo"
+                idPrefix="film-video-engine"
+                compact={true}
+                onChange={(selection: SelectedModelData) => {
+                  setVideoProvider(selection.provider);
+                  setVideoModel(selection.internalModelId);
+                  setVideoModelDisplayName(selection.displayName);
+                }}
+              />
             </div>
 
             {/* Bottom Actions */}

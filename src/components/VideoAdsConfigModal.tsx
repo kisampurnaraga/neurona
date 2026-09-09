@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { VideoAdsConfig } from '../shared/types';
+import { UnifiedVideoModelSelector, SelectedModelData } from './UnifiedVideoModelSelector';
 
 interface VideoAdsConfigModalProps {
   isOpen: boolean;
@@ -19,6 +20,9 @@ export const VideoAdsConfigModal: React.FC<VideoAdsConfigModalProps> = ({ isOpen
   const [cta, setCta] = useState('');
   const [targetAudience, setTargetAudience] = useState('');
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('9:16');
+  const [videoProvider, setVideoProvider] = useState<string>('higgsfield');
+  const [videoModel, setVideoModel] = useState<string>('veo3_1_lite');
+  const [videoModelDisplayName, setVideoModelDisplayName] = useState<string>('Google Veo 3.1 Lite');
 
   if (!isOpen) return null;
 
@@ -34,7 +38,11 @@ export const VideoAdsConfigModal: React.FC<VideoAdsConfigModalProps> = ({ isOpen
       cta,
       targetAudience: targetAudience || 'Masyarakat umum',
       aspectRatio,
-      sceneCount: 4
+      sceneCount: 4,
+      videoEngine: videoModel,
+      videoProvider,
+      videoModel,
+      videoModelDisplayName
     };
 
     const generatedPrompt = `Buatkan iklan video profesional untuk produk "${productName}" dengan objektif ${objective}. Formula Hook: ${hookStyle}. Manfaat: ${benefits}. CTA: ${cta}. Target Audience: ${targetAudience || 'Umum'}.`;
@@ -169,6 +177,22 @@ export const VideoAdsConfigModal: React.FC<VideoAdsConfigModalProps> = ({ isOpen
                   ))}
                 </div>
               </div>
+            </div>
+
+            {/* Video Engine Selection */}
+            <div className="bg-[#0b1022] border border-slate-800/80 rounded-2xl p-3.5">
+              <UnifiedVideoModelSelector
+                selectedProvider={videoProvider}
+                selectedModelId={videoModel}
+                themeColor="emerald"
+                idPrefix="video-ads-engine"
+                compact={true}
+                onChange={(selection: SelectedModelData) => {
+                  setVideoProvider(selection.provider);
+                  setVideoModel(selection.internalModelId);
+                  setVideoModelDisplayName(selection.displayName);
+                }}
+              />
             </div>
 
             {/* Bottom Actions */}

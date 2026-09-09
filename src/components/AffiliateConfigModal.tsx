@@ -16,6 +16,7 @@ import {
 , Film } from 'lucide-react';
 import type { ProductAsset, AffiliateConfig } from '../shared/types';
 import { neuronaVoice } from '../utils/speechSynthesis';
+import { UnifiedVideoModelSelector, SelectedModelData } from './UnifiedVideoModelSelector';
 
 interface AffiliateConfigModalProps {
   isOpen: boolean;
@@ -52,7 +53,10 @@ export default function AffiliateConfigModal({
   const [hookStyle, setHookStyle] = useState<'PAIN_POINT' | 'CURIOSITY' | 'UNBOXING' | 'BEFORE_AFTER' | 'AESTHETIC_REVEAL'>('PAIN_POINT');
   const [sceneCount, setSceneCount] = useState<number>(4);
   const [imageEngine, setImageEngine] = useState<string>('nano-asli');
-  const [videoEngine, setVideoEngine] = useState<string>('veo-asli');
+  const [videoProvider, setVideoProvider] = useState<string>('higgsfield');
+  const [videoModel, setVideoModel] = useState<string>('veo3_1_lite');
+  const [videoModelDisplayName, setVideoModelDisplayName] = useState<string>('Google Veo 3.1 Lite');
+  const [videoEngine, setVideoEngine] = useState<string>('veo3_1_lite');
   const [characterImage, setCharacterImage] = useState('');
   const [productInfo, setProductInfo] = useState('');
   
@@ -204,7 +208,10 @@ export default function AffiliateConfigModal({
       referenceVideoUrl: referenceVideoUrl || assets.find(a => a.type === 'VIDEO')?.url,
       sceneCount: sceneCount,
       imageEngine: imageEngine,
-      videoEngine: videoEngine
+      videoEngine: videoModel,
+      videoProvider: videoProvider,
+      videoModel: videoModel,
+      videoModelDisplayName: videoModelDisplayName
     };
 
     const promptText = `Buatkan video affiliate ${platform} untuk produk ${productName}. Keunggulan: ${keyBenefits}. Promo: ${pricePromo}. Call To Action: ${callToAction}. Hook style: ${hookStyle}.`;
@@ -565,34 +572,19 @@ export default function AffiliateConfigModal({
             </div>
 
             <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-purple-400 flex items-center gap-1">
-                <VideoIcon size={12} />
-                <span>Model AI Video Engine</span>
-              </label>
-              <select
-                value={videoEngine}
-                onChange={(e) => setVideoEngine(e.target.value)}
-                className="w-full bg-black/60 border border-[#27272a] rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-purple-500"
-              >
-                <optgroup label="🎬 OpenArt AI MCP Video">
-                  <option value="byte-plus-seedance-2-fast">⚡ OpenArt SeaDance 2.0 Fast (50 CR)</option>
-                  <option value="veo3-1">🎬 OpenArt Google Veo 3.1 Cinematic (100 CR)</option>
-                  <option value="wan2-7">🌊 OpenArt Wan 2.7 Ultra Motion (50 CR)</option>
-                </optgroup>
-                <optgroup label="⚡ Fal.ai Video Engine (Standar)">
-                  <option value="bytedance/seedance-2.0/fast/image-to-video">ByteDance SeaDance 2.0 Fast (10 CR)</option>
-                  <option value="bytedance/seedance-2.0/image-to-video">ByteDance SeaDance 2.0 Std (15 CR)</option>
-                  <option value="fal-ai/veo3.1/lite/image-to-video">Google Veo 3.1 Lite Fal (20 CR)</option>
-                  <option value="fal-ai/wan-i2v">Wan 2.1 14B I2V (45 CR)</option>
-                  <option value="fal-ai/kling-video/v2.1/standard/image-to-video">Kling 2.1 Standard (15 CR)</option>
-                  <option value="fal-ai/minimax/video-01/image-to-video">MiniMax Video 01 (15 CR)</option>
-                </optgroup>
-                <optgroup label="🔷 Google Veo Direct">
-                  <option value="veo-asli-lite">⚡ Google Veo Asli Lite (10 CR/Scene)</option>
-                  <option value="veo-asli">🎬 Google Veo Asli Standard (15 CR/Scene)</option>
-                  <option value="veo-asli-pro">🌟 Google Veo Asli Pro (25 CR/Scene)</option>
-                </optgroup>
-              </select>
+              <UnifiedVideoModelSelector
+                selectedProvider={videoProvider}
+                selectedModelId={videoModel}
+                themeColor="purple"
+                idPrefix="affiliate-video-engine"
+                compact={true}
+                onChange={(selection: SelectedModelData) => {
+                  setVideoProvider(selection.provider);
+                  setVideoModel(selection.internalModelId);
+                  setVideoModelDisplayName(selection.displayName);
+                  setVideoEngine(selection.internalModelId);
+                }}
+              />
             </div>
           </div>
         </div>

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { AnimationConfig } from '../shared/types';
 import { neuronaVoice } from '../utils/speechSynthesis';
+import { UnifiedVideoModelSelector, SelectedModelData } from './UnifiedVideoModelSelector';
 
 interface AnimationConfigModalProps {
   isOpen: boolean;
@@ -198,7 +199,10 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
   const [aspectRatio, setAspectRatio] = useState<AnimationConfig['aspectRatio']>('16:9');
   const [sceneCount, setSceneCount] = useState(4);
   const [imageEngine, setImageEngine] = useState<string>('kling-3-omni');
-  const [videoEngine, setVideoEngine] = useState<string>('fal-ai/kling-video/v2.1/standard/image-to-video');
+  const [videoProvider, setVideoProvider] = useState<string>('higgsfield');
+  const [videoModel, setVideoModel] = useState<string>('wan3_0');
+  const [videoModelDisplayName, setVideoModelDisplayName] = useState<string>('Wan 3.0');
+  const [videoEngine, setVideoEngine] = useState<string>('wan3_0');
 
   // Sync initial values when opened
   useEffect(() => {
@@ -340,7 +344,10 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
       aspectRatio,
       sceneCount,
       imageEngine,
-      videoEngine,
+      videoEngine: videoModel,
+      videoProvider,
+      videoModel,
+      videoModelDisplayName,
       characterVisualAnalysis: characterVisualAnalysis || (referenceImageUrls.length > 0 ? `Karakter referensi: ${characterDescription}` : undefined),
       characterReferenceUrl: referenceImageUrls[0] || undefined,
       characterReferenceUrls: referenceImageUrls
@@ -1113,35 +1120,19 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
             </div>
 
             <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-purple-400 flex items-center gap-1">
-                <Clapperboard className="w-3 h-3 text-purple-400" />
-                <span>Model AI Video Animasi (Video Engine)</span>
-              </label>
-              <select
-                id="select-anim-video-engine"
-                value={videoEngine}
-                onChange={(e) => setVideoEngine(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-purple-500 cursor-pointer"
-              >
-                <optgroup label="🎬 OpenArt AI MCP Video">
-                  <option value="byte-plus-seedance-2-fast">⚡ OpenArt SeaDance 2.0 Fast (50 CR)</option>
-                  <option value="veo3-1">🎬 OpenArt Google Veo 3.1 Cinematic (100 CR)</option>
-                  <option value="wan2-7">🌊 OpenArt Wan 2.7 Ultra Motion (50 CR)</option>
-                </optgroup>
-                <optgroup label="⚡ Fal.ai Video Engine (Standar)">
-                  <option value="fal-ai/kling-video/v2.1/standard/image-to-video">Kling 2.1 Standard Anime (15 CR)</option>
-                  <option value="bytedance/seedance-2.0/fast/image-to-video">ByteDance SeaDance 2.0 Fast (10 CR)</option>
-                  <option value="bytedance/seedance-2.0/image-to-video">ByteDance SeaDance 2.0 Std (15 CR)</option>
-                  <option value="fal-ai/veo3.1/lite/image-to-video">Google Veo 3.1 Lite Fal (20 CR)</option>
-                  <option value="fal-ai/wan-i2v">Wan 2.1 14B I2V (45 CR)</option>
-                  <option value="fal-ai/minimax/video-01/image-to-video">MiniMax Video 01 (15 CR)</option>
-                </optgroup>
-                <optgroup label="🔷 Google Veo Direct">
-                  <option value="veo-asli-lite">⚡ Google Veo Asli Lite (10 CR/Scene)</option>
-                  <option value="veo-asli">🎬 Google Veo Asli Standard (15 CR/Scene)</option>
-                  <option value="veo-asli-pro">🌟 Google Veo Asli Pro (25 CR/Scene)</option>
-                </optgroup>
-              </select>
+              <UnifiedVideoModelSelector
+                selectedProvider={videoProvider}
+                selectedModelId={videoModel}
+                themeColor="purple"
+                idPrefix="anim-video-engine"
+                compact={true}
+                onChange={(selection: SelectedModelData) => {
+                  setVideoProvider(selection.provider);
+                  setVideoModel(selection.internalModelId);
+                  setVideoModelDisplayName(selection.displayName);
+                  setVideoEngine(selection.internalModelId);
+                }}
+              />
             </div>
           </div>
 
