@@ -206,6 +206,8 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     HiggsfieldMCPAdapter.isInitialized = true;
     return { success: true };
   }
+
+  public getEndpoint(): string {
     const fccConfig: any = (FounderService as any).getHiggsfieldConfig?.() || {};
     return fccConfig.endpoint || process.env.HIGGSFIELD_MCP_ENDPOINT || HiggsfieldMCPAdapter.OFFICIAL_ENDPOINT;
   }
@@ -255,7 +257,7 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       imageToVideo: true,
       textToVideo: true,
       imageEdit: false,
-      supportedModels: HIGGSFIELD_DEFAULT_MODELS
+      supportedModels: this.discoveredModels.length > 0 ? this.discoveredModels : HIGGSFIELD_DEFAULT_MODELS
     };
   }
 
@@ -1095,7 +1097,8 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     const aspectRatio = request.aspectRatio || '16:9';
 
     // Extract reference image URL/UUID/DataUri
-    const refImg = request.mediaId || request.referenceImage || (Array.isArray(request.referenceImageUrls) && request.referenceImageUrls[0]) || null;
+    const characterRef = request.characterReferenceUrl || null;
+    const sketchRef = request.sketchReferenceUrl || null;
 
     try {
       const toolName = this.resolveToolName('TEXT_TO_IMAGE');
@@ -1110,11 +1113,11 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
         }
       };
 
-      if (refImg) {
-        console.log(`[Higgsfield MCP] Image reference detected: ${refImg}. Adding medias parameters.`);
-        toolArgs.params.medias = [
-          { value: refImg, role: 'image' }
-        ];
+      if (characterRef || sketchRef) {
+        console.log(`[Higgsfield MCP] Reference detected. Adding medias parameters.`);
+        toolArgs.params.medias = [];
+        if (characterRef) toolArgs.params.medias.push({ value: characterRef, role: 'character' });
+        if (sketchRef) toolArgs.params.medias.push({ value: sketchRef, role: 'sketch' });
       }
 
       const mcpResult = await this.callMCPTool(toolName, toolArgs);
