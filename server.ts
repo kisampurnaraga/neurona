@@ -1934,7 +1934,7 @@ async function startServer() {
 
   app.post('/api/projects/:id/approve', async (req, res) => {
     try {
-      const { subtitleStyle, videoModel, videoProvider } = req.body;
+      const { subtitleStyle, videoModel, videoProvider, videoModelDisplayName } = req.body;
       const project = projects.get(req.params.id);
       if (project) {
         if (subtitleStyle) project.subtitleStyle = subtitleStyle;
@@ -1949,6 +1949,9 @@ async function startServer() {
           } else if (['byte-plus-seedance-2-fast', 'byte-plus-seedance-2', 'byte-plus-seedance-2-5', 'veo3-1', 'wan2-7', 'gemini-omni-flash'].includes(videoModel) || videoModel.startsWith('openart')) {
             (project as any).videoProvider = 'openart';
           }
+        }
+        if (videoModelDisplayName) {
+          project.videoModelDisplayName = videoModelDisplayName;
         }
       }
       await ProductionOrchestrator.approveStoryboard(req.params.id);
@@ -1969,8 +1972,8 @@ async function startServer() {
 
   app.post('/api/projects/:id/generate-scene-image', async (req, res) => {
     try {
-      const { sceneId, imageEngine, resolution, allowFallbackToFlux } = req.body;
-      await ProductionOrchestrator.generateSceneImage(req.params.id, sceneId, imageEngine, resolution || '1K', allowFallbackToFlux);
+      const { sceneId, imageEngine, resolution, allowFallbackToFlux, imageProvider } = req.body;
+      await ProductionOrchestrator.generateSceneImage(req.params.id, sceneId, imageEngine, resolution || '1K', allowFallbackToFlux, imageProvider);
       res.json({ success: true });
     } catch (e: any) {
       const isQuotaErr = e.message && e.message.includes('[NANO_QUOTA_EXHAUSTED]');
@@ -1980,8 +1983,8 @@ async function startServer() {
 
   app.post('/api/projects/:id/generate-all-images', async (req, res) => {
     try {
-      const { imageEngine, resolution, allowFallbackToFlux } = req.body;
-      await ProductionOrchestrator.generateAllSceneImages(req.params.id, imageEngine, resolution || '1K', allowFallbackToFlux);
+      const { imageEngine, resolution, allowFallbackToFlux, imageProvider } = req.body;
+      await ProductionOrchestrator.generateAllSceneImages(req.params.id, imageEngine, resolution || '1K', allowFallbackToFlux, imageProvider);
       res.json({ success: true });
     } catch (e: any) {
       const isQuotaErr = e.message && e.message.includes('[NANO_QUOTA_EXHAUSTED]');
@@ -1991,7 +1994,7 @@ async function startServer() {
 
   app.post('/api/projects/:id/generate-scene-video', async (req, res) => {
     try {
-      const { sceneId, videoModel } = req.body;
+      const { sceneId, videoModel, videoProvider, videoModelDisplayName } = req.body;
       const project = projects.get(req.params.id);
       if (!project) return res.status(404).json({ error: 'Project not found' });
       
@@ -2002,7 +2005,7 @@ async function startServer() {
 
       // Do not await to avoid 504 timeouts on the frontend. The video generation takes minutes.
       // The frontend will poll the project state to see the updated videoUrl.
-      ProductionOrchestrator.generateSceneVideo(req.params.id, sceneId, videoModel).catch(err => {
+      ProductionOrchestrator.generateSceneVideo(req.params.id, sceneId, videoModel, videoProvider).catch(err => {
          console.error('[BACKGROUND GENERATE VIDEO ERROR]', err);
       });
       res.json({ success: true, message: 'Video generation started in background.' });

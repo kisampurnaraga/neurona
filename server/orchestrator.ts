@@ -1856,7 +1856,7 @@ export class ProductionOrchestrator {
   /**
    * Generates a single Scene's consistent character keyframe image (Cost: based on model & resolution)
    */
-  static async generateSceneImage(id: string, sceneId: string, imageEngine?: string, resolution: string = '1K', allowFallbackToFlux?: boolean) {
+  static async generateSceneImage(id: string, sceneId: string, imageEngine?: string, resolution: string = '1K', allowFallbackToFlux?: boolean, imageProvider?: string) {
     const project = projects.get(id);
     if (!project) return;
     ensureStoryboardExists(project);
@@ -1877,6 +1877,7 @@ export class ProductionOrchestrator {
     // Save image model to scene & project for full consistency and prevent engine drift
     const effectiveEngine = imageEngine 
       || (scene as any).imageEngine 
+      || (scene as any).imageModel
       || (project as any).imageEngine 
       || (project as any).imageModel 
       || (project.affiliateConfig as any)?.imageEngine 
@@ -1886,8 +1887,15 @@ export class ProductionOrchestrator {
       || 'standard';
 
     (scene as any).imageEngine = effectiveEngine;
+    (scene as any).imageModel = effectiveEngine;
+    if (imageProvider) {
+      (scene as any).imageProvider = imageProvider;
+    }
     (project as any).imageEngine = effectiveEngine;
     (project as any).imageModel = effectiveEngine;
+    if (imageProvider) {
+      (project as any).imageProvider = imageProvider;
+    }
 
     // 1. Determine Model & Calculate Credit Cost
     const modelDef = getFalImageModelForStudio(project.videoType, {
@@ -2016,7 +2024,7 @@ export class ProductionOrchestrator {
   /**
    * Generates consistent character keyframe images for all scenes
    */
-  static async generateAllSceneImages(id: string, imageEngine?: string, resolution: string = '1K', allowFallbackToFlux?: boolean) {
+  static async generateAllSceneImages(id: string, imageEngine?: string, resolution: string = '1K', allowFallbackToFlux?: boolean, imageProvider?: string) {
     const project = projects.get(id);
     if (!project) return;
     ensureStoryboardExists(project);
@@ -2047,11 +2055,18 @@ export class ProductionOrchestrator {
 
     (project as any).imageEngine = effectiveEngine;
     (project as any).imageModel = effectiveEngine;
+    if (imageProvider) {
+      (project as any).imageProvider = imageProvider;
+    }
 
     for (let i = 0; i < total; i++) {
       const sc = project.storyboard.scenes[i];
       sc.imageStatus = 'GENERATING';
       (sc as any).imageEngine = effectiveEngine;
+      (sc as any).imageModel = effectiveEngine;
+      if (imageProvider) {
+        (sc as any).imageProvider = imageProvider;
+      }
       project.currentPhaseName = `Generating Keyframe ${i + 1}/${total} (${project.characterProfile?.name || 'Karakter'})`;
       projectEvents.emit(`update:${id}`, project);
 
@@ -2147,7 +2162,7 @@ export class ProductionOrchestrator {
   /**
    * Generates video for a single scene (Cost: 15 Credits)
    */
-  static async generateSceneVideo(id: string, sceneId: string, videoModel?: string) {
+  static async generateSceneVideo(id: string, sceneId: string, videoModel?: string, explicitProvider?: string) {
     const project = projects.get(id);
     if (!project) return;
     
@@ -2169,7 +2184,7 @@ export class ProductionOrchestrator {
     const scene = project.storyboard.scenes[sceneIdx];
 
     // Save selected video model
-    const effectiveVideoModel = videoModel || (scene as any).videoModel || project.videoModel || 'fal';
+    const effectiveVideoModel = videoModel || (scene as any).videoModel || project.videoModel || 'veo3_1_lite';
     (scene as any).videoModel = effectiveVideoModel;
     // Only update global project model if not an isolated scene override
     if (!videoModel || videoModel === project.videoModel) {
@@ -2179,7 +2194,7 @@ export class ProductionOrchestrator {
     scene.videoStatus = 'GENERATING';
     scene.status = 'GENERATING';
 
-    const scenePreferredProvider = (scene as any).videoProvider || (scene as any).metadata?.provider;
+    const scenePreferredProvider = explicitProvider || (scene as any).videoProvider || (scene as any).metadata?.provider;
     const projectPreferredProvider = (project as any).videoProvider;
     let preferredProvider = scenePreferredProvider;
     if (!preferredProvider) {

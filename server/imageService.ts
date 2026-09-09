@@ -968,14 +968,20 @@ export class ImageGenerationService {
 
     // Determine target engine route
     const rawEngine = (engine || FounderService.getImageEngine() || 'fal').toLowerCase();
-    const isOpenArtEngine = rawEngine.includes('openart') || 
+    const isHiggsfieldEngine = rawEngine.includes('higgsfield') || 
+      rawEngine === 'wan3_0' || 
+      rawEngine === 'veo3_1_lite' || 
+      rawEngine === 'veo3_1' || 
+      rawEngine === 'wan2_7' || 
+      rawEngine === 'gemini_omni';
+    const isOpenArtEngine = !isHiggsfieldEngine && (rawEngine.includes('openart') || 
       rawEngine === 'kling-3-omni' || 
       rawEngine === 'nano-banana-pro' || 
       rawEngine === 'byte-plus-seedream-5-pro' || 
-      rawEngine === 'gpt-image-2';
-    const isGoogleEngine = !isOpenArtEngine && (rawEngine.includes('gemini') || rawEngine.includes('imagen') || rawEngine.startsWith('nano-asli') || rawEngine === 'nano-asli');
-    const isOpenAiEngine = !isOpenArtEngine && (rawEngine.includes('chatgpt') || rawEngine.includes('dall-e') || rawEngine.includes('openai') || (rawEngine.includes('gpt') && rawEngine !== 'gpt-image-2'));
-    const isFalEngine = !isOpenArtEngine && !isGoogleEngine && !isOpenAiEngine;
+      rawEngine === 'gpt-image-2');
+    const isGoogleEngine = !isHiggsfieldEngine && !isOpenArtEngine && (rawEngine.includes('gemini') || rawEngine.includes('imagen') || rawEngine.startsWith('nano-asli') || rawEngine === 'nano-asli');
+    const isOpenAiEngine = !isHiggsfieldEngine && !isOpenArtEngine && (rawEngine.includes('chatgpt') || rawEngine.includes('dall-e') || rawEngine.includes('openai') || (rawEngine.includes('gpt') && rawEngine !== 'gpt-image-2'));
+    const isFalEngine = !isHiggsfieldEngine && !isOpenArtEngine && !isGoogleEngine && !isOpenAiEngine;
 
     // Helper: Convert local path / URL / base64 into an inlineData part for Gemini multimodal image models
     const loadAsBase64Part = async (imgStr: string): Promise<{ inlineData: { data: string; mimeType: string } } | null> => {
@@ -1486,10 +1492,39 @@ export class ImageGenerationService {
       return null;
     };
 
+    let lastHiggsfieldError = '';
+    const runHiggsfieldImage = async (): Promise<string | null> => {
+      try {
+        if (onLog) onLog(`Generating keyframe image Scene ${sceneIndex + 1} via Higgsfield MCP Adapter...`, 'INFO');
+        const { HiggsfieldMCPAdapter } = await import('../src/server/providers/HiggsfieldMCPAdapter');
+        const higgsAdapter = new HiggsfieldMCPAdapter();
+        const imgResult = await higgsAdapter.generateImage({
+          prompt: finalPrompt,
+          model: rawEngine,
+          aspectRatio: cleanAspect,
+          sceneId: scene.id
+        });
+        if (imgResult && imgResult.success && imgResult.assetUrl) {
+          if (onLog) onLog(`Keyframe Adegan ${sceneIndex + 1} berhasil digenerate via Higgsfield MCP [${rawEngine}]!`, 'SUCCESS');
+          return imgResult.assetUrl;
+        }
+      } catch (higgsErr: any) {
+        lastHiggsfieldError = higgsErr?.message || String(higgsErr);
+        console.warn(`[ImageGenerationService] Higgsfield MCP Error:`, lastHiggsfieldError);
+      }
+      return null;
+    };
+
     // -----------------------------------------------------------------------
     // STRICT ENGINE DISPATCH: Respect User Selection without Cross-Provider Fallback
     // -----------------------------------------------------------------------
-    if (isOpenArtEngine) {
+    if (isHiggsfieldEngine) {
+      const higgsResult = await runHiggsfieldImage();
+      if (higgsResult) return higgsResult;
+      const errMsg = `[HIGGSFIELD_ERROR] Gagal generate gambar dengan Higgsfield MCP Provider (${rawEngine}). Detail: ${lastHiggsfieldError || 'Higgsfield MCP error'}`;
+      if (onLog) onLog(`[ERROR] ${errMsg}`, 'ERROR');
+      throw new Error(errMsg);
+    } else if (isOpenArtEngine) {
       const openArtResult = await runOpenArtImage();
       if (openArtResult) return openArtResult;
       const errMsg = `[OPENART_ERROR] Gagal generate gambar dengan OpenArt MCP Provider. Detail: ${lastOpenArtError || 'OpenArt MCP error'}`;

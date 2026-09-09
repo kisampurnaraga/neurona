@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { VideoPreviewPlayer } from './components/VideoPreviewPlayer';
 import { NeuronaDirectorCore } from './components/NeuronaDirectorCore';
 import { StoryboardMatrixModal, IMAGE_MODEL_OPTIONS, VIDEO_MODEL_OPTIONS } from './components/StoryboardMatrixModal';
+import { resolveProviderSafeModel } from './shared/modelCatalog';
 import { StudioSelectorModal } from './components/StudioSelectorModal';
 import { FilmConfigModal } from './components/FilmConfigModal';
 import { VideoAdsConfigModal } from './components/VideoAdsConfigModal';
@@ -171,6 +172,7 @@ export default function App() {
   const [selectedVideoEngine, setSelectedVideoEngine] = useState<string>(() => localStorage.getItem('neurona_video_model') || 'veo3_1_lite');
   const [selectedImageEngine, setSelectedImageEngine] = useState<string>(() => localStorage.getItem('neurona_image_model') || 'kling-3-omni');
   const [pendingVideoModel, setPendingVideoModel] = useState<string>(() => localStorage.getItem('neurona_video_model') || 'veo3_1_lite');
+  const [pendingVideoProvider, setPendingVideoProvider] = useState<string>(() => localStorage.getItem('neurona_video_provider') || 'higgsfield');
 
   // User Authentication & Session State
   const [currentUser, setCurrentUser] = useState<UserSessionData | null>(() => {
@@ -721,24 +723,28 @@ export default function App() {
     }
   };
 
-  const handleApprove = async (subtitleStyle?: string, videoModelOverride?: string) => {
+  const handleApprove = async (subtitleStyle?: string, videoModelOverride?: string, videoProviderOverride?: string) => {
     if (!projectId) return;
     setIsThinking(true);
     try {
       const activeVideoModel = videoModelOverride || pendingVideoModel || selectedVideoEngine || localStorage.getItem('neurona_video_model') || 'veo3_1_lite';
-      const activeVideoProvider = (['veo3_1_lite', 'wan3_0', 'veo3_1', 'wan2_7', 'grok_video', 'gemini_omni'].includes(activeVideoModel) || activeVideoModel.startsWith('higgsfield')) 
-        ? 'higgsfield' 
-        : (['byte-plus-seedance-2-fast', 'byte-plus-seedance-2', 'byte-plus-seedance-2-5', 'veo3-1', 'wan2-7', 'gemini-omni-flash'].includes(activeVideoModel) || activeVideoModel.startsWith('openart'))
-        ? 'openart'
-        : 'fal';
+      const explicitProv = videoProviderOverride || pendingVideoProvider || (localStorage.getItem('neurona_video_provider') as any);
+      const safe = resolveProviderSafeModel({
+        explicitProvider: explicitProv,
+        inputModel: activeVideoModel,
+        mediaType: 'VIDEO'
+      });
+      const activeVideoProvider = safe.provider;
+      const canonicalModelId = safe.internalModelId;
 
       await fetch(`/api/projects/${projectId}/approve`, { 
         method: 'POST', 
         headers: {'Content-Type': 'application/json'}, 
         body: JSON.stringify({
           subtitleStyle,
-          videoModel: activeVideoModel,
-          videoProvider: activeVideoProvider
+          videoModel: canonicalModelId,
+          videoProvider: activeVideoProvider,
+          videoModelDisplayName: safe.modelDef.displayName
         }) 
       });
       neuronaVoice.speak("Izin disetujui. Tim Agen AI Indonesia sedang merender video.");
@@ -762,7 +768,7 @@ export default function App() {
     }
   };
 
-  const handleGenerateSceneImage = async (sceneId: string, cost: number = 5, imageEngine?: string, allowFallbackToFlux?: boolean) => {
+  const handleGenerateSceneImage = async (sceneId: string, cost: number = 5, imageEngine?: string, allowFallbackToFlux?: boolean, imageProvider?: string) => {
     if (!projectId) return;
     if (userCredits < cost) {
       neuronaVoice.playChime('ALERT');
@@ -771,11 +777,23 @@ export default function App() {
       return;
     }
 
+    const safe = resolveProviderSafeModel({
+      explicitProvider: imageProvider as any,
+      inputModel: imageEngine || selectedImageEngine || 'kling-3-omni',
+      mediaType: 'IMAGE'
+    });
+
     try {
       const res = await fetch(`/api/projects/${projectId}/generate-scene-image`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sceneId, imageEngine, allowFallbackToFlux })
+        body: JSON.stringify({ 
+          sceneId, 
+          imageEngine: safe.internalModelId, 
+          imageProvider: safe.provider,
+          imageModelDisplayName: safe.modelDef.displayName,
+          allowFallbackToFlux 
+        })
       });
 
       if (!res.ok) {
@@ -799,7 +817,7 @@ export default function App() {
     }
   };
 
-  const handleGenerateAllImages = async (totalCost: number = 20, imageEngine?: string, allowFallbackToFlux?: boolean) => {
+  const handleGenerateAllImages = async (totalCost: number = 20, imageEngine?: string, allowFallbackToFlux?: boolean, imageProvider?: string) => {
     if (!projectId) return;
     if (userCredits < totalCost) {
       neuronaVoice.playChime('ALERT');
@@ -808,11 +826,22 @@ export default function App() {
       return;
     }
 
+    const safe = resolveProviderSafeModel({
+      explicitProvider: imageProvider as any,
+      inputModel: imageEngine || selectedImageEngine || 'kling-3-omni',
+      mediaType: 'IMAGE'
+    });
+
     try {
       const res = await fetch(`/api/projects/${projectId}/generate-all-images`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageEngine, allowFallbackToFlux })
+        body: JSON.stringify({ 
+          imageEngine: safe.internalModelId, 
+          imageProvider: safe.provider,
+          imageModelDisplayName: safe.modelDef.displayName,
+          allowFallbackToFlux 
+        })
       });
 
       if (!res.ok) {
@@ -836,7 +865,7 @@ export default function App() {
     }
   };
 
-  const handleGenerateSceneVideo = async (sceneId: string, cost: number = 15, videoModel?: string) => {
+  const handleGenerateSceneVideo = async (sceneId: string, cost: number = 15, videoModel?: string, videoProvider?: string) => {
     if (!projectId) return;
     if (userCredits < cost) {
       neuronaVoice.playChime('ALERT');
@@ -844,6 +873,12 @@ export default function App() {
       setIsCreditModalOpen(true);
       return;
     }
+
+    const safe = resolveProviderSafeModel({
+      explicitProvider: videoProvider as any,
+      inputModel: videoModel || selectedVideoEngine || 'veo3_1_lite',
+      mediaType: 'VIDEO'
+    });
 
     setUserCredits(prev => {
       const next = Math.max(0, prev - cost);
@@ -858,7 +893,12 @@ export default function App() {
       await fetch(`/api/projects/${projectId}/generate-scene-video`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sceneId, videoModel })
+        body: JSON.stringify({ 
+          sceneId, 
+          videoModel: safe.internalModelId,
+          videoProvider: safe.provider,
+          videoModelDisplayName: safe.modelDef.displayName
+        })
       });
     } catch (e) {
       console.error(e);
@@ -1306,13 +1346,18 @@ export default function App() {
             project={project}
             currentCredits={userCredits}
             onResetProject={handleResetHub}
-            onApproveAndPay={(cost, subtitleStyle, videoModel) => {
+            onApproveAndPay={(cost, subtitleStyle, videoModel, videoProvider) => {
               setIsStoryboardMatrixOpen(false);
-              const modelToUse = videoModel || selectedVideoEngine;
-              setPendingVideoModel(modelToUse);
-              setSelectedVideoEngine(modelToUse);
+              const safe = resolveProviderSafeModel({
+                explicitProvider: videoProvider as any,
+                inputModel: videoModel || selectedVideoEngine,
+                mediaType: 'VIDEO'
+              });
+              setPendingVideoModel(safe.internalModelId);
+              setPendingVideoProvider(safe.provider);
+              setSelectedVideoEngine(safe.internalModelId);
               if (subtitleStyle) {
-                handleApprove(subtitleStyle, modelToUse);
+                handleApprove(subtitleStyle, safe.internalModelId, safe.provider);
               } else {
                 setShowCaptionModal(true);
               }
@@ -1361,7 +1406,7 @@ export default function App() {
             <CaptionStyleSelectorModal
               onSelect={(styleId) => {
                 setShowCaptionModal(false);
-                handleApprove(styleId, pendingVideoModel);
+                handleApprove(styleId, pendingVideoModel, pendingVideoProvider);
               }}
               onCancel={() => setShowCaptionModal(false)}
             />
@@ -1786,8 +1831,11 @@ export default function App() {
                         <select
                           value={selectedImageEngine}
                           onChange={(e) => {
-                            setSelectedImageEngine(e.target.value);
-                            localStorage.setItem('neurona_image_model', e.target.value);
+                            const val = e.target.value;
+                            const safe = resolveProviderSafeModel({ inputModel: val, mediaType: 'IMAGE' });
+                            setSelectedImageEngine(safe.internalModelId);
+                            localStorage.setItem('neurona_image_model', safe.internalModelId);
+                            localStorage.setItem('neurona_image_provider', safe.provider);
                           }}
                           className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
                           style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right .5rem center', backgroundSize: '.65em auto' }}
@@ -1818,12 +1866,12 @@ export default function App() {
                           value={selectedVideoEngine}
                           onChange={(e) => {
                             const val = e.target.value;
-                            setSelectedVideoEngine(val);
-                            setPendingVideoModel(val);
-                            localStorage.setItem('neurona_video_model', val);
-                            const isHg = ['veo3_1_lite', 'wan3_0', 'veo3_1', 'wan2_7', 'grok_video', 'gemini_omni'].includes(val) || val.startsWith('higgsfield');
-                            const isOa = ['byte-plus-seedance-2-fast', 'byte-plus-seedance-2', 'byte-plus-seedance-2-5', 'veo3-1', 'wan2-7', 'gemini-omni-flash'].includes(val) || val.startsWith('openart');
-                            localStorage.setItem('neurona_video_provider', isHg ? 'higgsfield' : isOa ? 'openart' : 'fal');
+                            const safe = resolveProviderSafeModel({ inputModel: val, mediaType: 'VIDEO' });
+                            setSelectedVideoEngine(safe.internalModelId);
+                            setPendingVideoModel(safe.internalModelId);
+                            setPendingVideoProvider(safe.provider);
+                            localStorage.setItem('neurona_video_model', safe.internalModelId);
+                            localStorage.setItem('neurona_video_provider', safe.provider);
                           }}
                           className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
                           style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right .5rem center', backgroundSize: '.65em auto' }}
@@ -1856,7 +1904,7 @@ export default function App() {
 
                   <div className="pt-2 flex flex-wrap justify-end gap-2">
                     <button
-                      onClick={() => handleGenerateAllImages(undefined, selectedImageEngine)}
+                      onClick={() => handleGenerateAllImages(undefined, selectedImageEngine, undefined, localStorage.getItem('neurona_image_provider') || undefined)}
                       className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold text-xs shadow-lg flex items-center gap-1.5 transition cursor-pointer"
                     >
                       <ImageIcon size={13} />
@@ -1865,7 +1913,13 @@ export default function App() {
                     <button
                       id="btn-approve-storyboard"
                       onClick={() => {
-                        setPendingVideoModel(selectedVideoEngine);
+                        const safe = resolveProviderSafeModel({
+                          explicitProvider: localStorage.getItem('neurona_video_provider') as any,
+                          inputModel: selectedVideoEngine,
+                          mediaType: 'VIDEO'
+                        });
+                        setPendingVideoModel(safe.internalModelId);
+                        setPendingVideoProvider(safe.provider);
                         setShowCaptionModal(true);
                       }}
                       className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-indigo-500 hover:from-amber-300 hover:to-indigo-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 flex items-center gap-1.5 transition cursor-pointer"

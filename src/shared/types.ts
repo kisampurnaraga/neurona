@@ -59,6 +59,9 @@ export interface Scene {
   videoProvider?: string;
   videoModel?: string;
   videoModelDisplayName?: string;
+  imageProvider?: string;
+  imageModel?: string;
+  imageModelDisplayName?: string;
   styleKeywords?: string[];
   imageCreditCost?: number; // e.g. 5 credits
   videoCreditCost?: number; // e.g. 15 credits
@@ -259,6 +262,9 @@ export interface ProductionProject {
   videoModel?: 'kling' | 'seedance' | 'wan' | 'hunyuan' | 'minimax' | string;
   videoProvider?: 'higgsfield' | 'openart' | 'fal' | 'google_veo' | string;
   videoModelDisplayName?: string;
+  imageModel?: string;
+  imageProvider?: 'openart' | 'fal' | 'google_veo' | string;
+  imageModelDisplayName?: string;
   ttsVoiceConfig?: TTSVoiceConfig;
   overallProgress?: number; // 0 to 100%
   progress?: number; // Standardized alias for overallProgress (0 to 100%)

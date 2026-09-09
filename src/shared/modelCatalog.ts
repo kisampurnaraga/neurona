@@ -374,11 +374,127 @@ export const FAL_CATALOG_MODELS: UnifiedModelInfo[] = [
   }
 ];
 
+export const FAL_IMAGE_MODELS: UnifiedModelInfo[] = [
+  {
+    provider: 'fal',
+    internalModelId: 'standard',
+    displayName: 'Nano Banana 2 & Edit',
+    type: 'IMAGE',
+    tier: 'balanced',
+    costCredits: 15,
+    costUsd: 0.015,
+    description: 'fal-ai/nano-banana-2 / edit — Konsistensi karakter memadai untuk Animasi & Edukasi (15 Kredit)',
+    capabilities: ['Text-to-Image', 'Image-to-Image', 'Character Consistency'],
+    supportedAspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4']
+  },
+  {
+    provider: 'fal',
+    internalModelId: 'precision',
+    displayName: 'Nano Banana Pro Edit (4K)',
+    type: 'IMAGE',
+    tier: 'premium',
+    costCredits: 25,
+    costUsd: 0.025,
+    description: 'fal-ai/nano-banana-pro / edit — Wajib untuk Affiliate & produk/wajah 100% identik (25 Kredit)',
+    capabilities: ['Text-to-Image', 'Image-to-Image', '4K Resolution', 'Product Lock'],
+    supportedAspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4']
+  },
+  {
+    provider: 'fal',
+    internalModelId: 'draft',
+    displayName: 'FLUX.1 Schnell',
+    type: 'IMAGE',
+    tier: 'economy',
+    costCredits: 5,
+    costUsd: 0.005,
+    description: 'fal-ai/flux/schnell — Eksplorasi gaya visual cepat & preview storyboard kilat (5 Kredit)',
+    capabilities: ['Text-to-Image', 'Fast Generation'],
+    supportedAspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4']
+  }
+];
+
+export const GOOGLE_IMAGE_MODELS: UnifiedModelInfo[] = [
+  {
+    provider: 'google_veo',
+    internalModelId: 'nano-asli-lite',
+    displayName: 'Google Imagen 3 Lite',
+    type: 'IMAGE',
+    tier: 'economy',
+    costCredits: 5,
+    costUsd: 0.005,
+    description: 'Google Gemini 3.1 Flash Lite Image — Cepat & Hemat (5 Kredit)',
+    capabilities: ['Text-to-Image', 'Fast Generation'],
+    supportedAspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4']
+  },
+  {
+    provider: 'google_veo',
+    internalModelId: 'nano-asli',
+    displayName: 'Google Gemini Imagen 3',
+    type: 'IMAGE',
+    tier: 'balanced',
+    costCredits: 10,
+    costUsd: 0.010,
+    description: 'Google Gemini Imagen 3 Resmi - Pipeline Google AI Studio (10 Kredit)',
+    capabilities: ['Text-to-Image', 'Studio Lighting'],
+    supportedAspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4'],
+    isDefault: true
+  },
+  {
+    provider: 'google_veo',
+    internalModelId: 'nano-asli-pro',
+    displayName: 'Google Gemini Imagen 3 Pro',
+    type: 'IMAGE',
+    tier: 'premium',
+    costCredits: 15,
+    costUsd: 0.015,
+    description: 'Resolusi Tinggi & Kualitas Premium Google Imagen 3 (15 Kredit)',
+    capabilities: ['Text-to-Image', 'High Fidelity'],
+    supportedAspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4']
+  },
+  {
+    provider: 'google_veo',
+    internalModelId: 'nano-asli-premium',
+    displayName: 'Google Gemini Imagen 3 Ultra',
+    type: 'IMAGE',
+    tier: 'premium',
+    costCredits: 25,
+    costUsd: 0.025,
+    description: 'Ultra High Quality & Presisi Maksimal Google Imagen 3 (25 Kredit)',
+    capabilities: ['Text-to-Image', 'Ultra High Fidelity'],
+    supportedAspectRatios: ['1:1', '16:9', '9:16', '4:3', '3:4']
+  }
+];
+
 export const ALL_UNIFIED_MODELS: UnifiedModelInfo[] = [
   ...HIGGSFIELD_CATALOG_MODELS,
   ...OPENART_CATALOG_MODELS,
-  ...FAL_CATALOG_MODELS
+  ...FAL_CATALOG_MODELS,
+  ...FAL_IMAGE_MODELS,
+  ...GOOGLE_IMAGE_MODELS
 ];
+
+/**
+ * Canonical Video Models - includes Higgsfield MCP, OpenArt MCP, and Fal.ai
+ */
+export function getCanonicalVideoModels(): UnifiedModelInfo[] {
+  return [
+    ...HIGGSFIELD_CATALOG_MODELS.filter(m => !m.isLegacyAlias),
+    ...OPENART_CATALOG_MODELS.filter(m => !m.isLegacyAlias && (m.type === 'VIDEO' || m.type === 'IMAGE_TO_VIDEO')),
+    ...FAL_CATALOG_MODELS.filter(m => !m.isLegacyAlias && (m.type === 'VIDEO' || m.type === 'IMAGE_TO_VIDEO'))
+  ];
+}
+
+/**
+ * Canonical Image Models - strictly OpenArt MCP, Fal.ai, and Google Direct.
+ * Note: Higgsfield is intentionally excluded because it has no IMAGE capability.
+ */
+export function getCanonicalImageModels(): UnifiedModelInfo[] {
+  return [
+    ...OPENART_CATALOG_MODELS.filter(m => !m.isLegacyAlias && m.type === 'IMAGE'),
+    ...FAL_IMAGE_MODELS,
+    ...GOOGLE_IMAGE_MODELS
+  ];
+}
 
 // ---------------------------------------------------------------------------
 // 4. PROVIDER-SAFE RESOLUTION & ROUTING HELPERS
@@ -463,7 +579,7 @@ export function getModelByProviderAndId(provider: ModelProvider, internalModelId
  * this function refuses to guess and throws an ambiguity error.
  */
 export function resolveProviderSafeModel(
-  inputModel: string,
+  inputModelOrOptions: string | { inputModel: string; explicitProvider?: string; mediaType?: ModelMediaType },
   explicitProvider?: string,
   mediaType: ModelMediaType = 'VIDEO'
 ): {
@@ -472,8 +588,27 @@ export function resolveProviderSafeModel(
   modelDef: UnifiedModelInfo;
   isAmbiguous?: boolean;
 } {
-  const rawModel = (inputModel || '').trim();
-  const rawProvider = (explicitProvider || '').trim().toLowerCase();
+  let inputModelStr: string;
+  let explicitProvStr: string | undefined;
+  let mType: ModelMediaType;
+
+  if (typeof inputModelOrOptions === 'object' && inputModelOrOptions !== null) {
+    inputModelStr = inputModelOrOptions.inputModel;
+    explicitProvStr = inputModelOrOptions.explicitProvider;
+    mType = inputModelOrOptions.mediaType || 'VIDEO';
+  } else if (typeof inputModelOrOptions === 'string') {
+    inputModelStr = inputModelOrOptions;
+    explicitProvStr = explicitProvider;
+    mType = mediaType;
+  } else {
+    inputModelStr = '';
+    explicitProvStr = explicitProvider;
+    mType = mediaType;
+  }
+
+  const rawModel = (inputModelStr || '').trim();
+  const rawProvider = (explicitProvStr || '').trim().toLowerCase();
+  mediaType = mType;
 
   // 1. EXPLICIT PROVIDER IS AUTHORITATIVE
   if (rawProvider === 'higgsfield') {
@@ -498,18 +633,20 @@ export function resolveProviderSafeModel(
   }
 
   if (rawProvider === 'fal' || rawProvider === 'fal-ai') {
+    const found = ALL_UNIFIED_MODELS.find(m => m.provider === 'fal' && m.internalModelId === rawModel);
     return {
       provider: 'fal',
-      internalModelId: rawModel || 'fal-ai/veo3.1/lite/image-to-video',
-      modelDef: FAL_CATALOG_MODELS.find(m => m.internalModelId === rawModel) || FAL_CATALOG_MODELS[0]
+      internalModelId: rawModel || (mediaType === 'IMAGE' ? 'standard' : 'fal-ai/veo3.1/lite/image-to-video'),
+      modelDef: found || (mediaType === 'IMAGE' ? FAL_IMAGE_MODELS[0] : FAL_CATALOG_MODELS[0])
     };
   }
 
   if (rawProvider === 'google_veo' || rawProvider === 'google') {
+    const found = ALL_UNIFIED_MODELS.find(m => m.provider === 'google_veo' && m.internalModelId === rawModel);
     return {
       provider: 'google_veo',
-      internalModelId: rawModel || 'veo-2.0-generate-video',
-      modelDef: {
+      internalModelId: rawModel || (mediaType === 'IMAGE' ? 'nano-asli' : 'veo-2.0-generate-video'),
+      modelDef: found || (mediaType === 'IMAGE' ? GOOGLE_IMAGE_MODELS[1] : {
         provider: 'google_veo',
         internalModelId: rawModel || 'veo-2.0-generate-video',
         displayName: 'Google Veo Asli',
@@ -520,7 +657,7 @@ export function resolveProviderSafeModel(
         description: 'Google Veo Native Video Synthesis',
         capabilities: ['Text-to-Video'],
         supportedAspectRatios: ['16:9', '9:16']
-      }
+      })
     };
   }
 
@@ -561,11 +698,22 @@ export function resolveProviderSafeModel(
   }
 
   // Fal Model IDs
-  if (modelLower.startsWith('fal-ai/') || modelLower.startsWith('fal/') || modelLower.includes('fal.ai')) {
+  if (['standard', 'precision', 'draft'].includes(modelLower) || modelLower.startsWith('fal-ai/') || modelLower.startsWith('fal/') || modelLower.includes('fal.ai')) {
+    const found = ALL_UNIFIED_MODELS.find(m => m.provider === 'fal' && m.internalModelId === rawModel);
     return {
       provider: 'fal',
       internalModelId: rawModel,
-      modelDef: FAL_CATALOG_MODELS.find(m => m.internalModelId === rawModel) || FAL_CATALOG_MODELS[0]
+      modelDef: found || (mediaType === 'IMAGE' ? FAL_IMAGE_MODELS[0] : FAL_CATALOG_MODELS[0])
+    };
+  }
+
+  // Google Imagen Model IDs
+  if (['nano-asli', 'nano-asli-lite', 'nano-asli-pro', 'nano-asli-premium'].includes(modelLower)) {
+    const found = GOOGLE_IMAGE_MODELS.find(m => m.internalModelId === rawModel) || GOOGLE_IMAGE_MODELS[1];
+    return {
+      provider: 'google_veo',
+      internalModelId: rawModel,
+      modelDef: found
     };
   }
 

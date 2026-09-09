@@ -60,17 +60,24 @@ import { getProjectAspectRatioClass } from '../utils/aspectRatio';
 import { NanoQuotaAlertModal } from './NanoQuotaAlertModal';
 import { getAccessToken, googleSignIn } from '../utils/googleAuth';
 import { resolveSceneSubtitle, isPlaceholderSubtitle } from '../utils/subtitleUtils';
+import { 
+  getCanonicalVideoModels, 
+  getCanonicalImageModels, 
+  resolveProviderSafeModel,
+  type UnifiedModelInfo,
+  type ModelProvider
+} from '../shared/modelCatalog';
 
 interface StoryboardMatrixModalProps {
   isOpen: boolean;
   onClose: () => void;
   project: ProductionProject | null;
   currentCredits: number;
-  onApproveAndPay: (creditsCost: number, subtitleStyle?: string, videoModel?: string) => void;
+  onApproveAndPay: (creditsCost: number, subtitleStyle?: string, videoModel?: string, videoProvider?: string) => void;
   onOpenTopUp: () => void;
-  onGenerateSceneImage?: (sceneId: string, cost: number, imageEngine?: string, allowFallbackToFlux?: boolean) => Promise<void>;
-  onGenerateAllImages?: (totalCost: number, imageEngine?: string, allowFallbackToFlux?: boolean) => Promise<void>;
-  onGenerateSceneVideo?: (sceneId: string, cost: number, videoModel?: string) => Promise<void>;
+  onGenerateSceneImage?: (sceneId: string, cost: number, imageEngine?: string, allowFallbackToFlux?: boolean, imageProvider?: string) => Promise<void>;
+  onGenerateAllImages?: (totalCost: number, imageEngine?: string, allowFallbackToFlux?: boolean, imageProvider?: string) => Promise<void>;
+  onGenerateSceneVideo?: (sceneId: string, cost: number, videoModel?: string, videoProvider?: string) => Promise<void>;
   onChooseStoryboardOnly?: () => Promise<void>;
   onResyncScene?: (action: 'ADD' | 'REMOVE' | 'REGENERATE', targetIndex: number) => Promise<void>;
   onResetProject?: () => void;
@@ -91,7 +98,8 @@ export type ImageModelId =
   | 'kling-3-omni'
   | 'nano-banana-pro'
   | 'byte-plus-seedream-5-pro'
-  | 'gpt-image-2';
+  | 'gpt-image-2'
+  | string;
 
 export interface ImageModelOption {
   id: ImageModelId;
@@ -101,109 +109,23 @@ export interface ImageModelOption {
   badge: string;
   badgeColor: string;
   desc: string;
+  providerGroup?: 'openart' | 'fal' | 'google_veo';
 }
 
-export const IMAGE_MODEL_OPTIONS: ImageModelOption[] = [
-  {
-    id: 'kling-3-omni',
-    name: 'OpenArt Kling 3 Omni (MCP Cepat - 10 Kredit)',
-    shortName: 'OpenArt Kling 3 (10 Cr)',
-    costPerImage: 10,
-    badge: 'OpenArt AI',
-    badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-    desc: 'OpenArt MCP kling-3-omni — Render fotorealistik kilat via OpenArt Direct MCP'
-  },
-  {
-    id: 'nano-banana-pro',
-    name: 'OpenArt Nano Banana Pro (MCP Presisi - 30 Kredit)',
-    shortName: 'OpenArt Nano Banana (30 Cr)',
-    costPerImage: 30,
-    badge: 'OpenArt AI',
-    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-    desc: 'OpenArt MCP nano-banana-pro — Spesialis tipografi produk & poster e-commerce'
-  },
-  {
-    id: 'byte-plus-seedream-5-pro',
-    name: 'OpenArt Seedream 5 Pro (MCP HDR - 30 Kredit)',
-    shortName: 'OpenArt Seedream (30 Cr)',
-    costPerImage: 30,
-    badge: 'OpenArt AI',
-    badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
-    desc: 'OpenArt MCP byte-plus-seedream-5-pro — Visual sinematik HDR resolusi tinggi'
-  },
-  {
-    id: 'gpt-image-2',
-    name: 'OpenArt GPT Image 2 (MCP Konsep - 30 Kredit)',
-    shortName: 'OpenArt GPT Image (30 Cr)',
-    costPerImage: 30,
-    badge: 'OpenArt AI',
-    badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-    desc: 'OpenArt MCP gpt-image-2 — Pemahaman prompt multi-instruksi kompleks'
-  },
-  {
-    id: 'standard',
-    name: 'Nano Banana 2 & Edit (Standar Fal - 15 Kredit)',
-    shortName: 'Nano Banana 2 (15 Cr)',
-    costPerImage: 15,
-    badge: '15 Kredit',
-    badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-    desc: 'fal-ai/nano-banana-2 / edit — Konsistensi karakter memadai untuk Animasi & Edukasi'
-  },
-  {
-    id: 'precision',
-    name: 'Nano Banana Pro Edit (Presisi Fal 4K - 25 Kredit)',
-    shortName: 'Nano Banana Pro 4K (25 Cr)',
-    costPerImage: 25,
-    badge: '25 Kredit',
-    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-    desc: 'fal-ai/nano-banana-pro / edit — Wajib untuk Affiliate & produk/wajah 100% identik'
-  },
-  {
-    id: 'draft',
-    name: 'FLUX.1 Schnell (Draft Cepat Fal - 5 Kredit)',
-    shortName: 'FLUX.1 Schnell (5 Cr)',
-    costPerImage: 5,
-    badge: '5 Kredit',
-    badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-    desc: 'fal-ai/flux/schnell — Eksplorasi gaya visual cepat & preview storyboard kilat'
-  },
-  {
-    id: 'nano-asli-lite',
-    name: 'Google Imagen 3 Lite (Nano Asli Lite - 5 Kredit)',
-    shortName: 'Nano Asli Lite (5 Cr)',
-    costPerImage: 5,
-    badge: '5 Kredit',
-    badgeColor: 'bg-teal-500/20 text-teal-300 border-teal-500/40',
-    desc: 'Google Gemini 3.1 Flash Lite Image — Cepat & Hemat'
-  },
-  {
-    id: 'nano-asli',
-    name: 'Google Gemini Imagen 3 (Nano Asli Standar - 10 Kredit)',
-    shortName: 'Nano Asli (10 Cr)',
-    costPerImage: 10,
-    badge: '10 Kredit',
-    badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-    desc: 'Google Gemini Imagen 3 Resmi - Pipeline Google AI Studio'
-  },
-  {
-    id: 'nano-asli-pro',
-    name: 'Google Gemini Imagen 3 Pro (Nano Asli Pro - 15 Kredit)',
-    shortName: 'Nano Asli Pro (15 Cr)',
-    costPerImage: 15,
-    badge: '15 Kredit',
-    badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40',
-    desc: 'Resolusi Tinggi & Kualitas Premium Google Imagen 3'
-  },
-  {
-    id: 'nano-asli-premium',
-    name: 'Google Gemini Imagen 3 Premium (Nano Asli Premium - 25 Kredit)',
-    shortName: 'Nano Asli Prem (25 Cr)',
-    costPerImage: 25,
-    badge: '25 Kredit',
-    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-    desc: 'Ultra High Quality & Presisi Maksimal Google Imagen 3'
-  }
-];
+export const IMAGE_MODEL_OPTIONS: ImageModelOption[] = getCanonicalImageModels().map((m: UnifiedModelInfo) => ({
+  id: m.internalModelId as ImageModelId,
+  name: `${m.provider === 'openart' ? '🎨 OpenArt' : m.provider === 'google_veo' ? '🔷 Google Imagen' : '⚡ Fal.ai'} ${m.displayName} (${m.costCredits} Kredit)`,
+  shortName: `${m.displayName} (${m.costCredits} Cr)`,
+  costPerImage: m.costCredits,
+  badge: m.provider === 'openart' ? 'OpenArt AI' : m.provider === 'google_veo' ? 'Google Imagen' : 'Fal.ai',
+  badgeColor: m.provider === 'openart' 
+    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
+    : m.provider === 'google_veo' 
+    ? 'bg-blue-500/20 text-blue-300 border-blue-500/40' 
+    : 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+  desc: m.description,
+  providerGroup: (m.provider === 'google_veo' ? 'google_veo' : m.provider) as 'openart' | 'fal' | 'google_veo'
+}));
 
 export interface VideoModelOption {
   id: string;
@@ -214,34 +136,14 @@ export interface VideoModelOption {
   providerGroup?: 'higgsfield' | 'openart' | 'fal';
 }
 
-export const VIDEO_MODEL_OPTIONS: VideoModelOption[] = [
-  // 1. HIGGSFIELD MCP VIDEO MODELS
-  { id: 'veo3_1_lite', name: 'Higgsfield Google Veo 3.1 Lite (8 Cr)', shortName: 'Veo 3.1 Lite (8 Cr)', desc: 'Higgsfield MCP veo3_1_lite — 720p ultra-cepat & hemat', costPerVideo: 8, providerGroup: 'higgsfield' },
-  { id: 'wan3_0', name: 'Higgsfield Wan 3.0 Multimodal (8.75 Cr)', shortName: 'Wan 3.0 (8.75 Cr)', desc: 'Higgsfield MCP wan3_0 — Animasi karakter & gerakan organik', costPerVideo: 8.75, providerGroup: 'higgsfield' },
-  { id: 'veo3_1', name: 'Higgsfield Google Veo 3.1 Cinema (22 Cr)', shortName: 'Veo 3.1 1080p (22 Cr)', desc: 'Higgsfield MCP veo3_1 — Sinematik fotorealistik 1080p', costPerVideo: 22, providerGroup: 'higgsfield' },
-  { id: 'wan2_7', name: 'Higgsfield Wan 2.7 Video (12 Cr)', shortName: 'Wan 2.7 (12 Cr)', desc: 'Higgsfield MCP wan2_7 — Kestabilan fisika scene & ekspresi dinamis', costPerVideo: 12, providerGroup: 'higgsfield' },
-  { id: 'grok_video', name: 'Higgsfield Grok Video Action (12 Cr)', shortName: 'Grok Video (12 Cr)', desc: 'Higgsfield MCP grok_video — Dinamika aksi & kamera bergerak', costPerVideo: 12, providerGroup: 'higgsfield' },
-  { id: 'gemini_omni', name: 'Higgsfield Gemini Omni Video (10 Cr)', shortName: 'Gemini Omni (10 Cr)', desc: 'Higgsfield MCP gemini_omni — Sintesis video multimodal reasoning', costPerVideo: 10, providerGroup: 'higgsfield' },
-
-  // 2. OPENART MCP VIDEO MODELS
-  { id: 'byte-plus-seedance-2-fast', name: 'OpenArt SeaDance 2.0 Fast (6 Cr)', shortName: 'SeaDance Fast (6 Cr)', desc: 'OpenArt MCP byte-plus-seedance-2-fast — Gerakan dinamis fluid', costPerVideo: 6, providerGroup: 'openart' },
-  { id: 'byte-plus-seedance-2', name: 'OpenArt SeaDance 2.0 Standard (12 Cr)', shortName: 'SeaDance 2.0 (12 Cr)', desc: 'OpenArt MCP byte-plus-seedance-2 — Animasi karakter stabil', costPerVideo: 12, providerGroup: 'openart' },
-  { id: 'byte-plus-seedance-2-5', name: 'OpenArt SeaDance 2.5 Cinema (18 Cr)', shortName: 'SeaDance 2.5 (18 Cr)', desc: 'OpenArt MCP byte-plus-seedance-2-5 — Resolusi sinematik tinggi', costPerVideo: 18, providerGroup: 'openart' },
-  { id: 'veo3-1', name: 'OpenArt Google Veo 3.1 Cinematic (25 Cr)', shortName: 'OpenArt Veo 3.1 (25 Cr)', desc: 'OpenArt MCP veo3-1 — Video 1080p sinematik Google via OpenArt', costPerVideo: 25, providerGroup: 'openart' },
-  { id: 'wan2-7', name: 'OpenArt Wan 2.7 Ultra Motion (12 Cr)', shortName: 'OpenArt Wan 2.7 (12 Cr)', desc: 'OpenArt MCP wan2-7 — Video ultra motion 720p', costPerVideo: 12, providerGroup: 'openart' },
-  { id: 'gemini-omni-flash', name: 'OpenArt Gemini Omni Flash (10 Cr)', shortName: 'OpenArt Omni Flash (10 Cr)', desc: 'OpenArt MCP gemini-omni-flash — Sintesis kilat', costPerVideo: 10, providerGroup: 'openart' },
-
-  // 3. FAL.AI & GOOGLE UNIVERSAL GATEWAY
-  { id: 'fal-ai/veo3.1/lite/image-to-video', name: 'Fal.ai Google Veo 3.1 Lite (20 Cr)', shortName: 'Fal Veo 3.1 Lite (20 Cr)', desc: 'Google Veo 3.1 Lite universal via Fal.ai', costPerVideo: 20, providerGroup: 'fal' },
-  { id: 'fal-ai/kling-video/v2.1/standard/image-to-video', name: 'Fal.ai Kling 2.1 Standard (15 Cr)', shortName: 'Fal Kling 2.1 (15 Cr)', desc: 'Kling 2.1 Standard I2V via Fal.ai — Sinematik & halus', costPerVideo: 15, providerGroup: 'fal' },
-  { id: 'fal-ai/wan-i2v', name: 'Fal.ai Wan 2.1 14B (45 Cr)', shortName: 'Fal Wan 2.1 (45 Cr)', desc: 'Wan 2.1 14B I2V via Fal.ai — Kualitas tinggi & stabil', costPerVideo: 45, providerGroup: 'fal' },
-  { id: 'fal-ai/kling-video/v3/pro/image-to-video', name: 'Fal.ai Kling 3.0 Pro 1080p (25 Cr)', shortName: 'Fal Kling 3.0 Pro (25 Cr)', desc: 'Kling 3.0 Pro 1080p via Fal.ai — Resolusi ultra jernih', costPerVideo: 25, providerGroup: 'fal' },
-  { id: 'bytedance/seedance-2.5/image-to-video', name: 'Fal.ai SeaDance 2.5 (20 Cr)', shortName: 'Fal SeaDance 2.5 (20 Cr)', desc: 'ByteDance SeaDance 2.5 via Fal.ai — Sinematik 720p', costPerVideo: 20, providerGroup: 'fal' },
-  { id: 'fal-ai/minimax/video-01/image-to-video', name: 'Fal.ai MiniMax Video 01 (15 Cr)', shortName: 'Fal MiniMax (15 Cr)', desc: 'MiniMax Video 01 via Fal.ai — Konsistensi karakter tinggi', costPerVideo: 15, providerGroup: 'fal' },
-  { id: 'veo-asli-lite', name: 'Google Veo Asli Lite (10 Cr)', shortName: 'Veo Asli Lite (10 Cr)', desc: 'Google Veo Resmi — Hemat & Cepat', costPerVideo: 10, providerGroup: 'fal' },
-  { id: 'veo-asli', name: 'Google Veo Asli Standard (15 Cr)', shortName: 'Veo Asli Std (15 Cr)', desc: 'Google Veo Resmi — Kualitas Standar Sinematik', costPerVideo: 15, providerGroup: 'fal' },
-  { id: 'veo-asli-pro', name: 'Google Veo Asli Pro (25 Cr)', shortName: 'Veo Asli Pro (25 Cr)', desc: 'Google Veo Resmi — Resolusi & Gerak Ultra Pro', costPerVideo: 25, providerGroup: 'fal' }
-];
+export const VIDEO_MODEL_OPTIONS: VideoModelOption[] = getCanonicalVideoModels().map((m: UnifiedModelInfo) => ({
+  id: m.internalModelId,
+  name: `${m.provider === 'higgsfield' ? '🚀 Higgsfield' : m.provider === 'openart' ? '🎨 OpenArt' : '⚡ Fal.ai'} ${m.displayName} (${m.costCredits} Cr)`,
+  shortName: `${m.displayName} (${m.costCredits} Cr)`,
+  desc: m.description,
+  costPerVideo: m.costCredits,
+  providerGroup: (m.provider === 'higgsfield' ? 'higgsfield' : m.provider === 'openart' ? 'openart' : 'fal') as 'higgsfield' | 'openart' | 'fal'
+}));
 
 const getSceneAmplitudes = (sc: any, barCount = 10): number[] => {
   const seedStr = (sc?.voiceOver || sc?.subtitle || sc?.textOverlay || sc?.title || sc?.id || 'scene') + '';
@@ -497,7 +399,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [selectedImageEngine, setSelectedImageEngine] = useState<ImageModelId>(() => {
     const saved = localStorage.getItem('neurona_image_model') as ImageModelId;
     const valid = IMAGE_MODEL_OPTIONS.some(m => m.id === saved);
-    return valid ? saved : 'nano-asli';
+    return valid ? saved : 'kling-3-omni';
   });
   const [selectedVideoEngine, setSelectedVideoEngine] = useState<string>(() => {
     const saved = localStorage.getItem('neurona_video_model');
@@ -505,7 +407,9 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     return valid ? saved : 'veo3_1_lite';
   });
   const [sceneImageModels, setSceneImageModels] = useState<Record<string, ImageModelId>>({});
+  const [sceneImageProviders, setSceneImageProviders] = useState<Record<string, string>>({});
   const [sceneVideoModels, setSceneVideoModels] = useState<Record<string, string>>({});
+  const [sceneVideoProviders, setSceneVideoProviders] = useState<Record<string, string>>({});
   const [copiedSceneId, setCopiedSceneId] = useState<string | null>(null);
   const [copiedType, setCopiedType] = useState<'T2I' | 'I2V' | 'VOICEOVER' | 'CHARACTER' | 'ALL_PROMPTS' | 'ALL_SCRIPT' | null>(null);
   const [playingVoiceIndex, setPlayingVoiceIndex] = useState<number | null>(null);
@@ -513,10 +417,37 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
   const [activeMediaView, setActiveMediaView] = useState<Record<string, 'video' | 'image'>>({});
   const [isProcessingAction, setIsProcessingAction] = useState<string | null>(null);
-    const [isStitching, setIsStitching] = useState(false);
+  const [isStitching, setIsStitching] = useState(false);
   const [clientConfig, setClientConfig] = useState({ qaMinScoreThreshold: 70, qaAutoFixThreshold: 80 });
 
+  useEffect(() => {
+    if (!project?.storyboard?.scenes) return;
+    const initialVidModels: Record<string, string> = {};
+    const initialVidProviders: Record<string, string> = {};
+    const initialImgModels: Record<string, ImageModelId> = {};
+    const initialImgProviders: Record<string, string> = {};
 
+    project.storyboard.scenes.forEach(sc => {
+      if (sc.videoModel) {
+        initialVidModels[sc.id] = sc.videoModel;
+      }
+      if (sc.videoProvider) {
+        initialVidProviders[sc.id] = sc.videoProvider;
+      }
+      const effectiveImg = sc.imageModel || (sc as any).imageEngine;
+      if (effectiveImg) {
+        initialImgModels[sc.id] = effectiveImg as ImageModelId;
+      }
+      if (sc.imageProvider) {
+        initialImgProviders[sc.id] = sc.imageProvider;
+      }
+    });
+
+    setSceneVideoModels(prev => ({ ...initialVidModels, ...prev }));
+    setSceneVideoProviders(prev => ({ ...initialVidProviders, ...prev }));
+    setSceneImageModels(prev => ({ ...initialImgModels, ...prev }));
+    setSceneImageProviders(prev => ({ ...initialImgProviders, ...prev }));
+  }, [project?.id, project?.storyboard?.scenes]);
 
   useEffect(() => {
     fetch('/api/config/client')
@@ -1220,8 +1151,13 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   };
 
   const handleGenerateAllImages = async (engine?: ImageModelId, allowFallbackToFlux?: boolean) => {
-    const chosenEngine = engine || selectedImageEngine;
-    const modelOpt = IMAGE_MODEL_OPTIONS.find(m => m.id === chosenEngine) || currentEngineOption;
+    const rawEngine = engine || selectedImageEngine;
+    const safe = resolveProviderSafeModel({
+      explicitProvider: localStorage.getItem('neurona_image_provider') as any,
+      inputModel: rawEngine,
+      mediaType: 'IMAGE'
+    });
+    const modelOpt = IMAGE_MODEL_OPTIONS.find(m => m.id === safe.internalModelId) || currentEngineOption;
     const calculatedTotal = scenes.length * modelOpt.costPerImage;
 
     if (currentCredits < calculatedTotal) {
@@ -1231,14 +1167,14 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     setIsProcessingAction('all-images');
     try {
       if (onGenerateAllImages) {
-        await onGenerateAllImages(calculatedTotal, chosenEngine, allowFallbackToFlux);
+        await onGenerateAllImages(calculatedTotal, safe.internalModelId, allowFallbackToFlux, safe.provider);
       }
     } catch (err: any) {
       if (err?.message?.includes('[NANO_QUOTA_EXHAUSTED]') || err?.code === 'NANO_QUOTA_EXHAUSTED') {
         setQuotaAlert({
           isOpen: true,
           sceneId: null,
-          engine: chosenEngine,
+          engine: safe.internalModelId as ImageModelId,
           errorMessage: err.message
         });
       } else {
@@ -1250,8 +1186,14 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   };
 
   const handleGenerateSingleImage = async (sceneId: string, cost?: number, engine?: ImageModelId, allowFallbackToFlux?: boolean) => {
-    const chosenEngine = engine || sceneImageModels[sceneId] || selectedImageEngine;
-    const modelOpt = IMAGE_MODEL_OPTIONS.find(m => m.id === chosenEngine) || currentEngineOption;
+    const rawEngine = engine || sceneImageModels[sceneId] || selectedImageEngine;
+    const explicitProvider = (sceneImageProviders[sceneId] || localStorage.getItem('neurona_image_provider')) as any;
+    const safe = resolveProviderSafeModel({
+      explicitProvider,
+      inputModel: rawEngine,
+      mediaType: 'IMAGE'
+    });
+    const modelOpt = IMAGE_MODEL_OPTIONS.find(m => m.id === safe.internalModelId) || currentEngineOption;
     const appliedCost = cost ?? modelOpt.costPerImage;
 
     if (currentCredits < appliedCost) {
@@ -1261,14 +1203,14 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     setIsProcessingAction(`image-${sceneId}`);
     try {
       if (onGenerateSceneImage) {
-        await onGenerateSceneImage(sceneId, appliedCost, chosenEngine, allowFallbackToFlux);
+        await onGenerateSceneImage(sceneId, appliedCost, safe.internalModelId, allowFallbackToFlux, safe.provider);
       }
     } catch (err: any) {
       if (err?.message?.includes('[NANO_QUOTA_EXHAUSTED]') || err?.code === 'NANO_QUOTA_EXHAUSTED') {
         setQuotaAlert({
           isOpen: true,
           sceneId,
-          engine: chosenEngine,
+          engine: safe.internalModelId as ImageModelId,
           errorMessage: err.message
         });
       } else {
@@ -1280,8 +1222,14 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   };
 
   const handleGenerateSingleVideo = async (sceneId: string, cost?: number, videoModel?: string) => {
-    const chosenVideoModel = videoModel || sceneVideoModels[sceneId] || selectedVideoEngine;
-    const modelOpt = VIDEO_MODEL_OPTIONS.find(m => m.id === chosenVideoModel) || currentVideoEngineOption;
+    const rawModel = videoModel || sceneVideoModels[sceneId] || selectedVideoEngine;
+    const explicitProvider = (sceneVideoProviders[sceneId] || localStorage.getItem('neurona_video_provider')) as any;
+    const safe = resolveProviderSafeModel({
+      explicitProvider,
+      inputModel: rawModel,
+      mediaType: 'VIDEO'
+    });
+    const modelOpt = VIDEO_MODEL_OPTIONS.find(m => m.id === safe.internalModelId) || currentVideoEngineOption;
     const appliedCost = cost ?? modelOpt.costPerVideo;
 
     if (currentCredits < appliedCost) {
@@ -1295,7 +1243,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
     setIsProcessingAction(`video-${sceneId}`);
     try {
       if (onGenerateSceneVideo) {
-        await onGenerateSceneVideo(sceneId, appliedCost, chosenVideoModel);
+        await onGenerateSceneVideo(sceneId, appliedCost, safe.internalModelId, safe.provider);
         setActiveMediaView(prev => ({ ...prev, [sceneId]: 'video' }));
       }
     } finally {
@@ -1551,28 +1499,31 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     value={selectedImageEngine}
                     onChange={(e) => {
                       const val = e.target.value as ImageModelId;
-                      setSelectedImageEngine(val);
-                      localStorage.setItem('neurona_image_model', val);
+                      const safe = resolveProviderSafeModel({ inputModel: val, mediaType: 'IMAGE' });
+                      setSelectedImageEngine(safe.internalModelId as ImageModelId);
+                      localStorage.setItem('neurona_image_model', safe.internalModelId);
+                      localStorage.setItem('neurona_image_provider', safe.provider);
+                      window.dispatchEvent(new Event('storage'));
                     }}
                     className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
                     style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right .5rem center', backgroundSize: '.65em auto' }}
                   >
                     <optgroup label="🎨 OpenArt AI MCP (Tersedia)">
-                      {IMAGE_MODEL_OPTIONS.filter(o => o.badge === 'OpenArt AI').map((opt) => (
+                      {IMAGE_MODEL_OPTIONS.filter(o => o.providerGroup === 'openart' || o.badge === 'OpenArt AI').map((opt) => (
                         <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
                           {opt.name}
                         </option>
                       ))}
                     </optgroup>
                     <optgroup label="⚡ Fal.ai Engine (Standar)">
-                      {IMAGE_MODEL_OPTIONS.filter(o => o.desc.includes('fal-ai')).map((opt) => (
+                      {IMAGE_MODEL_OPTIONS.filter(o => o.providerGroup === 'fal' || o.desc.includes('fal-ai')).map((opt) => (
                         <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
                           {opt.name}
                         </option>
                       ))}
                     </optgroup>
                     <optgroup label="🔷 Google Imagen Direct">
-                      {IMAGE_MODEL_OPTIONS.filter(o => o.desc.includes('Google')).map((opt) => (
+                      {IMAGE_MODEL_OPTIONS.filter(o => o.providerGroup === 'google_veo' || o.desc.includes('Google')).map((opt) => (
                         <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
                           {opt.name}
                         </option>
@@ -1589,11 +1540,10 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     value={selectedVideoEngine}
                     onChange={(e) => {
                       const val = e.target.value;
-                      setSelectedVideoEngine(val);
-                      localStorage.setItem('neurona_video_model', val);
-                      const isHg = ['veo3_1_lite', 'wan3_0', 'veo3_1', 'wan2_7', 'grok_video', 'gemini_omni'].includes(val) || val.startsWith('higgsfield');
-                      const isOa = ['byte-plus-seedance-2-fast', 'byte-plus-seedance-2', 'byte-plus-seedance-2-5', 'veo3-1', 'wan2-7', 'gemini-omni-flash'].includes(val) || val.startsWith('openart');
-                      localStorage.setItem('neurona_video_provider', isHg ? 'higgsfield' : isOa ? 'openart' : 'fal');
+                      const safe = resolveProviderSafeModel({ inputModel: val, mediaType: 'VIDEO' });
+                      setSelectedVideoEngine(safe.internalModelId);
+                      localStorage.setItem('neurona_video_model', safe.internalModelId);
+                      localStorage.setItem('neurona_video_provider', safe.provider);
                       window.dispatchEvent(new Event('storage'));
                     }}
                     className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
@@ -1675,7 +1625,12 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
               <button
                 onClick={() => {
-                  onApproveAndPay(videoCreditsTotal, undefined, selectedVideoEngine);
+                  const safe = resolveProviderSafeModel({
+                    explicitProvider: localStorage.getItem('neurona_video_provider') as any,
+                    inputModel: selectedVideoEngine,
+                    mediaType: 'VIDEO'
+                  });
+                  onApproveAndPay(videoCreditsTotal, undefined, safe.internalModelId, safe.provider);
                   onClose();
                 }}
                 className="py-1.5 px-3 rounded-lg bg-gradient-to-r from-amber-400 via-rose-500 to-purple-600 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-bold text-[11px] shadow-lg shadow-amber-500/25 flex items-center justify-center gap-1.5 transition cursor-pointer"
@@ -2506,26 +2461,28 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                       value={curImgEngine}
                                       onChange={(e) => {
                                         const val = e.target.value as ImageModelId;
-                                        setSceneImageModels(prev => ({ ...prev, [scene.id]: val }));
+                                        const safe = resolveProviderSafeModel({ inputModel: val, mediaType: 'IMAGE' });
+                                        setSceneImageModels(prev => ({ ...prev, [scene.id]: safe.internalModelId as ImageModelId }));
+                                        setSceneImageProviders(prev => ({ ...prev, [scene.id]: safe.provider }));
                                       }}
                                       className="bg-slate-900 border border-purple-500/30 font-bold text-purple-200 rounded px-1.5 py-0.5 outline-none cursor-pointer text-[10px]"
                                     >
                                       <optgroup label="🎨 OpenArt MCP">
-                                        {IMAGE_MODEL_OPTIONS.filter(o => o.badge === 'OpenArt AI').map(opt => (
+                                        {IMAGE_MODEL_OPTIONS.filter(o => o.providerGroup === 'openart' || o.badge === 'OpenArt AI').map(opt => (
                                           <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
                                             {opt.shortName}
                                           </option>
                                         ))}
                                       </optgroup>
                                       <optgroup label="⚡ Fal.ai">
-                                        {IMAGE_MODEL_OPTIONS.filter(o => o.desc.includes('fal-ai')).map(opt => (
+                                        {IMAGE_MODEL_OPTIONS.filter(o => o.providerGroup === 'fal' || o.desc.includes('fal-ai')).map(opt => (
                                           <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
                                             {opt.shortName}
                                           </option>
                                         ))}
                                       </optgroup>
                                       <optgroup label="🔷 Google Imagen">
-                                        {IMAGE_MODEL_OPTIONS.filter(o => o.desc.includes('Google')).map(opt => (
+                                        {IMAGE_MODEL_OPTIONS.filter(o => o.providerGroup === 'google_veo' || o.desc.includes('Google')).map(opt => (
                                           <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
                                             {opt.shortName}
                                           </option>
@@ -2541,7 +2498,9 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                                       value={curVidEngine}
                                       onChange={(e) => {
                                         const val = e.target.value;
-                                        setSceneVideoModels(prev => ({ ...prev, [scene.id]: val }));
+                                        const safe = resolveProviderSafeModel({ inputModel: val, mediaType: 'VIDEO' });
+                                        setSceneVideoModels(prev => ({ ...prev, [scene.id]: safe.internalModelId }));
+                                        setSceneVideoProviders(prev => ({ ...prev, [scene.id]: safe.provider }));
                                       }}
                                       className="bg-slate-900 border border-amber-500/30 font-bold text-amber-200 rounded px-1.5 py-0.5 outline-none cursor-pointer text-[10px] max-w-[140px] truncate"
                                     >
@@ -3365,7 +3324,14 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   
                   </div>
                 <button
-                  onClick={() => onApproveAndPay(videoCreditsTotal, undefined, selectedVideoEngine)}
+                  onClick={() => {
+                    const safe = resolveProviderSafeModel({
+                      explicitProvider: localStorage.getItem('neurona_video_provider') as any,
+                      inputModel: selectedVideoEngine,
+                      mediaType: 'VIDEO'
+                    });
+                    onApproveAndPay(videoCreditsTotal, undefined, safe.internalModelId, safe.provider);
+                  }}
                   className="w-full py-2.5 px-3 rounded-lg bg-gradient-to-r from-amber-400 via-rose-500 to-purple-600 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-bold text-[11px] shadow-lg shadow-amber-500/25 flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
                   <Play size={13} fill="currentColor" />
@@ -3444,7 +3410,12 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     setQaBlockAlert(`⛔ FULL RENDER DIBLOKIR: SINTA AI menolak render video karena terdapat ${lowQa.length} adegan dengan QA Score < ${clientConfig.qaMinScoreThreshold} (${listStr}). Harap perbaiki adegan tersebut.`);
                     return;
                   }
-                  onApproveAndPay(videoCreditsTotal, undefined, selectedVideoEngine);
+                  const safe = resolveProviderSafeModel({
+                    explicitProvider: localStorage.getItem('neurona_video_provider') as any,
+                    inputModel: selectedVideoEngine,
+                    mediaType: 'VIDEO'
+                  });
+                  onApproveAndPay(videoCreditsTotal, undefined, safe.internalModelId, safe.provider);
                 }}
                 className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-rose-500 to-purple-600 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/30 flex items-center gap-1.5 transition cursor-pointer"
               >

@@ -992,4 +992,56 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       throw err;
     }
   }
+
+  async generateImage(request: any): Promise<any> {
+    const generationId = `higgsfield_t2i_${Date.now()}_${randomUUID().substring(0, 8)}`;
+    const { modelId, modelDef } = this.resolveModelId(request.model, 'image');
+    const estimatedCost = modelDef?.costUsd || 0.05;
+    const aspectRatio = request.aspectRatio || '16:9';
+
+    try {
+      const toolName = this.resolveToolName('TEXT_TO_IMAGE');
+      console.log(`[Higgsfield MCP] Calling ${toolName} with model ${modelId} for Text-to-Image...`);
+
+      const toolArgs = {
+        params: {
+          model: modelId,
+          prompt: request.prompt || 'High quality cinematic character concept artwork',
+          aspect_ratio: aspectRatio,
+          count: 1
+        }
+      };
+
+      const mcpResult = await this.callMCPTool(toolName, toolArgs);
+      const jobId = this.extractJobId(mcpResult);
+      let assetUrl: string | null = null;
+
+      if (jobId) {
+        request.onProgress?.(`Higgsfield MCP: Image Job ${jobId.substring(0, 8)} in progress...`);
+        assetUrl = await this.waitForJob(jobId, 60);
+      } else {
+        assetUrl = this.extractAssetUrlFromResult(mcpResult);
+      }
+
+      if (!assetUrl) {
+        throw new Error(`Higgsfield MCP returned empty image result for model [${modelId}].`);
+      }
+
+      await this.verifyAssetReachability(assetUrl, 'IMAGE');
+
+      return {
+        success: true,
+        assetUrl,
+        imageUrl: assetUrl,
+        url: assetUrl,
+        generationId,
+        provider: 'higgsfield',
+        model: modelId,
+        costUsd: estimatedCost
+      };
+    } catch (err: any) {
+      console.error('[HiggsfieldMCPAdapter generateImage] Error:', err);
+      throw err;
+    }
+  }
 }
