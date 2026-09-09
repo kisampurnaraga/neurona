@@ -1934,10 +1934,22 @@ async function startServer() {
 
   app.post('/api/projects/:id/approve', async (req, res) => {
     try {
-      const { subtitleStyle } = req.body;
+      const { subtitleStyle, videoModel, videoProvider } = req.body;
       const project = projects.get(req.params.id);
       if (project) {
-        project.subtitleStyle = subtitleStyle;
+        if (subtitleStyle) project.subtitleStyle = subtitleStyle;
+        if (videoModel) {
+          project.videoModel = videoModel;
+        }
+        if (videoProvider) {
+          (project as any).videoProvider = videoProvider;
+        } else if (videoModel) {
+          if (['veo3_1_lite', 'wan3_0', 'veo3_1', 'wan2_7', 'grok_video', 'gemini_omni'].includes(videoModel) || videoModel.startsWith('higgsfield')) {
+            (project as any).videoProvider = 'higgsfield';
+          } else if (['byte-plus-seedance-2-fast', 'byte-plus-seedance-2', 'byte-plus-seedance-2-5', 'veo3-1', 'wan2-7', 'gemini-omni-flash'].includes(videoModel) || videoModel.startsWith('openart')) {
+            (project as any).videoProvider = 'openart';
+          }
+        }
       }
       await ProductionOrchestrator.approveStoryboard(req.params.id);
       res.json({ success: true });

@@ -2171,14 +2171,27 @@ export class ProductionOrchestrator {
     // Save selected video model
     const effectiveVideoModel = videoModel || (scene as any).videoModel || project.videoModel || 'fal';
     (scene as any).videoModel = effectiveVideoModel;
-    project.videoModel = effectiveVideoModel;
+    // Only update global project model if not an isolated scene override
+    if (!videoModel || videoModel === project.videoModel) {
+      project.videoModel = effectiveVideoModel;
+    }
     
     scene.videoStatus = 'GENERATING';
     scene.status = 'GENERATING';
 
     const scenePreferredProvider = (scene as any).videoProvider || (scene as any).metadata?.provider;
     const projectPreferredProvider = (project as any).videoProvider;
-    const preferredProvider = scenePreferredProvider || projectPreferredProvider;
+    let preferredProvider = scenePreferredProvider;
+    if (!preferredProvider) {
+      if (['veo3_1_lite', 'wan3_0', 'veo3_1', 'wan2_7', 'grok_video', 'gemini_omni'].includes(effectiveVideoModel) || effectiveVideoModel.startsWith('higgsfield')) {
+        preferredProvider = 'higgsfield';
+      } else if (['byte-plus-seedance-2-fast', 'byte-plus-seedance-2', 'byte-plus-seedance-2-5', 'veo3-1', 'wan2-7', 'gemini-omni-flash'].includes(effectiveVideoModel) || effectiveVideoModel.startsWith('openart')) {
+        preferredProvider = 'openart';
+      } else {
+        preferredProvider = projectPreferredProvider;
+      }
+    }
+    (scene as any).videoProvider = preferredProvider;
 
     const route = MediaProviderRouter.resolveRoute('VIDEO', {
       preferredModelOrEngine: effectiveVideoModel,

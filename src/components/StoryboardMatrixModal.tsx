@@ -66,7 +66,7 @@ interface StoryboardMatrixModalProps {
   onClose: () => void;
   project: ProductionProject | null;
   currentCredits: number;
-  onApproveAndPay: (creditsCost: number, subtitleStyle?: string) => void;
+  onApproveAndPay: (creditsCost: number, subtitleStyle?: string, videoModel?: string) => void;
   onOpenTopUp: () => void;
   onGenerateSceneImage?: (sceneId: string, cost: number, imageEngine?: string, allowFallbackToFlux?: boolean) => Promise<void>;
   onGenerateAllImages?: (totalCost: number, imageEngine?: string, allowFallbackToFlux?: boolean) => Promise<void>;
@@ -502,7 +502,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
   const [selectedVideoEngine, setSelectedVideoEngine] = useState<string>(() => {
     const saved = localStorage.getItem('neurona_video_model');
     const valid = VIDEO_MODEL_OPTIONS.some(m => m.id === saved);
-    return valid ? saved : 'veo-asli';
+    return valid ? saved : 'veo3_1_lite';
   });
   const [sceneImageModels, setSceneImageModels] = useState<Record<string, ImageModelId>>({});
   const [sceneVideoModels, setSceneVideoModels] = useState<Record<string, string>>({});
@@ -1588,8 +1588,12 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   <select
                     value={selectedVideoEngine}
                     onChange={(e) => {
-                      setSelectedVideoEngine(e.target.value);
-                      localStorage.setItem('neurona_video_model', e.target.value);
+                      const val = e.target.value;
+                      setSelectedVideoEngine(val);
+                      localStorage.setItem('neurona_video_model', val);
+                      const isHg = ['veo3_1_lite', 'wan3_0', 'veo3_1', 'wan2_7', 'grok_video', 'gemini_omni'].includes(val) || val.startsWith('higgsfield');
+                      const isOa = ['byte-plus-seedance-2-fast', 'byte-plus-seedance-2', 'byte-plus-seedance-2-5', 'veo3-1', 'wan2-7', 'gemini-omni-flash'].includes(val) || val.startsWith('openart');
+                      localStorage.setItem('neurona_video_provider', isHg ? 'higgsfield' : isOa ? 'openart' : 'fal');
                       window.dispatchEvent(new Event('storage'));
                     }}
                     className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
@@ -1671,7 +1675,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
 
               <button
                 onClick={() => {
-                  onApproveAndPay(videoCreditsTotal);
+                  onApproveAndPay(videoCreditsTotal, undefined, selectedVideoEngine);
                   onClose();
                 }}
                 className="py-1.5 px-3 rounded-lg bg-gradient-to-r from-amber-400 via-rose-500 to-purple-600 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-bold text-[11px] shadow-lg shadow-amber-500/25 flex items-center justify-center gap-1.5 transition cursor-pointer"
@@ -3361,7 +3365,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                   
                   </div>
                 <button
-                  onClick={() => onApproveAndPay(videoCreditsTotal, undefined)}
+                  onClick={() => onApproveAndPay(videoCreditsTotal, undefined, selectedVideoEngine)}
                   className="w-full py-2.5 px-3 rounded-lg bg-gradient-to-r from-amber-400 via-rose-500 to-purple-600 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-bold text-[11px] shadow-lg shadow-amber-500/25 flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
                   <Play size={13} fill="currentColor" />
@@ -3440,7 +3444,7 @@ export const StoryboardMatrixModal: React.FC<StoryboardMatrixModalProps> = ({
                     setQaBlockAlert(`⛔ FULL RENDER DIBLOKIR: SINTA AI menolak render video karena terdapat ${lowQa.length} adegan dengan QA Score < ${clientConfig.qaMinScoreThreshold} (${listStr}). Harap perbaiki adegan tersebut.`);
                     return;
                   }
-                  onApproveAndPay(videoCreditsTotal, undefined);
+                  onApproveAndPay(videoCreditsTotal, undefined, selectedVideoEngine);
                 }}
                 className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-rose-500 to-purple-600 hover:from-amber-300 hover:to-rose-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/30 flex items-center gap-1.5 transition cursor-pointer"
               >

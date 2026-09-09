@@ -6,7 +6,7 @@ import { Wallet, Key, Coins, Activity } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import { VideoPreviewPlayer } from './components/VideoPreviewPlayer';
 import { NeuronaDirectorCore } from './components/NeuronaDirectorCore';
-import { StoryboardMatrixModal } from './components/StoryboardMatrixModal';
+import { StoryboardMatrixModal, IMAGE_MODEL_OPTIONS, VIDEO_MODEL_OPTIONS } from './components/StoryboardMatrixModal';
 import { StudioSelectorModal } from './components/StudioSelectorModal';
 import { FilmConfigModal } from './components/FilmConfigModal';
 import { VideoAdsConfigModal } from './components/VideoAdsConfigModal';
@@ -168,7 +168,9 @@ export default function App() {
 
   const [project, setProject] = useState<ProductionProject | null>(null);
   const [providerInfo, setProviderInfo] = useState<{provider: string, isMock: boolean, status: string} | null>(null);
-  const [selectedVideoEngine, setSelectedVideoEngine] = useState<string>(() => localStorage.getItem('neurona_video_model') || 'fal');
+  const [selectedVideoEngine, setSelectedVideoEngine] = useState<string>(() => localStorage.getItem('neurona_video_model') || 'veo3_1_lite');
+  const [selectedImageEngine, setSelectedImageEngine] = useState<string>(() => localStorage.getItem('neurona_image_model') || 'kling-3-omni');
+  const [pendingVideoModel, setPendingVideoModel] = useState<string>(() => localStorage.getItem('neurona_video_model') || 'veo3_1_lite');
 
   // User Authentication & Session State
   const [currentUser, setCurrentUser] = useState<UserSessionData | null>(() => {
@@ -719,11 +721,26 @@ export default function App() {
     }
   };
 
-  const handleApprove = async (subtitleStyle?: string) => {
+  const handleApprove = async (subtitleStyle?: string, videoModelOverride?: string) => {
     if (!projectId) return;
     setIsThinking(true);
     try {
-      await fetch(`/api/projects/${projectId}/approve`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({subtitleStyle}) });
+      const activeVideoModel = videoModelOverride || pendingVideoModel || selectedVideoEngine || localStorage.getItem('neurona_video_model') || 'veo3_1_lite';
+      const activeVideoProvider = (['veo3_1_lite', 'wan3_0', 'veo3_1', 'wan2_7', 'grok_video', 'gemini_omni'].includes(activeVideoModel) || activeVideoModel.startsWith('higgsfield')) 
+        ? 'higgsfield' 
+        : (['byte-plus-seedance-2-fast', 'byte-plus-seedance-2', 'byte-plus-seedance-2-5', 'veo3-1', 'wan2-7', 'gemini-omni-flash'].includes(activeVideoModel) || activeVideoModel.startsWith('openart'))
+        ? 'openart'
+        : 'fal';
+
+      await fetch(`/api/projects/${projectId}/approve`, { 
+        method: 'POST', 
+        headers: {'Content-Type': 'application/json'}, 
+        body: JSON.stringify({
+          subtitleStyle,
+          videoModel: activeVideoModel,
+          videoProvider: activeVideoProvider
+        }) 
+      });
       neuronaVoice.speak("Izin disetujui. Tim Agen AI Indonesia sedang merender video.");
     } catch (e) {
       console.error(e);
@@ -1289,10 +1306,13 @@ export default function App() {
             project={project}
             currentCredits={userCredits}
             onResetProject={handleResetHub}
-            onApproveAndPay={(cost, subtitleStyle) => {
+            onApproveAndPay={(cost, subtitleStyle, videoModel) => {
               setIsStoryboardMatrixOpen(false);
+              const modelToUse = videoModel || selectedVideoEngine;
+              setPendingVideoModel(modelToUse);
+              setSelectedVideoEngine(modelToUse);
               if (subtitleStyle) {
-                handleApprove(subtitleStyle);
+                handleApprove(subtitleStyle, modelToUse);
               } else {
                 setShowCaptionModal(true);
               }
@@ -1341,7 +1361,7 @@ export default function App() {
             <CaptionStyleSelectorModal
               onSelect={(styleId) => {
                 setShowCaptionModal(false);
-                handleApprove(styleId);
+                handleApprove(styleId, pendingVideoModel);
               }}
               onCancel={() => setShowCaptionModal(false)}
             />
@@ -1741,38 +1761,94 @@ export default function App() {
                     )})}
                   </div>
 
-                  {/* Video Engine Model Selection Dropdowns */}
+                  {/* AI Model Selection Dropdowns (Image & Video) with MCP grouping */}
                   <div className="bg-black/50 border border-amber-500/30 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
-                    <span className="font-bold text-amber-300 text-[11px] flex items-center gap-1.5">
-                      <Cpu size={13} className="text-amber-400" />
-                      Pilih Model AI:
-                    </span>
                     <div className="flex items-center gap-2">
+                      <span className="font-bold text-amber-300 text-[11px] flex items-center gap-1.5">
+                        <Cpu size={13} className="text-amber-400" />
+                        Pilih Model AI (Global Storyboard):
+                      </span>
+                      <button
+                        onClick={() => setIsStoryboardMatrixOpen(true)}
+                        className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-[10px] flex items-center gap-1 transition cursor-pointer"
+                      >
+                        <Layers size={11} />
+                        Buka Storyboard Matrix
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Image Model Selector */}
                       <div className="flex items-center bg-black/60 border border-white/10 rounded-lg overflow-hidden">
-                        <div className="bg-amber-900/40 px-2 py-1.5 flex items-center justify-center border-r border-white/10">
+                        <div className="bg-purple-900/40 px-2 py-1.5 flex items-center justify-center border-r border-white/10" title="Model Gambar">
+                          <Palette size={12} className="text-purple-400" />
+                        </div>
+                        <select
+                          value={selectedImageEngine}
+                          onChange={(e) => {
+                            setSelectedImageEngine(e.target.value);
+                            localStorage.setItem('neurona_image_model', e.target.value);
+                          }}
+                          className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
+                          style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right .5rem center', backgroundSize: '.65em auto' }}
+                        >
+                          <optgroup label="🎨 OpenArt MCP">
+                            {IMAGE_MODEL_OPTIONS.filter(o => o.badge === 'OpenArt AI').map((opt) => (
+                              <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                {opt.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="⚡ Fal.ai & Google">
+                            {IMAGE_MODEL_OPTIONS.filter(o => o.badge !== 'OpenArt AI').map((opt) => (
+                              <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                {opt.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        </select>
+                      </div>
+
+                      {/* Video Model Selector with Higgsfield, OpenArt, and Fal.ai */}
+                      <div className="flex items-center bg-black/60 border border-white/10 rounded-lg overflow-hidden">
+                        <div className="bg-amber-900/40 px-2 py-1.5 flex items-center justify-center border-r border-white/10" title="Model Video">
                           <Film size={12} className="text-amber-400" />
                         </div>
                         <select
                           value={selectedVideoEngine}
                           onChange={(e) => {
-                            setSelectedVideoEngine(e.target.value);
-                            localStorage.setItem('neurona_video_model', e.target.value);
+                            const val = e.target.value;
+                            setSelectedVideoEngine(val);
+                            setPendingVideoModel(val);
+                            localStorage.setItem('neurona_video_model', val);
+                            const isHg = ['veo3_1_lite', 'wan3_0', 'veo3_1', 'wan2_7', 'grok_video', 'gemini_omni'].includes(val) || val.startsWith('higgsfield');
+                            const isOa = ['byte-plus-seedance-2-fast', 'byte-plus-seedance-2', 'byte-plus-seedance-2-5', 'veo3-1', 'wan2-7', 'gemini-omni-flash'].includes(val) || val.startsWith('openart');
+                            localStorage.setItem('neurona_video_provider', isHg ? 'higgsfield' : isOa ? 'openart' : 'fal');
                           }}
                           className="bg-transparent text-[11px] font-bold text-slate-200 outline-none px-2 py-1.5 cursor-pointer appearance-none pr-6 custom-select-arrow"
                           style={{ backgroundImage: 'url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right .5rem center', backgroundSize: '.65em auto' }}
                         >
-                          <option value="veo-asli-lite">Veo Asli Lite (Google - 10 Cr)</option>
-                          <option value="veo-asli">Veo Asli Std (Google - 15 Cr)</option>
-                          <option value="veo-asli-pro">Veo Asli Pro (Google - 25 Cr)</option>
-                          <option value="fal-wan21">Wan 2.1 (Budget - 45 Cr)</option>
-                          <option value="fal-seedance20-fast">Seedance 2.0 Fast (10 Cr)</option>
-                          <option value="fal-hunyuan">Hunyuan I2V (10 Cr)</option>
-                          <option value="fal-kling21">Kling 2.1 Standard (15 Cr)</option>
-                          <option value="fal-kling-o3">Kling O3 Standard (15 Cr)</option>
-                          <option value="fal-minimax">MiniMax Video-01 (15 Cr)</option>
-                          <option value="fal-seedance20">Seedance 2.0 Standard (15 Cr)</option>
-                          <option value="fal-seedance25">Seedance 2.5 Sinematik (20 Cr)</option>
-                          <option value="fal-kling30-pro">Kling 3.0 Pro (25 Cr)</option>
+                          <optgroup label="🚀 Higgsfield MCP">
+                            {VIDEO_MODEL_OPTIONS.filter(o => o.providerGroup === 'higgsfield').map((opt) => (
+                              <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                {opt.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="🎨 OpenArt MCP">
+                            {VIDEO_MODEL_OPTIONS.filter(o => o.providerGroup === 'openart').map((opt) => (
+                              <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                {opt.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="⚡ Fal.ai & Google Gateway">
+                            {VIDEO_MODEL_OPTIONS.filter(o => o.providerGroup === 'fal').map((opt) => (
+                              <option key={opt.id} value={opt.id} className="bg-slate-900 text-white">
+                                {opt.name}
+                              </option>
+                            ))}
+                          </optgroup>
                         </select>
                       </div>
                     </div>
@@ -1780,7 +1856,7 @@ export default function App() {
 
                   <div className="pt-2 flex flex-wrap justify-end gap-2">
                     <button
-                      onClick={() => handleGenerateAllImages()}
+                      onClick={() => handleGenerateAllImages(undefined, selectedImageEngine)}
                       className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold text-xs shadow-lg flex items-center gap-1.5 transition cursor-pointer"
                     >
                       <ImageIcon size={13} />
@@ -1788,7 +1864,10 @@ export default function App() {
                     </button>
                     <button
                       id="btn-approve-storyboard"
-                      onClick={() => setShowCaptionModal(true)}
+                      onClick={() => {
+                        setPendingVideoModel(selectedVideoEngine);
+                        setShowCaptionModal(true);
+                      }}
                       className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-indigo-500 hover:from-amber-300 hover:to-indigo-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 flex items-center gap-1.5 transition cursor-pointer"
                     >
                       <Play size={13} fill="currentColor" />
