@@ -173,32 +173,16 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
   public static readonly OFFICIAL_ENDPOINT = 'https://mcp.higgsfield.ai/mcp';
   private static cachedTools: any[] | null = null;
   private static lastToolsDiscovery: number = 0;
-  private discoveredModels: HiggsfieldModelInfo[] = [];
+  private static isInitialized: boolean = false;
 
-  async discoverModels(): Promise<HiggsfieldModelInfo[]> {
-    try {
-      const response = await fetch(`${this.getEndpoint()}/models_explore`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.getSessionToken()}` },
-        body: JSON.stringify({ action: 'list', limit: 100 })
-      });
-      const data = await response.json();
-      if (data && data.models) {
-          this.discoveredModels = data.models.map((m: any) => ({
-            id: m.id,
-            name: m.name,
-            type: m.type === 'video' ? 'VIDEO' : 'IMAGE',
-            tier: 'balanced',
-            costUsd: 0.1,
-            description: m.description,
-            supportedAspectRatios: m.aspect_ratios || ['16:9', '9:16', '1:1']
-          }));
-      }
-      return this.discoveredModels;
-    } catch (e) {
-      console.error('Discovery failed, falling back', e);
-      return HIGGSFIELD_DEFAULT_MODELS;
+  async fetchTools(): Promise<any[]> {
+    const resp = await this.sendJsonRpc('tools/list');
+    if (resp.result && Array.isArray(resp.result.tools)) {
+      HiggsfieldMCPAdapter.cachedTools = resp.result.tools;
+      console.log('Tools discovered:', resp.result.tools.map((t: any) => ({ name: t.name, schema: t.inputSchema })));
+      return resp.result.tools;
     }
+    throw new Error(`Failed to fetch tools: ${resp.text}`);
   }
 
   public getEndpoint(): string {
@@ -332,8 +316,8 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
         };
       }
 
-      // Run Dynamic Model Discovery
-      await this.discoverModels();
+      // Run Dynamic Tool Discovery
+      await this.fetchTools();
 
       HiggsfieldMCPAdapter.isInitialized = true;
       return {
@@ -467,29 +451,21 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
 
   public resolveToolName(category: 'IMAGE_TO_VIDEO' | 'TEXT_TO_VIDEO' | 'TEXT_TO_IMAGE'): string {
     const tools = HiggsfieldMCPAdapter.cachedTools || [];
-    const findTool = (candidates: string[]) => {
-      for (const c of candidates) {
-        const match = tools.find(t => t.name === c);
-        if (match) return match.name;
-      }
-      for (const c of candidates) {
-        const match = tools.find(t => t.name.toLowerCase().includes(c.toLowerCase()));
-        if (match) return match.name;
-      }
-      return null;
+    
+    const mapping: Record<string, string[]> = {
+        'TEXT_TO_VIDEO': ['generate_video', 'higgsfield_text_to_video', 'text_to_video'],
+        'IMAGE_TO_VIDEO': ['generate_video', 'higgsfield_image_to_video', 'image_to_video'],
+        'TEXT_TO_IMAGE': ['generate_image', 'higgsfield_text_to_image', 'text_to_image']
     };
 
-    if (category === 'IMAGE_TO_VIDEO' || category === 'TEXT_TO_VIDEO') {
-      const tool = findTool(['generate_video', 'higgsfield_generate_video', 'text_to_video', 'image_to_video']);
-      return tool || 'generate_video';
+    const candidates = mapping[category] || [];
+    
+    for (const c of candidates) {
+        const match = tools.find(t => t.name === c);
+        if (match) return match.name;
     }
-
-    if (category === 'TEXT_TO_IMAGE') {
-      const tool = findTool(['generate_image', 'higgsfield_generate_image', 'text_to_image']);
-      return tool || 'generate_image';
-    }
-
-    return 'generate_video';
+    
+    throw new Error(`Tool not found for category: ${category}. Available tools: ${tools.map(t => t.name).join(', ')}`);
   }
 
   async validateSessionToken(token: string): Promise<{
@@ -1013,6 +989,9 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
   }
 
   async generateVideo(request: any): Promise<any> {
+    if (!HiggsfieldMCPAdapter.isInitialized) {
+      throw new Error('Higgsfield MCPAdapter not initialized. Call initializeMCP() first.');
+    }
     const generationId = `higgsfield_t2v_${Date.now()}_${randomUUID().substring(0, 8)}`;
     const { modelId, modelDef } = this.resolveModelId(request.model, 'video');
     const estimatedCost = modelDef.costUsd;
@@ -1035,17 +1014,14 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
 
     try {
       const toolName = this.resolveToolName('TEXT_TO_VIDEO');
-      console.log(`[Higgsfield MCP] Calling ${toolName} with model ${modelId} for Text-to-Video...`);
+      const tool = HiggsfieldMCPAdapter.cachedTools!.find(t => t.name === toolName);
+      const params: any = { model: modelId, prompt: request.prompt || 'Cinematic futuristic visual scene' };
+      if (tool.inputSchema.properties.aspect_ratio) params.aspect_ratio = aspectRatio;
+      if (tool.inputSchema.properties.duration) params.duration = duration;
+      if (tool.inputSchema.properties.count) params.count = 1;
 
-      const toolArgs = {
-        params: {
-          model: modelId,
-          prompt: request.prompt || 'Cinematic futuristic visual scene',
-          aspect_ratio: aspectRatio,
-          duration,
-          count: 1
-        }
-      };
+      const toolArgs = { params };
+      console.log(`[Higgsfield MCP] Calling ${toolName} with params:`, params);
 
       const mcpResult = await this.callMCPTool(toolName, toolArgs);
       const jobId = this.extractJobId(mcpResult);
@@ -1094,6 +1070,9 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
   }
 
   async generateImage(request: any): Promise<any> {
+    if (!HiggsfieldMCPAdapter.isInitialized) {
+      throw new Error('Higgsfield MCPAdapter not initialized. Call initializeMCP() first.');
+    }
     const generationId = `higgsfield_t2i_${Date.now()}_${randomUUID().substring(0, 8)}`;
     const { modelId, modelDef } = this.resolveModelId(request.model, 'image');
     const estimatedCost = modelDef?.costUsd || 0.05;
@@ -1105,23 +1084,26 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
 
     try {
       const toolName = this.resolveToolName('TEXT_TO_IMAGE');
-      console.log(`[Higgsfield MCP] Calling ${toolName} with model ${modelId} for Text-to-Image...`);
-
-      const toolArgs: any = {
-        params: {
-          model: modelId,
-          prompt: request.prompt || 'High quality cinematic character concept artwork',
-          aspect_ratio: aspectRatio,
-          count: 1
-        }
+      const tool = HiggsfieldMCPAdapter.cachedTools!.find(t => t.name === toolName);
+      
+      const params: any = { 
+        model: modelId, 
+        prompt: request.prompt || 'High quality cinematic character concept artwork' 
       };
-
-      if (characterRef || sketchRef) {
+      
+      if (tool.inputSchema.properties.aspect_ratio) params.aspect_ratio = aspectRatio;
+      if (tool.inputSchema.properties.count) params.count = 1;
+      
+      const toolArgs: any = { params };
+      
+      if ((characterRef || sketchRef) && tool.inputSchema.properties.medias) {
         console.log(`[Higgsfield MCP] Reference detected. Adding medias parameters.`);
         toolArgs.params.medias = [];
         if (characterRef) toolArgs.params.medias.push({ value: characterRef, role: 'character' });
         if (sketchRef) toolArgs.params.medias.push({ value: sketchRef, role: 'sketch' });
       }
+
+      console.log(`[Higgsfield MCP] Calling ${toolName} with params:`, params);
 
       const mcpResult = await this.callMCPTool(toolName, toolArgs);
       const jobId = this.extractJobId(mcpResult);
