@@ -201,12 +201,6 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     }
   }
 
-  async initializeMCP() {
-    await this.discoverModels();
-    HiggsfieldMCPAdapter.isInitialized = true;
-    return { success: true };
-  }
-
   public getEndpoint(): string {
     const fccConfig: any = (FounderService as any).getHiggsfieldConfig?.() || {};
     return fccConfig.endpoint || process.env.HIGGSFIELD_MCP_ENDPOINT || HiggsfieldMCPAdapter.OFFICIAL_ENDPOINT;
@@ -338,6 +332,9 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
         };
       }
 
+      // Run Dynamic Model Discovery
+      await this.discoverModels();
+
       HiggsfieldMCPAdapter.isInitialized = true;
       return {
         success: true,
@@ -442,7 +439,8 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
 
   public resolveModelId(inputModel?: string, mediaType: 'image' | 'video' = 'video'): { modelId: string; modelDef: HiggsfieldModelInfo } {
     const model = (inputModel || '').trim();
-    const defaultId = mediaType === 'image' ? 'soul_2' : 'veo3_1_lite';
+    const models = this.discoveredModels.length > 0 ? this.discoveredModels : HIGGSFIELD_DEFAULT_MODELS;
+    const defaultId = mediaType === 'image' ? 'soul_2' : (models.find(m => m.type === 'VIDEO')?.id || 'veo3_1_lite');
     
     const aliasMap: Record<string, string> = {
       'higgsfield-video-pro': 'veo3_1_lite',
@@ -459,10 +457,10 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     };
 
     const targetId = aliasMap[model] || (model && model !== 'default' ? model : defaultId);
-    const modelDef = HIGGSFIELD_DEFAULT_MODELS.find(m => m.id === targetId) ||
-      HIGGSFIELD_DEFAULT_MODELS.find(m => m.id === model) ||
-      HIGGSFIELD_DEFAULT_MODELS.find(m => m.id === defaultId) ||
-      HIGGSFIELD_DEFAULT_MODELS[0];
+    const modelDef = models.find(m => m.id === targetId) ||
+      models.find(m => m.id === model) ||
+      models.find(m => m.id === defaultId) ||
+      models[0];
 
     return { modelId: targetId, modelDef };
   }
@@ -1082,6 +1080,11 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
         costUsd: estimatedCost
       };
     } catch (err: any) {
+      console.error('[HiggsfieldMCPAdapter generateVideo] Detailed Error:', {
+        message: err.message,
+        modelId,
+        request: JSON.stringify(request)
+      });
       CostTrackingService.completeGeneration(generationId, {
         status: 'FAILED',
         error: err?.message || String(err)
