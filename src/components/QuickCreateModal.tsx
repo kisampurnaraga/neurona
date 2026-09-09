@@ -20,6 +20,8 @@ export const QuickCreateModal: React.FC<QuickCreateModalProps> = ({ isOpen, onCl
   const [videoProvider, setVideoProvider] = useState<string>('higgsfield');
   const [videoModel, setVideoModel] = useState<string>('veo3_1_lite');
   const [videoModelDisplayName, setVideoModelDisplayName] = useState<string>('Google Veo 3.1 Lite');
+  const [characterReferenceUrl, setCharacterReferenceUrl] = useState('');
+  const [sketchReferenceUrl, setSketchReferenceUrl] = useState('');
 
   if (!isOpen) return null;
 
@@ -35,7 +37,9 @@ export const QuickCreateModal: React.FC<QuickCreateModalProps> = ({ isOpen, onCl
       videoEngine: videoModel,
       videoProvider,
       videoModel,
-      videoModelDisplayName
+      videoModelDisplayName,
+      characterReferenceUrl,
+      sketchReferenceUrl
     };
 
     const generatedPrompt = `Buatkan video ekspres bertema "${topic}" dengan gaya visual ${style} untuk audiens ${targetAudience || 'Umum'}.`;
@@ -136,6 +140,30 @@ export const QuickCreateModal: React.FC<QuickCreateModalProps> = ({ isOpen, onCl
                     </button>
                   ))}
                 </div>
+              </div>
+            </div>
+
+            {/* Reference Media */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">Character Reference (Optional)</label>
+                <input
+                  type="text"
+                  value={characterReferenceUrl}
+                  onChange={(e) => setCharacterReferenceUrl(e.target.value)}
+                  placeholder="URL Foto Referensi Wajah..."
+                  className="w-full bg-[#0E142A] border border-slate-800 focus:border-indigo-500/80 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 transition"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">Sketch Reference (Optional)</label>
+                <input
+                  type="text"
+                  value={sketchReferenceUrl}
+                  onChange={(e) => setSketchReferenceUrl(e.target.value)}
+                  placeholder="URL Foto Referensi Sketsa..."
+                  className="w-full bg-[#0E142A] border border-slate-800 focus:border-indigo-500/80 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 transition"
+                />
               </div>
             </div>
 

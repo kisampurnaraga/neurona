@@ -173,10 +173,39 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
   public static readonly OFFICIAL_ENDPOINT = 'https://mcp.higgsfield.ai/mcp';
   private static cachedTools: any[] | null = null;
   private static lastToolsDiscovery: number = 0;
-  private static lastDiscoveryError: string | null = null;
-  private static isInitialized: boolean = false;
+  private discoveredModels: HiggsfieldModelInfo[] = [];
 
-  public getEndpoint(): string {
+  async discoverModels(): Promise<HiggsfieldModelInfo[]> {
+    try {
+      const response = await fetch(`${this.getEndpoint()}/models_explore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.getSessionToken()}` },
+        body: JSON.stringify({ action: 'list', limit: 100 })
+      });
+      const data = await response.json();
+      if (data && data.models) {
+          this.discoveredModels = data.models.map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            type: m.type === 'video' ? 'VIDEO' : 'IMAGE',
+            tier: 'balanced',
+            costUsd: 0.1,
+            description: m.description,
+            supportedAspectRatios: m.aspect_ratios || ['16:9', '9:16', '1:1']
+          }));
+      }
+      return this.discoveredModels;
+    } catch (e) {
+      console.error('Discovery failed, falling back', e);
+      return HIGGSFIELD_DEFAULT_MODELS;
+    }
+  }
+
+  async initializeMCP() {
+    await this.discoverModels();
+    HiggsfieldMCPAdapter.isInitialized = true;
+    return { success: true };
+  }
     const fccConfig: any = (FounderService as any).getHiggsfieldConfig?.() || {};
     return fccConfig.endpoint || process.env.HIGGSFIELD_MCP_ENDPOINT || HiggsfieldMCPAdapter.OFFICIAL_ENDPOINT;
   }

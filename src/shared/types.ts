@@ -216,6 +216,8 @@ export interface QuickCreateConfig {
   videoProvider?: string;
   videoModel?: string;
   videoModelDisplayName?: string;
+  characterReferenceUrl?: string;
+  sketchReferenceUrl?: string;
 }
 
 export interface AgentTelemetry {
