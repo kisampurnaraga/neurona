@@ -691,10 +691,37 @@ async function startServer() {
       const hasAssets = Boolean(attachedAssets && attachedAssets.length > 0);
       
       const result = await ConversationalIntentRouter.route(prompt || "", project, hasAssets);
+      console.log(`[Interaction] videoType: ${videoType}, Intent result.videoType: ${result.videoType}, action: ${result.action}`);
       
       let newProjectId = projectId;
-      if (result.action === 'START_PRODUCTION') {
+      let directResult = null;
+
+      if (videoType === 'QUICK_CREATE') {
+        console.log(`[Interaction] Direct execution path for QUICK_CREATE started`);
+        try {
+          const { HiggsfieldMCPAdapter } = await import('./src/server/providers/HiggsfieldMCPAdapter');
+          console.log(`[Interaction] Adapter imported`);
+          const adapter = new HiggsfieldMCPAdapter();
+          console.log(`[Interaction] Adapter instantiated`);
+          await adapter.initializeMCP();
+          console.log(`[Interaction] MCP initialized`);
+          directResult = await adapter.generateVideo({
+             model: quickCreateConfig?.model || quickCreateConfig?.videoModel || 'veo3_1_lite',
+             prompt: prompt,
+             aspectRatio: quickCreateConfig?.aspectRatio || '9:16',
+             characterReferenceUrl: quickCreateConfig?.characterReferenceUrl,
+             sketchReferenceUrl: quickCreateConfig?.sketchReferenceUrl,
+             allowFallback: false
+          });
+          console.log(`[Interaction] Direct generation successful:`, directResult);
+        } catch (err: any) {
+          console.error(`[Interaction] Direct generation failed:`, err);
+          directResult = { success: false, error: err.message };
+        }
+        console.log(`[Interaction] Direct execution path for QUICK_CREATE finished`);
+      } else if (result.action === 'START_PRODUCTION') {
          const finalType = videoType || result.videoType || 'BRAND_COMMERCIAL';
+         console.log(`[Interaction] finalType: ${finalType}`);
          const configVideoProvider = affiliateConfig?.videoProvider || animationConfig?.videoProvider || educationalConfig?.videoProvider || filmConfig?.videoProvider || videoAdsConfig?.videoProvider || quickCreateConfig?.videoProvider || req.body.videoProvider;
          const configVideoModel = affiliateConfig?.videoModel || animationConfig?.videoModel || educationalConfig?.videoModel || filmConfig?.videoModel || videoAdsConfig?.videoModel || quickCreateConfig?.videoModel || affiliateConfig?.videoEngine || animationConfig?.videoEngine || educationalConfig?.videoEngine || filmConfig?.videoEngine || videoAdsConfig?.videoEngine || quickCreateConfig?.model || videoModel;
          const configVideoDisplayName = affiliateConfig?.videoModelDisplayName || animationConfig?.videoModelDisplayName || educationalConfig?.videoModelDisplayName || filmConfig?.videoModelDisplayName || videoAdsConfig?.videoModelDisplayName || quickCreateConfig?.videoModelDisplayName || req.body.videoModelDisplayName;

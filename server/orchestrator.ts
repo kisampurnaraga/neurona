@@ -1135,6 +1135,7 @@ export class ProductionOrchestrator {
     
     // Determine video type
     let resolvedType: VideoType = videoType || 'BRAND_COMMERCIAL';
+    console.log(`[Orchestrator] Input videoType: ${videoType}, Initial resolvedType: ${resolvedType}`);
     if (!videoType) {
       const p = prompt.toLowerCase();
       if (p.includes('animasi') || p.includes('anime') || p.includes('3d') || p.includes('kartun')) {
@@ -1144,6 +1145,7 @@ export class ProductionOrchestrator {
       } else if (p.includes('affiliate') || p.includes('sepatu') || p.includes('keranjang kuning') || (attachedAssets && attachedAssets.length > 0)) {
         resolvedType = 'AFFILIATE';
       }
+      console.log(`[Orchestrator] Keyword-resolved resolvedType: ${resolvedType}`);
     }
 
     let defaultTitle = "New Video Production";
@@ -1286,6 +1288,7 @@ export class ProductionOrchestrator {
   static async runPipeline(id: string, prompt: string) {
     const project = projects.get(id)!;
     const vType = project.videoType;
+    console.log(`[Orchestrator] runPipeline for id: ${id}, vType: ${vType}`);
 
     // ISOLATED DIRECT GENERATION FLOW FOR QUICK CREATE (Bypasses Storyboard-First Gate)
     if (vType === 'QUICK_CREATE') {
