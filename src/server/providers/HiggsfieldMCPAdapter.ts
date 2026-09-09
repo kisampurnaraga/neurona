@@ -264,10 +264,52 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     return combined;
   }
 
-  private async sendJsonRpc(method: string, params: Record<string, any> = {}, timeoutMs = 15000): Promise<{ result?: any; error?: any; status: number; text: string }> {
+  public getEndpointHostnamePath(): string {
+    try {
+      const u = new URL(this.getEndpoint());
+      return `${u.hostname}${u.pathname}`;
+    } catch {
+      return this.getEndpoint();
+    }
+  }
+
+  public sanitizeData(data: any): any {
+    if (!data) return data;
+    if (typeof data !== 'object') {
+      if (typeof data === 'string' && (data.includes('Bearer ') || (data.length > 80 && !data.startsWith('http')))) {
+        return `${data.substring(0, 6)}...[REDACTED](${data.length} chars)`;
+      }
+      return data;
+    }
+
+    if (Array.isArray(data)) {
+      return data.map(item => this.sanitizeData(item));
+    }
+
+    const sanitized: Record<string, any> = {};
+    const sensitiveKeys = ['authorization', 'auth', 'token', 'secret', 'password', 'key', 'cookie', 'session', 'credential'];
+
+    for (const [k, v] of Object.entries(data)) {
+      const lowerKey = k.toLowerCase();
+      if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
+        if (typeof v === 'string') {
+          sanitized[k] = v.length > 8 ? `${v.substring(0, 4)}...[REDACTED]` : '[REDACTED]';
+        } else {
+          sanitized[k] = '[REDACTED]';
+        }
+      } else {
+        sanitized[k] = this.sanitizeData(v);
+      }
+    }
+    return sanitized;
+  }
+
+  private async sendJsonRpc(method: string, params: Record<string, any> = {}, timeoutMs = 15000): Promise<{ result?: any; error?: any; status: number; text: string; latencyMs: number }> {
     const sessionToken = await this.getValidSessionToken();
     const endpoint = this.getEndpoint();
+    const hostPath = this.getEndpointHostnamePath();
     const requestId = `neurona_mcp_higgsfield_${Date.now()}_${randomUUID().substring(0, 6)}`;
+    const startTime = Date.now();
 
     const payload = {
       jsonrpc: '2.0',
@@ -286,38 +328,58 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       headers['Authorization'] = `Bearer ${sessionToken.trim()}`;
     }
 
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(timeoutMs)
-    });
-
-    const status = res.status;
-    const text = await res.text().catch(() => '');
-
+    let status = 0;
+    let text = '';
     let json: any = null;
+
     try {
-      json = JSON.parse(text);
-    } catch {
-      const dataMatch = text.match(/data:\s*({.+})/);
-      if (dataMatch) {
-        try {
-          json = JSON.parse(dataMatch[1]);
-        } catch {}
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+
+      status = res.status;
+      text = await res.text().catch(() => '');
+
+      try {
+        json = JSON.parse(text);
+      } catch {
+        const dataMatch = text.match(/data:\s*({.+})/);
+        if (dataMatch) {
+          try {
+            json = JSON.parse(dataMatch[1]);
+          } catch {}
+        }
       }
+    } catch (err: any) {
+      status = 599;
+      text = err?.message || String(err);
+    }
+
+    const latencyMs = Date.now() - startTime;
+    const isSuccess = status === 200 && !json?.error;
+
+    console.log(`[Higgsfield Diagnostic] JSON-RPC Method: "${method}" | Endpoint: ${hostPath} | HTTP Status: ${status} | Success: ${isSuccess} | Latency: ${latencyMs}ms`);
+    if (!isSuccess) {
+      console.warn(`[Higgsfield Diagnostic] Higgsfield Error Response (${method}): HTTP ${status}, Error:`, JSON.stringify(this.sanitizeData(json?.error || text), null, 2));
     }
 
     return {
       result: json?.result,
       error: json?.error,
       status,
-      text
+      text,
+      latencyMs
     };
   }
 
   async initializeMCP(): Promise<{ success: boolean; protocolVersion?: string; capabilities?: any; error?: string }> {
     try {
+      const hostPath = this.getEndpointHostnamePath();
+      console.log(`[Higgsfield Diagnostic] Initiating MCP handshake with endpoint: ${hostPath}`);
+      
       const resp = await this.sendJsonRpc('initialize', {
         protocolVersion: '2024-11-05',
         capabilities: {
@@ -331,7 +393,10 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
         }
       }, 12000);
 
+      console.log(`[Higgsfield Diagnostic] Initialize handshake response status: ${resp.status}`);
       if (resp.status !== 200 || resp.error) {
+        const rawErr = resp.error || resp.text;
+        console.error(`[Higgsfield Diagnostic] Raw Initialize Error Response:`, JSON.stringify(this.sanitizeData(rawErr), null, 2));
         const errMsg = resp.error?.message || `Higgsfield MCP HTTP ${resp.status}: ${resp.text || 'Initialize failed'}`;
         console.warn('[Higgsfield MCP] Server initialize failed:', errMsg);
         HiggsfieldMCPAdapter.isInitialized = false;
@@ -348,6 +413,7 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       }
 
       HiggsfieldMCPAdapter.isInitialized = true;
+      console.log(`[Higgsfield Diagnostic] MCP handshake and tool discovery completed successfully. Total tools: ${discoveryResult.toolsCount}`);
       return {
         success: true,
         protocolVersion: resp.result?.protocolVersion || '2024-11-05',
@@ -362,6 +428,48 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
         error: errMsg
       };
     }
+  }
+
+  public static async runDiagnosticDump(): Promise<{
+    timestamp: string;
+    endpoint: string;
+    initialized: boolean;
+    toolsDiscovery: any;
+    errorLog?: string;
+  }> {
+    const adapter = new HiggsfieldMCPAdapter();
+    const endpoint = adapter.getEndpoint();
+    const token = adapter.getOAuthAccessToken();
+    const maskedToken = token ? `${token.substring(0, 6)}...[REDACTED](${token.length} chars)` : 'NOT_CONFIGURED';
+
+    console.log(`[Higgsfield Diagnostic] === START MCP HANDSHAKE DIAGNOSTIC ===`);
+    console.log(`[Higgsfield Diagnostic] Endpoint: ${endpoint}`);
+    console.log(`[Higgsfield Diagnostic] Token Status: ${maskedToken}`);
+
+    const initResult = await adapter.initializeMCP();
+    console.log(`[Higgsfield Diagnostic] Initialize Handshake Result:`, JSON.stringify(initResult, null, 2));
+
+    const discoveryResult = await adapter.discoverTools(true);
+    console.log(`[Higgsfield Diagnostic] tools/list Output: Found ${discoveryResult.toolsCount} tools. Success: ${discoveryResult.success}`);
+    
+    if (discoveryResult.success && discoveryResult.tools) {
+      discoveryResult.tools.forEach((t, idx) => {
+        const schemaProps = Object.keys(t.inputSchema?.properties || {});
+        console.log(`[Higgsfield Diagnostic] [Schema Validation] Tool [${idx + 1}] Name: "${t.name}" | Properties: [${schemaProps.join(', ')} | Validated Schema: OK]`);
+      });
+    } else {
+      console.warn(`[Higgsfield Diagnostic] tools/list Error:`, discoveryResult.error);
+    }
+
+    console.log(`[Higgsfield Diagnostic] === END MCP HANDSHAKE DIAGNOSTIC ===`);
+
+    return {
+      timestamp: new Date().toISOString(),
+      endpoint,
+      initialized: initResult.success,
+      toolsDiscovery: discoveryResult,
+      errorLog: discoveryResult.error || initResult.error
+    };
   }
 
   async discoverTools(forceRefresh = false): Promise<{
@@ -685,12 +793,14 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
 
   private async callMCPTool(toolName: string, args: Record<string, any>, maxRetries = 3): Promise<any> {
     const endpoint = this.getEndpoint();
+    const hostPath = this.getEndpointHostnamePath();
     const sessionToken = await this.getValidSessionToken();
 
     let lastError: Error | null = null;
     const timeoutMs = Number(process.env.HIGGSFIELD_TIMEOUT) || 90000;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const startTime = Date.now();
       try {
         const requestId = `mcp_call_${Date.now()}_${randomUUID().substring(0, 6)}`;
         const payload = {
@@ -722,6 +832,7 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
 
         const status = res.status;
         const text = await res.text().catch(() => '');
+        const durationMs = Date.now() - startTime;
 
         let json: any = null;
         try {
@@ -735,7 +846,17 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
           }
         }
 
-        if (!res.ok) {
+        const isSuccess = status === 200 && !json?.error;
+        const sanitizedArgs = this.sanitizeData(args);
+        const jobId = this.extractJobId(json?.result || json);
+
+        console.log(`[Higgsfield Diagnostic] tool/call: "${toolName}" | Endpoint: ${hostPath} | HTTP: ${status} | Success: ${isSuccess} | Duration: ${durationMs}ms | JobID: ${jobId || 'N/A'}`);
+        console.log(`[Higgsfield Diagnostic] Sanitized Args:`, JSON.stringify(sanitizedArgs));
+
+        if (!isSuccess) {
+          const errorBody = this.sanitizeData(json?.error || text);
+          console.warn(`[Higgsfield Diagnostic] Higgsfield Tool Error (${toolName}): HTTP ${status}, Body:`, JSON.stringify(errorBody, null, 2));
+
           const isTransient = status === 429 || status === 502 || status === 503 || status === 504;
           const errMsg = `Higgsfield MCP HTTP ${status}: ${json?.error?.message || json?.message || text || 'Unknown error'}`;
           
@@ -748,15 +869,20 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
         }
 
         if (json?.error) {
+          const rpcErr = this.sanitizeData(json.error);
+          console.warn(`[Higgsfield Diagnostic] JSON-RPC Error (${toolName}):`, JSON.stringify(rpcErr, null, 2));
           throw new Error(`Higgsfield MCP JSON-RPC Error: ${json.error.message || JSON.stringify(json.error)}`);
         }
 
         return json?.result || json;
       } catch (err: any) {
         lastError = err;
+        const durationMs = Date.now() - startTime;
         const msg = err?.message || String(err);
         const isNetworkOrTimeout = msg.includes('timeout') || msg.includes('ETIMEDOUT') || msg.includes('ECONNREFUSED') || msg.includes('fetch');
         
+        console.warn(`[Higgsfield Diagnostic] Tool call exception (${toolName}) attempt ${attempt}/${maxRetries} in ${durationMs}ms:`, msg);
+
         if (isNetworkOrTimeout && attempt < maxRetries) {
           await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
           continue;
