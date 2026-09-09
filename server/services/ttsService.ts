@@ -271,9 +271,9 @@ export class TTSService {
       const errTxt = await response.text().catch(() => '');
       if (response.status === 401 || response.status === 403) {
         keyRotator.reportKeyError('openai', openAIKey, `HTTP ${response.status}: ${errTxt}`);
-        console.warn(`[TTSService] OpenAI TTS error (${response.status}): Invalid or unauthorized API key. Key auto-disabled; falling back.`);
+        console.log(`[TTSService] OpenAI TTS error (${response.status}): Invalid or unauthorized API key. Key auto-disabled; falling back.`);
       } else {
-        console.warn(`[TTSService] OpenAI TTS error (${response.status}): ${errTxt}`);
+        console.log(`[TTSService] OpenAI TTS error (${response.status}): ${errTxt}`);
       }
       return null;
     }
@@ -343,7 +343,7 @@ export class TTSService {
       }
     } else {
       const errTxt = await response.text().catch(() => '');
-      console.warn(`[TTSService] Fal.ai TTS error (${response.status}): ${errTxt}`);
+      console.log(`[TTSService] Fal.ai TTS error (${response.status}): ${errTxt}`);
     }
     return null;
   }
@@ -375,7 +375,7 @@ export class TTSService {
         const openAiRes = await this.generateOpenAITTS(cleanText, voiceType, extraConfig?.speed || 1.0);
         if (openAiRes) return openAiRes;
       } catch (err) {
-        console.warn('[TTSService] OpenAI TTS error, trying fallbacks...', err);
+        console.log('[TTSService] OpenAI TTS error, trying fallbacks...', err);
       }
     }
 
@@ -386,7 +386,7 @@ export class TTSService {
         const falRes = await this.generateFalTTS(cleanText, falModel, { ...preset, ...extraConfig });
         if (falRes) return falRes;
       } catch (err) {
-        console.warn('[TTSService] Fal.ai TTS error, trying fallbacks...', err);
+        console.log('[TTSService] Fal.ai TTS error, trying fallbacks...', err);
       }
     }
 
@@ -426,7 +426,7 @@ export class TTSService {
         if (gcpErr?.message?.includes('PERMISSION_DENIED') || gcpErr?.message?.includes('timed out')) {
           this.gcpTtsDisabled = true;
         }
-        console.warn(`[TTSService] Google Cloud TTS Notice (${gcpErr?.message}). Proceeding to next provider...`);
+        console.log(`[TTSService] Google Cloud TTS Notice (${gcpErr?.message}). Proceeding to next provider...`);
       }
     }
 
@@ -549,7 +549,7 @@ export class TTSService {
         return { buffer: fullBuffer, tempFilePath: tempPath };
       }
     } catch (gtErr: any) {
-      console.warn('[TTSService] Google Speech fallback error:', gtErr?.message || gtErr);
+      console.log('[TTSService] Google Speech fallback error:', gtErr?.message || gtErr);
     }
     return null;
   }

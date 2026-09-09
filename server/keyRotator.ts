@@ -288,7 +288,7 @@ class ApiKeyRotatorService {
       if (key) {
         if (key === process.env.GEMINI_API_KEY || key === process.env.VEO_API_KEY || key === process.env.OPENAI_API_KEY || key === process.env.FAL_KEY) {
           this.disabledEnvKeys.add(key);
-          console.warn(`[KeyRotator] Disabled invalid/failing environment key for ${provider} (${this.maskKey(key)})`);
+          console.log(`[KeyRotator] Disabled invalid/failing environment key for ${provider} (${this.maskKey(key)})`);
         }
       }
 
@@ -349,7 +349,7 @@ class ApiKeyRotatorService {
           })
           .where(eq(apiKeys.id, targetRow.id))
           .run();
-        console.warn(`[KeyRotator] ${provider.toUpperCase()} Key (${targetRow.maskedKey}) put on COOLDOWN in DB for ${(cooldownMs/1000).toFixed(1)}s.`);
+        console.log(`[KeyRotator] ${provider.toUpperCase()} Key (${targetRow.maskedKey}) put on COOLDOWN in DB for ${(cooldownMs/1000).toFixed(1)}s.`);
       } else {
         db.update(apiKeys)
           .set({
@@ -510,7 +510,7 @@ class ApiKeyRotatorService {
           errMsg = String(err);
         }
 
-        console.warn(`[KeyRotator] Gemini attempt ${attempt}/${maxAttempts} failed on key (${this.maskKey(apiKey)}): ${errMsg}`);
+        console.log(`[KeyRotator] Gemini attempt ${attempt}/${maxAttempts} failed on key (${this.maskKey(apiKey)}): ${errMsg}`);
         this.reportKeyError('gemini', apiKey, err);
 
         const isTransient = errMsg.includes('429') ||

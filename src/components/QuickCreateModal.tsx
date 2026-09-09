@@ -45,12 +45,12 @@ export const QuickCreateModal: React.FC<QuickCreateModalProps> = ({ isOpen, onCl
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/85 backdrop-blur-md overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-start justify-center p-3 sm:p-4 md:p-6 bg-black/85 backdrop-blur-md overflow-y-auto">
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          className="relative w-full max-w-xl bg-[#090D1C] border border-indigo-500/30 rounded-3xl shadow-[0_0_50px_rgba(99,102,241,0.25)] overflow-hidden my-auto"
+          className="relative w-full max-w-xl bg-[#090D1C] border border-indigo-500/30 rounded-3xl shadow-[0_0_50px_rgba(99,102,241,0.25)] overflow-hidden my-auto sm:my-10"
         >
           {/* Header */}
           <div className="p-5 border-b border-slate-800/80 bg-gradient-to-r from-indigo-950/40 via-[#0B1028] to-purple-950/40 flex items-center justify-between">
