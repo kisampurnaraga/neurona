@@ -969,6 +969,7 @@ export class ImageGenerationService {
     // Determine target engine route
     const rawEngine = (engine || FounderService.getImageEngine() || 'fal').toLowerCase();
     const isHiggsfieldEngine = rawEngine.includes('higgsfield') || 
+      rawEngine === 'soul_2' ||
       rawEngine === 'wan3_0' || 
       rawEngine === 'veo3_1_lite' || 
       rawEngine === 'veo3_1' || 

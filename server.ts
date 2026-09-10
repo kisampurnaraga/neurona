@@ -750,7 +750,13 @@ async function startServer() {
          await ProductionOrchestrator.rejectFallback(projectId);
       }
       
-      res.json({ ...result, projectId: newProjectId });
+      res.json({ 
+        ...result, 
+        projectId: newProjectId,
+        directResult,
+        assetUrl: directResult?.assetUrl,
+        videoUrl: directResult?.assetUrl
+      });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

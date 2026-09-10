@@ -1014,14 +1014,14 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     return null;
   }
 
-  private async waitForJob(jobId: string, timeoutSeconds = 300): Promise<string> {
+  private async waitForJob(jobId: string, timeoutSeconds = 600): Promise<string> {
     const startTime = Date.now();
     const maxWaitMs = timeoutSeconds * 1000;
 
     console.log(`[Higgsfield MCP] Awaiting job completion (jobId: ${jobId}, timeout: ${timeoutSeconds}s)...`);
 
     while (Date.now() - startTime < maxWaitMs) {
-      await new Promise(r => setTimeout(r, 5000));
+      await new Promise(r => setTimeout(r, 6000));
 
       try {
         const statusResult = await this.callMCPTool('job_status', { jobId }, 2);
@@ -1029,7 +1029,7 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
         const gen = statusResult?.structuredContent?.generation || statusResult?.generation || {};
         const status = (gen.status || statusResult?.status || '').toLowerCase();
 
-        if (status === 'completed' || status === 'success' || status === 'succeeded') {
+        if (status === 'completed' || status === 'success' || status === 'succeeded' || status === 'done' || status === 'finished') {
           const url = this.extractAssetUrlFromResult(statusResult);
           if (url) {
             console.log(`[Higgsfield MCP] Job ${jobId} completed successfully! URL: ${url}`);
@@ -1038,6 +1038,8 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
         } else if (status === 'failed' || status === 'cancelled' || status === 'rejected' || status === 'error') {
           const failureReason = gen.error || gen.failedReason || statusResult?.error?.message || statusResult?.error || 'Generation rejected by provider';
           throw new Error(`Higgsfield job [${jobId}] failed: ${failureReason}`);
+        } else {
+          console.log(`[Higgsfield MCP] Job ${jobId} status: ${status || 'running/processing'}... elapsed: ${Math.round((Date.now() - startTime) / 1000)}s`);
         }
       } catch (err: any) {
         if (err?.message?.includes('failed:')) {
@@ -1161,7 +1163,7 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
 
       if (jobId) {
         request.onProgress?.(`Higgsfield MCP: Job ${jobId.substring(0, 8)} in progress...`);
-        assetUrl = await this.waitForJob(jobId, 300);
+        assetUrl = await this.waitForJob(jobId, 600);
       } else {
         assetUrl = this.extractAssetUrlFromResult(mcpResult);
       }
@@ -1245,7 +1247,7 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
 
       if (jobId) {
         request.onProgress?.(`Higgsfield MCP: Job ${jobId.substring(0, 8)} in progress...`);
-        assetUrl = await this.waitForJob(jobId, 300);
+        assetUrl = await this.waitForJob(jobId, 600);
       } else {
         assetUrl = this.extractAssetUrlFromResult(mcpResult);
       }

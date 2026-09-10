@@ -703,8 +703,12 @@ export default function App() {
         }, 500);
       }
 
-      if (data.action === 'TOGGLE_HUD') {
-        setCurrentView('HUD_NODE');
+      if (data.directResult || data.assetUrl || data.videoUrl) {
+        const vUrl = data.assetUrl || data.videoUrl || data.directResult?.assetUrl;
+        if (vUrl) {
+          console.log(`[QuickCreate] Video generated successfully:`, vUrl);
+          setIsRenderGalleryOpen(true);
+        }
       }
 
       if (data.projectId && data.projectId !== projectId) {
