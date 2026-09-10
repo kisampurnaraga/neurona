@@ -1058,6 +1058,53 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     HiggsfieldMCPAdapter.isInitialized = false;
   }
 
+  private checkForStructuredError(mcpResult: any, modelId: string): void {
+    if (!mcpResult) return;
+    
+    let parsed = mcpResult;
+    if (typeof mcpResult === 'string') {
+      try {
+        parsed = JSON.parse(mcpResult);
+      } catch {}
+    }
+
+    const structuredContent = parsed?.structuredContent || {};
+    const hasError = parsed?.isError === true || !!structuredContent.error || !!parsed?.error;
+
+    if (hasError) {
+      const errorMsg = structuredContent.error || parsed?.error?.message || parsed?.error || 'Unknown Higgsfield error';
+      const requestId = structuredContent.request_id || parsed?.requestId;
+      const recoveryTool = structuredContent.recovery_tool;
+
+      let code: 'QUOTA_EXCEEDED' | 'AUTH_ERROR' | 'ERROR' = 'ERROR';
+      let friendlyMessage = `Higgsfield MCP error: ${errorMsg}`;
+
+      if (errorMsg.toLowerCase().includes('out of credits') || errorMsg.toLowerCase().includes('insufficient credits') || errorMsg.toLowerCase().includes('no credits')) {
+        code = 'QUOTA_EXCEEDED';
+        friendlyMessage = 'Higgsfield is out of credits.';
+      } else if (errorMsg.toLowerCase().includes('unauthorized') || errorMsg.toLowerCase().includes('token') || errorMsg.toLowerCase().includes('auth')) {
+        code = 'AUTH_ERROR';
+        friendlyMessage = 'Higgsfield authentication failed.';
+      }
+
+      const errorObj: any = new Error(friendlyMessage);
+      errorObj.code = code;
+      errorObj.provider = 'higgsfield';
+      errorObj.stage = 'generation';
+      errorObj.retryable = false;
+      errorObj.message = friendlyMessage;
+      errorObj.providerMessage = errorMsg;
+      errorObj.requestId = requestId;
+      errorObj.recoveryTool = recoveryTool;
+      errorObj.metadata = {
+        modelId,
+        rawResult: parsed
+      };
+
+      throw errorObj;
+    }
+  }
+
   async generateScene(scene: Scene, context: string, onProgress?: (msg: string) => void): Promise<string> {
     onProgress?.('Connecting to Higgsfield MCP Video Engine...');
 
@@ -1158,6 +1205,7 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
 
       console.log(`[Higgsfield MCP] Calling ${toolName} for Image-to-Video. Params:`, JSON.stringify(params));
       const mcpResult = await this.callMCPTool(toolName, toolArgs);
+      this.checkForStructuredError(mcpResult, modelId);
       const jobId = this.extractJobId(mcpResult);
       let assetUrl: string | null = null;
 
@@ -1242,6 +1290,7 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       console.log(`[Higgsfield MCP] Calling ${toolName} for Text-to-Video. Params:`, JSON.stringify(params));
 
       const mcpResult = await this.callMCPTool(toolName, toolArgs);
+      this.checkForStructuredError(mcpResult, modelId);
       const jobId = this.extractJobId(mcpResult);
       let assetUrl: string | null = null;
 
@@ -1325,6 +1374,7 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
       console.log(`[Higgsfield MCP] Calling ${toolName} for Text-to-Image. Params:`, JSON.stringify(params));
 
       const mcpResult = await this.callMCPTool(toolName, toolArgs);
+      this.checkForStructuredError(mcpResult, modelId);
       const jobId = this.extractJobId(mcpResult);
       let assetUrl: string | null = null;
 

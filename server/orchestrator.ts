@@ -1429,6 +1429,15 @@ export class ProductionOrchestrator {
           }
           project.status = 'FAILED';
           project.error = genErr?.message || 'Quick Create video generation failed.';
+          if (genErr?.code) {
+            project.providerError = {
+              code: genErr.code,
+              provider: genErr.provider || 'higgsfield',
+              stage: genErr.stage || 'generation',
+              retryable: genErr.retryable ?? false,
+              message: genErr.message
+            };
+          }
           project.agentStatus['AI Video Director'] = 'FAILED';
           projectEvents.emit(`update:${id}`, project);
 

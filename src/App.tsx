@@ -1175,6 +1175,10 @@ export default function App() {
     }
     
     if (project.providerError) {
+      if (project.providerError.code === 'QUOTA_EXCEEDED') {
+        const pModel = project.videoModel || 'veo3_1_lite';
+        return `Higgsfield generation blocked. Your Higgsfield workspace is out of credits. Model: ${pModel} | Reason: Insufficient credits.`;
+      }
       return `Kendala pada provider ${project.providerError.provider}: ${project.providerError.message}`;
     }
 
