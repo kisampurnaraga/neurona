@@ -1120,6 +1120,12 @@ export interface ProductionStartOptions {
   videoAdsConfig?: any;
   quickCreateConfig?: any;
   userRole?: string;
+  executionMode?: 'FAST' | 'DIRECTOR';
+  characterReferenceUrl?: string;
+  productReferenceUrl?: string;
+  styleReferenceUrl?: string;
+  videoReferenceUrl?: string;
+  generalReferenceUrl?: string;
 }
 
 export class ProductionOrchestrator {
@@ -1129,7 +1135,7 @@ export class ProductionOrchestrator {
 
   static async startProduction(input: string | ProductionStartOptions) {
     const options: ProductionStartOptions = typeof input === 'string' ? { prompt: input } : input;
-    const { prompt, videoType, videoModel, videoProvider, videoModelDisplayName, ttsVoiceConfig, attachedAssets, affiliateConfig, animationConfig, educationalConfig, filmConfig, videoAdsConfig, quickCreateConfig, userRole } = options;
+    const { prompt, videoType, videoModel, videoProvider, videoModelDisplayName, ttsVoiceConfig, attachedAssets, affiliateConfig, animationConfig, educationalConfig, filmConfig, videoAdsConfig, quickCreateConfig, userRole, executionMode, characterReferenceUrl, productReferenceUrl, styleReferenceUrl, videoReferenceUrl, generalReferenceUrl } = options;
 
     const id = crypto.randomUUID();
     
@@ -1144,6 +1150,12 @@ export class ProductionOrchestrator {
         resolvedType = 'EDUCATIONAL';
       } else if (p.includes('affiliate') || p.includes('sepatu') || p.includes('keranjang kuning') || (attachedAssets && attachedAssets.length > 0)) {
         resolvedType = 'AFFILIATE';
+      } else if (p.includes('iklan') || p.includes('video ads') || p.includes('komersial')) {
+        resolvedType = 'VIDEO_ADS';
+      } else if (p.includes('film') || p.includes('movie') || p.includes('sinematik')) {
+        resolvedType = 'FILM';
+      } else if (p.includes('video cepat') || p.includes('instan') || p.includes('quick create')) {
+        resolvedType = 'QUICK_CREATE';
       }
       console.log(`[Orchestrator] Keyword-resolved resolvedType: ${resolvedType}`);
     }
@@ -1195,14 +1207,14 @@ export class ProductionOrchestrator {
         pricePromo: affiliateConfig?.pricePromo || "Promo Diskon Terbatas + Gratis Ongkir",
         callToAction: affiliateConfig?.callToAction || "Klik keranjang kuning di kiri bawah sebelum kehabisan!",
         hookStyle: affiliateConfig?.hookStyle || 'PAIN_POINT',
-        characterImage: affiliateConfig?.characterImage || undefined,
+        characterImage: characterReferenceUrl || affiliateConfig?.characterImage || undefined,
         productInfo: affiliateConfig?.productInfo || undefined,
         productVisualAnalysis: affiliateConfig?.productVisualAnalysis || undefined,
         characterVisualAnalysis: (affiliateConfig as any)?.characterVisualAnalysis || undefined,
         productImages: (affiliateConfig?.productImages && affiliateConfig.productImages.length > 0)
           ? affiliateConfig.productImages
-          : (attachedAssets?.filter(a => a.type === 'IMAGE').map(a => a.url) || []),
-        referenceVideoUrl: affiliateConfig?.referenceVideoUrl || attachedAssets?.find(a => a.type === 'VIDEO')?.url
+          : (productReferenceUrl ? [productReferenceUrl] : attachedAssets?.filter(a => a.type === 'IMAGE').map(a => a.url) || []),
+        referenceVideoUrl: videoReferenceUrl || affiliateConfig?.referenceVideoUrl || attachedAssets?.find(a => a.type === 'VIDEO')?.url
       } : undefined,
       animationConfig: resolvedType === 'ANIMATION' ? {
         title: animationConfig?.title || "Animasi 3D Sinematik",
@@ -1213,7 +1225,7 @@ export class ProductionOrchestrator {
         worldSetting: animationConfig?.worldSetting || "Dunia penuh warna dengan pencahayaan sinematik",
         voiceTone: animationConfig?.voiceTone || 'CHEERFUL',
         aspectRatio: animationConfig?.aspectRatio || '16:9',
-        characterReferenceUrl: animationConfig?.characterReferenceUrl,
+        characterReferenceUrl: characterReferenceUrl || animationConfig?.characterReferenceUrl,
         characterReferenceUrls: animationConfig?.characterReferenceUrls
       } : undefined,
       educationalConfig: resolvedType === 'EDUCATIONAL' ? {
@@ -1251,7 +1263,8 @@ export class ProductionOrchestrator {
         topic: quickCreateConfig?.topic || "Inspirasi Hari Ini",
         aspectRatio: quickCreateConfig?.aspectRatio || '9:16',
         targetAudience: quickCreateConfig?.targetAudience || "Generasi Muda",
-        style: quickCreateConfig?.style || 'CINEMATIC'
+        style: quickCreateConfig?.style || 'CINEMATIC',
+        imageUrl: quickCreateConfig?.imageUrl || characterReferenceUrl || productReferenceUrl || generalReferenceUrl
       } : undefined,
       activeAgent: 'Creative Strategist',
       agentStatus: {
@@ -1270,6 +1283,7 @@ export class ProductionOrchestrator {
     };
 
     (project as any).userRole = userRole;
+    (project as any).executionMode = executionMode;
 
     appendLog(project, 'PROTOCOL', `DISPATCHING MISSION [${resolvedType}] -> ID: ${id.substring(0, 8)}`, 'INFO');
     appendLog(project, 'BATARA', `TASKING CREATIVE STRATEGIST -> Merumuskan konsep & arsitektur video: "${prompt.substring(0, 60)}..."`, 'INFO');
@@ -1289,176 +1303,6 @@ export class ProductionOrchestrator {
     const project = projects.get(id)!;
     const vType = project.videoType;
     console.log(`[Orchestrator] runPipeline for id: ${id}, vType: ${vType}`);
-
-    // ISOLATED DIRECT GENERATION FLOW FOR QUICK CREATE (Bypasses Storyboard-First Gate)
-    if (vType === 'QUICK_CREATE') {
-      try {
-        project.status = 'PRODUCING';
-        project.overallProgress = 15;
-        project.currentPhaseName = 'Direct Generation (Quick Create)';
-        project.agentStatus['Creative Strategist'] = 'COMPLETE';
-        project.agentStatus['Storyboard Director'] = 'COMPLETE';
-        project.agentStatus['Human Approval Gate'] = 'COMPLETE';
-        project.agentStatus['AI Video Director'] = 'WORKING';
-        project.activeAgent = 'AI Video Director';
-        appendLog(project, 'PROTOCOL', `[Quick Create] Starting direct video generation with isolated routing...`, 'INFO');
-        projectEvents.emit(`update:${id}`, project);
-
-        const config = (project as any).quickCreateConfig || {};
-        const preferredProvider = project.videoProvider || 'higgsfield';
-        const model = project.videoModel || 'veo3_1_lite';
-        const isI2V = !!config.imageUrl;
-        const promptText = config.prompt || prompt || 'Cinematic video scene';
-        const duration = config.duration || 5;
-        const aspectRatio = config.aspectRatio || '9:16';
-        const userId = project.userId || 'system';
-
-        // 1. Resolve Provider via Router with allowFallback=false
-        const route = MediaProviderRouter.resolveRoute('VIDEO', {
-          preferredProvider,
-          preferredModelOrEngine: model
-        });
-
-        appendLog(project, 'PROTOCOL', `[Quick Create] Routed to provider: ${route.providerName} (${route.model})`, 'INFO');
-
-        // 2. Calculate Cost & HOLD Credits
-        const creditCalc = CreditService.calculateCreditCost(route.model, {
-          provider: route.providerId,
-          operation: isI2V ? 'image-to-video' : 'text-to-video',
-          duration
-        });
-
-        let holdId: string | undefined = undefined;
-        if (userId && creditCalc.credits > 0) {
-          const holdRes = await CreditService.holdCredits(
-            userId,
-            creditCalc.credits,
-            id,
-            undefined,
-            route.providerId,
-            route.model,
-            isI2V ? 'image-to-video' : 'text-to-video'
-          );
-
-          if (!holdRes.success) {
-            const errMsg = holdRes.message || 'Saldo kredit tidak mencukupi untuk Quick Create.';
-            appendLog(project, 'PROTOCOL', `[Quick Create] Credit hold failed: ${errMsg}`, 'ERROR');
-            project.status = 'FAILED';
-            project.error = errMsg;
-            projectEvents.emit(`update:${id}`, project);
-            return;
-          }
-          holdId = holdRes.holdId;
-          appendLog(project, 'PROTOCOL', `[Quick Create] Credit held (Hold ID: ${holdId}, Amount: ${creditCalc.credits} credits). Generating video...`, 'INFO');
-        }
-
-        project.overallProgress = 40;
-        projectEvents.emit(`update:${id}`, project);
-
-        // 3. Execute Direct Generation via Provider
-        let videoUrl = '';
-        try {
-          const providerInstance: any = getVideoProvider(route.providerId);
-          if (isI2V && providerInstance.imageToVideo) {
-            videoUrl = await providerInstance.imageToVideo({
-              imageUrl: config.imageUrl!,
-              prompt: promptText,
-              duration,
-              aspectRatio,
-              model: route.model,
-              onProgress: (pMsg: string) => {
-                appendLog(project, 'VIDEO', `[Quick Create] ${pMsg}`, 'INFO');
-              }
-            });
-          } else {
-            videoUrl = await providerInstance.generateVideo({
-              prompt: promptText,
-              duration,
-              aspectRatio,
-              model: route.model,
-              onProgress: (pMsg: string) => {
-                appendLog(project, 'VIDEO', `[Quick Create] ${pMsg}`, 'INFO');
-              }
-            });
-          }
-
-          if (!videoUrl) {
-            throw new Error(`Provider ${route.providerName} did not return a valid video URL.`);
-          }
-
-          // 4. Commit Credits upon successful generation
-          if (userId && holdId && creditCalc.credits > 0) {
-            await CreditService.commitHold(userId, creditCalc.credits, holdId);
-          }
-
-          // 5. Save and finalize project
-          const savedUrl = await saveFileLocally(videoUrl, 'quick_create', 'mp4', project);
-          project.finalVideoUrl = savedUrl;
-          project.status = 'COMPLETED';
-          project.overallProgress = 100;
-          project.currentPhaseName = 'Produksi Selesai (100%)';
-          project.agentStatus['AI Video Director'] = 'COMPLETE';
-          project.agentStatus['Video Assembly Editor'] = 'COMPLETE';
-          project.agentStatus['Audio Designer'] = 'COMPLETE';
-          project.agentStatus['Viral Content Editor'] = 'COMPLETE';
-          project.agentStatus['Video QA Director'] = 'COMPLETE';
-          project.agentStatus['Distribution Manager'] = 'COMPLETE';
-          appendLog(project, 'PROTOCOL', `[Quick Create] Direct generation completed successfully: ${savedUrl}`, 'SUCCESS');
-          projectEvents.emit(`update:${id}`, project);
-
-          try {
-            await db.update(dbProjects)
-              .set({
-                status: 'COMPLETED',
-                finalVideoUrl: savedUrl
-              })
-              .where(eq(dbProjects.id, id));
-          } catch (dbErr) {}
-
-          return;
-        } catch (genErr: any) {
-          // 6. Explicit Failure = STOP + REFUND
-          console.error('[Quick Create] Generation error:', genErr);
-          if (userId && holdId && creditCalc.credits > 0) {
-            try {
-              await CreditService.refundCredits(userId, creditCalc.credits, genErr?.message || 'Quick Create video generation failed', holdId);
-              appendLog(project, 'PROTOCOL', `[Quick Create] Generation failed: ${genErr?.message}. Credits refunded.`, 'ERROR');
-            } catch (refErr: any) {
-              console.error('[Quick Create] Refund error:', refErr);
-            }
-          }
-          project.status = 'FAILED';
-          project.error = genErr?.message || 'Quick Create video generation failed.';
-          if (genErr?.code) {
-            project.providerError = {
-              code: genErr.code,
-              provider: genErr.provider || 'higgsfield',
-              stage: genErr.stage || 'generation',
-              retryable: genErr.retryable ?? false,
-              message: genErr.message
-            };
-          }
-          project.agentStatus['AI Video Director'] = 'FAILED';
-          projectEvents.emit(`update:${id}`, project);
-
-          try {
-            await db.update(dbProjects)
-              .set({
-                status: 'FAILED'
-              })
-              .where(eq(dbProjects.id, id));
-          } catch (dbErr) {}
-
-          return;
-        }
-      } catch (fatalErr: any) {
-        console.error('[Quick Create] Fatal error:', fatalErr);
-        project.status = 'FAILED';
-        project.error = fatalErr?.message;
-        projectEvents.emit(`update:${id}`, project);
-        return;
-      }
-    }
 
     try {
       project.overallProgress = 18;
@@ -1811,6 +1655,11 @@ export class ProductionOrchestrator {
       appendLog(project, 'PROTOCOL', `REVIEW GATEWAY (50%): Pengguna bebas memilih: 1) Cukup Storyboard (Gratis), 2) Generate Gambar Karakter Konsisten (${project.storyboard.totalImageCredits} Kredit), atau 3) Full Video Master (${project.storyboard.totalVideoCredits} Kredit).`, 'WARN');
 
       projectEvents.emit(`update:${id}`, project);
+
+      if ((project as any).executionMode === 'FAST') {
+         appendLog(project, 'PROTOCOL', `FAST EXECUTION MODE AKTIF: Melewati Human Approval Gate, memanggil Rendering Engine otomatis.`, 'INFO');
+         setTimeout(() => { ProductionOrchestrator.approveStoryboard(id).catch(console.error); }, 1000);
+      }
 
     } catch (error: any) {
       if (error.name === 'QuotaError') {

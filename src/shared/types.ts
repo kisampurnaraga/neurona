@@ -218,6 +218,7 @@ export interface QuickCreateConfig {
   videoModelDisplayName?: string;
   characterReferenceUrl?: string;
   sketchReferenceUrl?: string;
+  imageUrl?: string;
 }
 
 export interface AgentTelemetry {
@@ -348,6 +349,27 @@ export interface ProductionContext {
     aspectRatio?: '9:16' | '16:9' | '1:1';
     category?: string;
   };
+}
+
+export interface ChatProductionContext extends ProductionContext {
+  studio: VideoType;
+  intent: string;
+  brief: string;
+  duration: number; // in seconds
+  aspectRatio: '9:16' | '16:9' | '1:1';
+  style?: string;
+  language?: string;
+  targetAudience?: string;
+  objective?: string;
+  attachedAssets: ProductAsset[];
+  characterReferences: string[];
+  productReferences: string[];
+  styleReferences: string[];
+  videoReferences: string[];
+  providerPreference: 'AUTO' | 'HIGGSFIELD' | 'OPENART';
+  modelPreference?: string;
+  executionMode: 'FAST' | 'DIRECTOR';
+  autoExecute: boolean;
 }
 
 export interface ContentIdea {

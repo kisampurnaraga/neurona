@@ -88,6 +88,99 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number = 14000, ta
 }
 
 export class LLMService {
+  static async classifyAttachments(prompt: string, assets: { url: string, name: string, type: string }[]): Promise<Record<string, string>> {
+    const result: Record<string, string> = {};
+    if (!assets || assets.length === 0) return result;
+
+    const imageAssets: { url: string, name: string, type: string }[] = [];
+    for (const asset of assets) {
+      if (asset.type === 'VIDEO' || asset.url.startsWith('data:video/')) {
+        result.videoReferenceUrl = asset.url;
+      } else {
+        imageAssets.push(asset);
+      }
+    }
+
+    if (imageAssets.length === 0) return result;
+
+    const genAI = getGenAI();
+    if (!genAI) {
+      if (imageAssets.length > 0) result.characterReferenceUrl = imageAssets[0].url;
+      if (imageAssets.length > 1) result.productReferenceUrl = imageAssets[1].url;
+      return result;
+    }
+
+    try {
+      const contents: any[] = [{ 
+        text: `Klasifikasikan setiap gambar lampiran ke salah satu kategori ini: 
+1. CHARACTER/FACE (karakter orang, wajah, avatar, aktor, tokoh)
+2. PRODUCT (barang produk fisik, kemasan, sepatu, gadget, kosmetik)
+3. STYLE_REFERENCE (gaya seni, palet warna, lighting, estetika, mood)
+4. VIDEO_REFERENCE (adegan gerak, storyboard visual, screenshot referensi alur)
+5. GENERAL_REFERENCE (referensi umum/lainnya)
+
+Konteks prompt pengguna: "${prompt}".
+Keluarkan JSON array murni berurutan persis sesuai urutan gambar yang dilampirkan, format:
+[{"category": "CHARACTER/FACE"}, {"category": "PRODUCT"}]` 
+      }];
+      
+      for (const asset of imageAssets) {
+        if (asset.url.startsWith('data:image/')) {
+          const mimeType = asset.url.substring(asset.url.indexOf(':') + 1, asset.url.indexOf(';'));
+          const base64Data = asset.url.substring(asset.url.indexOf(',') + 1);
+          contents.push({
+            inlineData: {
+              data: base64Data,
+              mimeType
+            }
+          });
+        }
+      }
+
+      if (contents.length === 1) {
+        if (imageAssets.length > 0) result.characterReferenceUrl = imageAssets[0].url;
+        if (imageAssets.length > 1) result.productReferenceUrl = imageAssets[1].url;
+        return result;
+      }
+
+      const response = await withTimeout(
+        genAI.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents,
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.1
+          }
+        }),
+        15000,
+        'Attachment Classification'
+      );
+      
+      const classifications = JSON.parse(response.text || "[]");
+      
+      imageAssets.forEach((asset, index) => {
+         const rawCat = (classifications[index]?.category || '').toUpperCase();
+         if (rawCat.includes('CHARACTER') || rawCat.includes('FACE')) {
+           result.characterReferenceUrl = asset.url;
+         } else if (rawCat.includes('PRODUCT')) {
+           result.productReferenceUrl = asset.url;
+         } else if (rawCat.includes('STYLE')) {
+           result.styleReferenceUrl = asset.url;
+         } else if (rawCat.includes('VIDEO')) {
+           result.videoReferenceUrl = asset.url;
+         } else {
+           result.generalReferenceUrl = asset.url;
+         }
+      });
+      return result;
+    } catch (err) {
+      console.warn("Error classifying attachments:", err);
+      if (imageAssets.length > 0) result.characterReferenceUrl = imageAssets[0].url;
+      if (imageAssets.length > 1) result.productReferenceUrl = imageAssets[1].url;
+      return result;
+    }
+  }
+
   static async analyzeIntent(prompt: string): Promise<LLMGenerationResult<any>> {
     const systemInstruction = `Kamu adalah Openclauw, Core Router Logic untuk platform video AI Neuronna.
 Sistem ini menggunakan Arsitektur Dua Fase (Two-Step Pipeline): 

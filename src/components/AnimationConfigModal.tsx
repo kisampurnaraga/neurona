@@ -1111,6 +1111,25 @@ export const AnimationConfigModal: React.FC<AnimationConfigModalProps> = ({
             </div>
           </div>
 
+          {/* AI Video Engine & Provider Selector */}
+          <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800">
+            <UnifiedVideoModelSelector
+              selectedProvider={videoProvider}
+              selectedModelId={videoModel}
+              capability="VIDEO"
+              studioType="animation"
+              themeColor="cyan"
+              idPrefix="anim-video-engine"
+              compact={true}
+              onChange={(selection: SelectedModelData) => {
+                setVideoProvider(selection.provider);
+                setVideoModel(selection.internalModelId);
+                setVideoModelDisplayName(selection.displayName);
+                setVideoEngine(selection.internalModelId);
+              }}
+            />
+          </div>
+
           {/* Footer Submit Button */}
           <div className="pt-2 flex items-center justify-end space-x-3 border-t border-slate-800">
             <button

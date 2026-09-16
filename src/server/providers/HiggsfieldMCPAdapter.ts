@@ -181,6 +181,42 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     return fccConfig.endpoint || process.env.HIGGSFIELD_MCP_ENDPOINT || HiggsfieldMCPAdapter.OFFICIAL_ENDPOINT;
   }
 
+  public getApiEndpoint(): string {
+    const fccConfig: any = (FounderService as any).getHiggsfieldConfig?.() || {};
+    return fccConfig.apiEndpoint || process.env.HIGGSFIELD_API_ENDPOINT || 'https://api.higgsfield.ai/v1';
+  }
+
+  public getExecutionPreference(): 'AUTO' | 'API' | 'MCP' {
+    const fccConfig: any = (FounderService as any).getHiggsfieldConfig?.() || {};
+    return fccConfig.preferredExecution || 'AUTO';
+  }
+
+  public async callDirectApi(path: string, payload: any): Promise<any> {
+    const token = this.getSessionToken();
+    if (!token) throw new Error('Higgsfield token or API key not configured.');
+    const baseUrl = this.getApiEndpoint().replace(/\/+$/, '');
+    const url = `${baseUrl}${path.startsWith('/') ? path : '/' + path}`;
+    
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+    
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`Higgsfield Direct API error ${res.status}: ${txt}`);
+    }
+    
+    const data: any = await res.json();
+    return {
+      assetUrl: data.video_url || data.url || data.output_url || data.assetUrl || data.result?.url
+    };
+  }
+
   public getOAuthAccessToken(): string | null {
     const fccConfig: any = (FounderService as any).getHiggsfieldConfig?.() || {};
     let token = fccConfig.oauthAccessToken || fccConfig.sessionToken || fccConfig.apiKey || process.env.HIGGSFIELD_OAUTH_TOKEN || null;
@@ -1271,6 +1307,43 @@ export class HiggsfieldMCPAdapter implements VideoGenerationProvider {
     });
 
     try {
+      const execPreference = this.getExecutionPreference();
+
+      // If Founder or studio explicitly requested API mode, attempt direct REST API execution
+      if (execPreference === 'API') {
+        try {
+          request.onProgress?.(`Higgsfield API: Dispatching direct generation [${modelId}]...`);
+          const apiRes = await this.callDirectApi('/video/generate', {
+            model: modelId,
+            prompt: request.prompt || 'Cinematic futuristic visual scene',
+            aspect_ratio: aspectRatio,
+            duration
+          });
+
+          if (apiRes && apiRes.assetUrl) {
+            await this.verifyAssetReachability(apiRes.assetUrl, 'VIDEO');
+            CostTrackingService.completeGeneration(generationId, {
+              status: 'SUCCESS',
+              actualCost: estimatedCost
+            });
+            return {
+              success: true,
+              assetUrl: apiRes.assetUrl,
+              videoUrl: apiRes.assetUrl,
+              url: apiRes.assetUrl,
+              generationId,
+              provider: 'higgsfield',
+              model: modelId,
+              costUsd: estimatedCost,
+              executionMode: 'API'
+            };
+          }
+        } catch (apiErr) {
+          console.warn('[Higgsfield Adapter] Direct API execution failed or not ready, falling back to MCP:', apiErr);
+          request.onProgress?.('Higgsfield: Falling back to MCP tool pipeline...');
+        }
+      }
+
       const toolName = this.resolveToolName('TEXT_TO_VIDEO');
       const tool = HiggsfieldMCPAdapter.cachedTools!.find(t => t.name === toolName);
       if (!tool) throw new Error(`Tool ${toolName} definition not found in cache.`);

@@ -837,3 +837,151 @@ export function resolveProviderSafeModel(
     modelDef: FAL_CATALOG_MODELS[0]
   };
 }
+
+// ---------------------------------------------------------------------------
+// 5. CENTRALIZED MODEL CATALOG WITH PERSISTENT PRICING & CAPABILITY FILTERS
+// ---------------------------------------------------------------------------
+
+export type ExecutionPolicy = 'auto' | 'api' | 'mcp';
+
+export interface CatalogModelEntry {
+  modelKey: string; // Composite unique key: e.g. "higgsfield:veo3_1_lite"
+  provider: ModelProvider;
+  internalModelId: string;
+  displayName: string;
+  type: ModelMediaType;
+  tier: ModelTier;
+  capabilities: string[];
+  officialCost: number; // in credits or official base units
+  officialCostUsd: number; // in USD
+  markupPercent: number; // Neurona markup e.g. 25 (%)
+  sellingPrice: number; // Final selling price in credits
+  sellingPriceOverride?: number; // Manual override if specified
+  estimatedMargin: number; // sellingPrice - officialCost
+  enabled: boolean;
+  preferredExecution: ExecutionPolicy; // 'auto' | 'api' | 'mcp'
+  description: string;
+  supportedAspectRatios: string[];
+  badge?: string;
+  lastSync: string;
+}
+
+/**
+ * Calculate selling price and margin while strictly preserving officialCost.
+ * Rule: Never overwrite officialCost with sellingPrice.
+ */
+export function calculateModelPricing(
+  officialCost: number,
+  markupPercent: number = 25,
+  sellingPriceOverride?: number
+): { sellingPrice: number; estimatedMargin: number } {
+  const calculatedPrice = Math.round(officialCost * (1 + markupPercent / 100) * 100) / 100;
+  const finalSellingPrice = (typeof sellingPriceOverride === 'number' && sellingPriceOverride > 0)
+    ? sellingPriceOverride
+    : Math.max(calculatedPrice, officialCost);
+  
+  const estimatedMargin = Math.round((finalSellingPrice - officialCost) * 100) / 100;
+
+  return {
+    sellingPrice: finalSellingPrice,
+    estimatedMargin
+  };
+}
+
+/**
+ * Constructs initial full model catalog entries from static unified model registry.
+ */
+export function buildDefaultCatalogEntries(): CatalogModelEntry[] {
+  const now = new Date().toISOString();
+  
+  // Filter out legacy aliases for the official catalog
+  const primaryModels = ALL_UNIFIED_MODELS.filter(m => !m.isLegacyAlias);
+
+  return primaryModels.map(model => {
+    const modelKey = `${model.provider}:${model.internalModelId}`;
+    const baseOfficialCost = model.costCredits || 10;
+    const { sellingPrice, estimatedMargin } = calculateModelPricing(baseOfficialCost, 25);
+
+    return {
+      modelKey,
+      provider: model.provider,
+      internalModelId: model.internalModelId,
+      displayName: model.displayName,
+      type: model.type,
+      tier: model.tier,
+      capabilities: model.capabilities || [],
+      officialCost: baseOfficialCost,
+      officialCostUsd: model.costUsd || (baseOfficialCost * 0.01),
+      markupPercent: 25,
+      sellingPrice,
+      estimatedMargin,
+      enabled: true,
+      preferredExecution: 'auto',
+      description: model.description || '',
+      supportedAspectRatios: model.supportedAspectRatios || ['16:9', '9:16', '1:1'],
+      badge: model.badge,
+      lastSync: now
+    };
+  });
+}
+
+/**
+ * Studio Capability Filtering:
+ * Automatically filters models based on studio/operation capability without hardcoding per studio.
+ * - Text-to-Video: matches models with 'Text-to-Video' capability or type 'VIDEO'
+ * - Image-to-Video: matches models with 'Image-to-Video' capability or type 'IMAGE_TO_VIDEO' / 'VIDEO'
+ * - Text-to-Image / Image: matches models with 'Text-to-Image' capability or type 'IMAGE'
+ */
+export function filterModelsByCapability(
+  catalog: CatalogModelEntry[],
+  filters: {
+    provider?: string; // 'auto' | 'higgsfield' | 'openart' | 'fal'
+    operation?: 'VIDEO' | 'IMAGE' | 'TEXT_TO_VIDEO' | 'IMAGE_TO_VIDEO' | 'TEXT_TO_IMAGE';
+    onlyEnabled?: boolean;
+  }
+): CatalogModelEntry[] {
+  const { provider, operation = 'VIDEO', onlyEnabled = true } = filters;
+  const provClean = (provider || 'auto').trim().toLowerCase();
+
+  return catalog.filter(entry => {
+    if (onlyEnabled && !entry.enabled) {
+      return false;
+    }
+
+    // Provider filter
+    if (provClean !== 'auto') {
+      if (entry.provider.toLowerCase() !== provClean) {
+        return false;
+      }
+    }
+
+    // Capability / Operation filter
+    const caps = (entry.capabilities || []).map(c => c.toLowerCase());
+    const type = entry.type;
+
+    if (operation === 'IMAGE' || operation === 'TEXT_TO_IMAGE') {
+      if (type === 'VIDEO' || type === 'IMAGE_TO_VIDEO') return false;
+      return type === 'IMAGE' || caps.some(c => c.includes('text-to-image') || c === 'image' || c.includes('stills') || c.includes('portrait'));
+    }
+
+    if (operation === 'IMAGE_TO_VIDEO') {
+      if (type === 'IMAGE') return false;
+      return (
+        type === 'IMAGE_TO_VIDEO' ||
+        type === 'VIDEO' ||
+        caps.some(c => c.includes('image-to-video') || c.includes('i2v'))
+      );
+    }
+
+    if (operation === 'TEXT_TO_VIDEO' || operation === 'VIDEO') {
+      if (type === 'IMAGE') return false;
+      return (
+        type === 'VIDEO' ||
+        type === 'IMAGE_TO_VIDEO' ||
+        caps.some(c => c.includes('video') || c.includes('text-to-video') || c.includes('image-to-video'))
+      );
+    }
+
+    return true;
+  });
+}

@@ -518,6 +518,25 @@ export const EducationalConfigModal: React.FC<EducationalConfigModalProps> = ({
             </div>
           </div>
 
+          {/* AI Video Engine & Provider Selector */}
+          <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-emerald-500/20">
+            <UnifiedVideoModelSelector
+              selectedProvider={videoProvider}
+              selectedModelId={videoModel}
+              capability="VIDEO"
+              studioType="education"
+              themeColor="emerald"
+              idPrefix="edu-video-engine"
+              compact={true}
+              onChange={(selection: SelectedModelData) => {
+                setVideoProvider(selection.provider);
+                setVideoModel(selection.internalModelId);
+                setVideoModelDisplayName(selection.displayName);
+                setVideoEngine(selection.internalModelId);
+              }}
+            />
+          </div>
+
           {/* Footer Action */}
           <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
             <button

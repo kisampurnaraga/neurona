@@ -1,36 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Clapperboard, 
   Sparkles, 
   Zap, 
-  Film, 
-  Check, 
-  Layers, 
-  Info,
-  ShieldCheck,
-  ChevronDown
+  ShieldCheck, 
+  ChevronDown,
+  Cpu,
+  Layers,
+  Settings2
 } from 'lucide-react';
 import { 
-  HIGGSFIELD_CATALOG_MODELS, 
-  OPENART_CATALOG_MODELS, 
-  FAL_CATALOG_MODELS, 
-  UnifiedModelInfo, 
-  ModelProvider,
-  getModelByProviderAndId,
-  normalizeHiggsfieldModelId,
-  normalizeOpenArtModelId
+  CatalogModelEntry, 
+  buildDefaultCatalogEntries, 
+  filterModelsByCapability,
+  ModelProvider
 } from '../shared/modelCatalog';
 
 export interface SelectedModelData {
-  provider: ModelProvider;
+  provider: ModelProvider | 'auto';
   internalModelId: string;
   displayName: string;
   costCredits: number;
+  execution?: string;
 }
 
 export interface UnifiedVideoModelSelectorProps {
   selectedProvider?: string;
   selectedModelId?: string;
+  selectedExecution?: string;
+  capability?: 'VIDEO' | 'IMAGE' | 'TEXT_TO_VIDEO' | 'IMAGE_TO_VIDEO' | 'TEXT_TO_IMAGE';
+  studioType?: string;
   onChange?: (selection: SelectedModelData) => void;
   compact?: boolean;
   themeColor?: 'cyan' | 'purple' | 'indigo' | 'emerald' | 'amber' | 'blue' | 'rose';
@@ -41,319 +40,285 @@ export interface UnifiedVideoModelSelectorProps {
 export const UnifiedVideoModelSelector: React.FC<UnifiedVideoModelSelectorProps> = ({
   selectedProvider: initialProviderProp,
   selectedModelId: initialModelProp,
+  selectedExecution: initialExecutionProp = 'auto',
+  capability = 'VIDEO',
   onChange,
-  compact = true,
   themeColor = 'indigo',
-  idPrefix = 'video-model',
-  label = 'Model AI Video Engine'
+  idPrefix = 'video-model-selector',
+  label = 'AI Media Engine & Provider'
 }) => {
-  // Determine initial state
-  const [activeProvider, setActiveProvider] = useState<ModelProvider>(() => {
+  // 1. Core Selector State
+  const [provider, setProvider] = useState<'auto' | 'higgsfield' | 'openart'>(() => {
     if (initialProviderProp) {
       const p = initialProviderProp.toLowerCase();
       if (p.includes('higgsfield')) return 'higgsfield';
       if (p.includes('openart')) return 'openart';
-      if (p.includes('fal')) return 'fal';
+      if (p === 'auto') return 'auto';
     }
-    // Check local storage or default to higgsfield
-    const savedProvider = localStorage.getItem('neurona_video_provider');
-    if (savedProvider === 'higgsfield' || savedProvider === 'openart' || savedProvider === 'fal') {
-      return savedProvider;
-    }
-    return 'higgsfield';
+    return 'auto';
   });
 
-  const [activeModelId, setActiveModelId] = useState<string>(() => {
-    if (initialModelProp) {
-      return initialModelProp;
-    }
-    const savedModel = localStorage.getItem('neurona_video_model');
-    if (savedModel) return savedModel;
-    return 'veo3_1_lite';
+  const [modelId, setModelId] = useState<string>(() => {
+    if (initialModelProp) return initialModelProp;
+    return 'auto';
   });
 
-  // Sync when props change
+  const [execution, setExecution] = useState<string>(() => {
+    return initialExecutionProp || 'auto';
+  });
+
+  // 2. Catalog & Dynamic Models State
+  const [catalog, setCatalog] = useState<CatalogModelEntry[]>(() => buildDefaultCatalogEntries());
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState<boolean>(false);
+
+  // Sync with prop changes if parent updates
   useEffect(() => {
-    if (initialProviderProp) {
+    if (initialProviderProp !== undefined) {
       const p = initialProviderProp.toLowerCase();
-      if (p.includes('higgsfield')) setActiveProvider('higgsfield');
-      else if (p.includes('openart')) setActiveProvider('openart');
-      else if (p.includes('fal')) setActiveProvider('fal');
+      if (p.includes('higgsfield')) setProvider('higgsfield');
+      else if (p.includes('openart')) setProvider('openart');
+      else setProvider('auto');
     }
   }, [initialProviderProp]);
 
   useEffect(() => {
-    if (initialModelProp) {
-      setActiveModelId(initialModelProp);
+    if (initialModelProp !== undefined) {
+      setModelId(initialModelProp);
     }
   }, [initialModelProp]);
 
-  // Available models based on active provider
-  const availableModels: UnifiedModelInfo[] = React.useMemo(() => {
-    if (activeProvider === 'higgsfield') {
-      return HIGGSFIELD_CATALOG_MODELS;
-    } else if (activeProvider === 'openart') {
-      return OPENART_CATALOG_MODELS;
-    } else {
-      return FAL_CATALOG_MODELS;
+  // Fetch dynamic model catalog from backend FounderService/DB
+  const fetchCatalog = useCallback(async () => {
+    setIsLoadingCatalog(true);
+    try {
+      const op = capability || 'VIDEO';
+      const res = await fetch(`/api/models/catalog?operation=${op}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.models) && data.models.length > 0) {
+          setCatalog(data.models);
+        }
+      }
+    } catch (err) {
+      console.warn('[UnifiedVideoModelSelector] Using local catalog fallback:', err);
+    } finally {
+      setIsLoadingCatalog(false);
     }
-  }, [activeProvider]);
+  }, [capability]);
 
-  // Current selected model object
-  const currentModel: UnifiedModelInfo = React.useMemo(() => {
-    const found = availableModels.find(m => m.internalModelId === activeModelId);
-    if (found) return found;
-    return availableModels[0];
-  }, [availableModels, activeModelId]);
+  useEffect(() => {
+    fetchCatalog();
+  }, [fetchCatalog]);
 
-  // Notify parent of selection
-  const handleSelect = (provider: ModelProvider, modelId: string) => {
-    setActiveProvider(provider);
-    setActiveModelId(modelId);
+  // Filter available models strictly by studio capability and active provider
+  const availableModels = useMemo(() => {
+    return filterModelsByCapability(catalog, {
+      provider: provider === 'auto' ? undefined : provider,
+      operation: capability,
+      onlyEnabled: true
+    });
+  }, [catalog, provider, capability]);
 
-    const modelsList = provider === 'higgsfield' 
-      ? HIGGSFIELD_CATALOG_MODELS 
-      : provider === 'openart' 
-      ? OPENART_CATALOG_MODELS 
-      : FAL_CATALOG_MODELS;
-    
-    const selected = modelsList.find(m => m.internalModelId === modelId) || modelsList[0];
-
-    localStorage.setItem('neurona_video_provider', provider);
-    localStorage.setItem('neurona_video_model', selected.internalModelId);
-    localStorage.setItem('neurona_video_model_display', selected.displayName);
-
-    if (onChange) {
-      onChange({
-        provider,
-        internalModelId: selected.internalModelId,
-        displayName: selected.displayName,
-        costCredits: selected.costCredits
-      });
+  // Resolve current active model info
+  const resolvedModelInfo = useMemo(() => {
+    if (modelId === 'auto') {
+      // Pick first recommended model for the provider
+      const defaultModel = availableModels[0] || catalog[0];
+      return {
+        internalModelId: 'auto',
+        displayName: 'Auto — Recommended',
+        costCredits: defaultModel?.sellingPrice || 8,
+        tier: defaultModel?.tier || 'balanced',
+        provider: provider,
+        description: 'Router will automatically select the best model based on prompt complexity and latency targets.'
+      };
     }
+
+    const found = availableModels.find(m => m.internalModelId === modelId) ||
+                  catalog.find(m => m.internalModelId === modelId);
+
+    if (found) {
+      return {
+        internalModelId: found.internalModelId,
+        displayName: found.displayName,
+        costCredits: found.sellingPrice,
+        tier: found.tier,
+        provider: found.provider,
+        description: found.description
+      };
+    }
+
+    return {
+      internalModelId: modelId,
+      displayName: modelId,
+      costCredits: 8,
+      tier: 'balanced',
+      provider: provider,
+      description: 'Custom model selection'
+    };
+  }, [modelId, availableModels, catalog, provider]);
+
+  // Emit change when selection changes
+  const notifyChange = (newProv: 'auto' | 'higgsfield' | 'openart', newModId: string, newExec: string) => {
+    if (!onChange) return;
+
+    let display = 'Auto — Recommended';
+    let credits = 8;
+
+    if (newModId !== 'auto') {
+      const match = catalog.find(m => m.internalModelId === newModId);
+      if (match) {
+        display = match.displayName;
+        credits = match.sellingPrice;
+      }
+    }
+
+    onChange({
+      provider: newProv,
+      internalModelId: newModId,
+      displayName: display,
+      costCredits: credits,
+      execution: newExec
+    });
   };
 
-  const handleProviderTabChange = (newProvider: ModelProvider) => {
-    let defaultModelId = 'veo3_1_lite';
-    if (newProvider === 'higgsfield') defaultModelId = 'veo3_1_lite';
-    else if (newProvider === 'openart') defaultModelId = 'byte-plus-seedance-2-fast';
-    else if (newProvider === 'fal') defaultModelId = 'fal-ai/veo3.1/lite/image-to-video';
-
-    handleSelect(newProvider, defaultModelId);
+  const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value as 'auto' | 'higgsfield' | 'openart';
+    setProvider(val);
+    // Reset to auto model when provider switches to keep selections valid
+    setModelId('auto');
+    notifyChange(val, 'auto', execution);
   };
 
-  // Color classes mapping
-  const colorMap = {
-    cyan: {
-      activeBorder: 'border-cyan-500',
-      activeBg: 'bg-cyan-500/15',
-      text: 'text-cyan-400',
-      badgeBg: 'bg-cyan-950/80 border-cyan-500/30 text-cyan-300',
-      tabActive: 'bg-cyan-500/20 text-cyan-300 border-cyan-500',
-      radioRing: 'ring-cyan-500',
-      glow: 'shadow-[0_0_15px_rgba(6,182,212,0.25)]'
-    },
-    purple: {
-      activeBorder: 'border-purple-500',
-      activeBg: 'bg-purple-500/15',
-      text: 'text-purple-400',
-      badgeBg: 'bg-purple-950/80 border-purple-500/30 text-purple-300',
-      tabActive: 'bg-purple-500/20 text-purple-300 border-purple-500',
-      radioRing: 'ring-purple-500',
-      glow: 'shadow-[0_0_15px_rgba(168,85,247,0.25)]'
-    },
-    indigo: {
-      activeBorder: 'border-indigo-500',
-      activeBg: 'bg-indigo-500/15',
-      text: 'text-indigo-400',
-      badgeBg: 'bg-indigo-950/80 border-indigo-500/30 text-indigo-300',
-      tabActive: 'bg-indigo-500/20 text-indigo-300 border-indigo-500',
-      radioRing: 'ring-indigo-500',
-      glow: 'shadow-[0_0_15px_rgba(99,102,241,0.25)]'
-    },
-    emerald: {
-      activeBorder: 'border-emerald-500',
-      activeBg: 'bg-emerald-500/15',
-      text: 'text-emerald-400',
-      badgeBg: 'bg-emerald-950/80 border-emerald-500/30 text-emerald-300',
-      tabActive: 'bg-emerald-500/20 text-emerald-300 border-emerald-500',
-      radioRing: 'ring-emerald-500',
-      glow: 'shadow-[0_0_15px_rgba(16,185,129,0.25)]'
-    },
-    amber: {
-      activeBorder: 'border-amber-500',
-      activeBg: 'bg-amber-500/15',
-      text: 'text-amber-400',
-      badgeBg: 'bg-amber-950/80 border-amber-500/30 text-amber-300',
-      tabActive: 'bg-amber-500/20 text-amber-300 border-amber-500',
-      radioRing: 'ring-amber-500',
-      glow: 'shadow-[0_0_15px_rgba(245,158,11,0.25)]'
-    },
-    blue: {
-      activeBorder: 'border-blue-500',
-      activeBg: 'bg-blue-500/15',
-      text: 'text-blue-400',
-      badgeBg: 'bg-blue-950/80 border-blue-500/30 text-blue-300',
-      tabActive: 'bg-blue-500/20 text-blue-300 border-blue-500',
-      radioRing: 'ring-blue-500',
-      glow: 'shadow-[0_0_15px_rgba(59,130,246,0.25)]'
-    },
-    rose: {
-      activeBorder: 'border-rose-500',
-      activeBg: 'bg-rose-500/15',
-      text: 'text-rose-400',
-      badgeBg: 'bg-rose-950/80 border-rose-500/30 text-rose-300',
-      tabActive: 'bg-rose-500/20 text-rose-300 border-rose-500',
-      radioRing: 'ring-rose-500',
-      glow: 'shadow-[0_0_15px_rgba(244,63,94,0.25)]'
-    }
+  const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setModelId(val);
+    notifyChange(provider, val, execution);
   };
 
-  const theme = colorMap[themeColor] || colorMap.indigo;
+  const handleExecutionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setExecution(val);
+    notifyChange(provider, modelId, val);
+  };
+
+  // Theme color accents
+  const themeClasses = {
+    indigo: 'text-indigo-400 border-indigo-500/30 focus:border-indigo-500',
+    cyan: 'text-cyan-400 border-cyan-500/30 focus:border-cyan-500',
+    purple: 'text-purple-400 border-purple-500/30 focus:border-purple-500',
+    emerald: 'text-emerald-400 border-emerald-500/30 focus:border-emerald-500',
+    amber: 'text-amber-400 border-amber-500/30 focus:border-amber-500',
+    blue: 'text-blue-400 border-blue-500/30 focus:border-blue-500',
+    rose: 'text-rose-400 border-rose-500/30 focus:border-rose-500'
+  }[themeColor] || 'text-indigo-400 border-indigo-500/30 focus:border-indigo-500';
 
   return (
-    <div id={`${idPrefix}-container`} className="space-y-2.5">
-      {/* Label and Info */}
+    <div id={`${idPrefix}-root`} className="space-y-3 font-sans">
+      {/* Header & Verification Badge */}
       <div className="flex items-center justify-between">
-        <label className={`text-[11px] uppercase font-bold tracking-wider flex items-center gap-1.5 ${theme.text}`}>
-          <Clapperboard className="w-3.5 h-3.5" />
+        <label className="text-[11px] uppercase font-bold tracking-wider text-slate-300 flex items-center gap-1.5">
+          <Clapperboard className="w-3.5 h-3.5 text-indigo-400" />
           <span>{label}</span>
         </label>
-        <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+        <span className="text-[10px] font-mono text-emerald-400/90 flex items-center gap-1 bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-500/20">
           <ShieldCheck className="w-3 h-3 text-emerald-400" />
-          <span>Provider-Safe Routing</span>
+          <span>Unified Architecture</span>
         </span>
       </div>
 
-      {/* Provider Selector Tabs */}
-      <div className="grid grid-cols-3 gap-1.5 bg-black/40 p-1 rounded-xl border border-white/5">
-        <button
-          type="button"
-          id={`${idPrefix}-tab-higgsfield`}
-          onClick={() => handleProviderTabChange('higgsfield')}
-          className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-            activeProvider === 'higgsfield'
-              ? `${theme.tabActive} border shadow-sm`
-              : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
-          }`}
-        >
-          <Zap className="w-3 h-3 text-amber-400" />
-          <span>Higgsfield MCP</span>
-        </button>
-
-        <button
-          type="button"
-          id={`${idPrefix}-tab-openart`}
-          onClick={() => handleProviderTabChange('openart')}
-          className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-            activeProvider === 'openart'
-              ? `${theme.tabActive} border shadow-sm`
-              : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
-          }`}
-        >
-          <Film className="w-3 h-3 text-purple-400" />
-          <span>OpenArt MCP</span>
-        </button>
-
-        <button
-          type="button"
-          id={`${idPrefix}-tab-fal`}
-          onClick={() => handleProviderTabChange('fal')}
-          className={`py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-            activeProvider === 'fal'
-              ? `${theme.tabActive} border shadow-sm`
-              : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
-          }`}
-        >
-          <Layers className="w-3 h-3 text-cyan-400" />
-          <span>Universal Fal</span>
-        </button>
-      </div>
-
-      {/* Compact Dropdown & Details */}
-      {compact ? (
-        <div className="space-y-2">
-          {/* Select dropdown */}
+      {/* 3-Column Standard Dropdown Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+        {/* 1. PROVIDER SELECTOR */}
+        <div className="space-y-1">
+          <label htmlFor={`${idPrefix}-provider`} className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+            <Cpu className="w-3 h-3 text-slate-400" />
+            <span>Provider</span>
+          </label>
           <div className="relative">
             <select
-              id={`${idPrefix}-select`}
-              value={currentModel.internalModelId}
-              onChange={(e) => handleSelect(activeProvider, e.target.value)}
-              className="w-full bg-[#0A0E20] border border-white/10 hover:border-white/20 focus:border-indigo-500 rounded-xl px-3 py-2 text-xs text-white appearance-none cursor-pointer focus:outline-none transition pr-8"
+              id={`${idPrefix}-provider`}
+              value={provider}
+              onChange={handleProviderChange}
+              className="w-full bg-[#080d1e] border border-slate-700/80 hover:border-slate-600 focus:border-indigo-500 rounded-xl px-3 py-2 text-xs text-white appearance-none cursor-pointer focus:outline-none transition pr-8 font-medium shadow-sm"
             >
-              {availableModels.map((m) => (
-                <option key={m.internalModelId} value={m.internalModelId}>
-                  {m.displayName} — {m.costCredits} CR ({m.tier.toUpperCase()})
-                </option>
-              ))}
+              <option value="auto">Auto (Smart Routing)</option>
+              <option value="higgsfield">Higgsfield</option>
+              <option value="openart">OpenArt</option>
             </select>
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
               <ChevronDown className="w-3.5 h-3.5" />
             </div>
           </div>
+        </div>
 
-          {/* Model Card Details Preview */}
-          <div className={`p-2.5 rounded-xl border bg-black/50 ${theme.activeBorder} ${theme.glow} flex items-start justify-between gap-3 text-xs`}>
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-bold text-white text-xs">{currentModel.displayName}</span>
-                <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded border ${theme.badgeBg}`}>
-                  {currentModel.provider.toUpperCase()}
-                </span>
-                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-950/60 border border-amber-500/30 text-amber-300">
-                  {currentModel.costCredits} Credits
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-300 leading-tight">
-                {currentModel.description}
-              </p>
-              <div className="text-[9px] font-mono text-slate-400 pt-0.5">
-                Internal Routing ID: <span className="text-white">{currentModel.internalModelId}</span>
-              </div>
+        {/* 2. MODEL SELECTOR */}
+        <div className="space-y-1">
+          <label htmlFor={`${idPrefix}-model`} className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+            <Sparkles className="w-3 h-3 text-slate-400" />
+            <span>Model</span>
+          </label>
+          <div className="relative">
+            <select
+              id={`${idPrefix}-model`}
+              value={modelId}
+              onChange={handleModelChange}
+              className="w-full bg-[#080d1e] border border-slate-700/80 hover:border-slate-600 focus:border-indigo-500 rounded-xl px-3 py-2 text-xs text-white appearance-none cursor-pointer focus:outline-none transition pr-8 font-medium shadow-sm"
+            >
+              <option value="auto">Auto — Recommended</option>
+              {availableModels.map((m) => (
+                <option key={m.modelKey} value={m.internalModelId}>
+                  {m.displayName} ({m.sellingPrice} CR)
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+              <ChevronDown className="w-3.5 h-3.5" />
             </div>
           </div>
         </div>
-      ) : (
-        /* Full Grid Mode */
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[300px] overflow-y-auto pr-1">
-          {availableModels.map((model) => {
-            const isSelected = currentModel.internalModelId === model.internalModelId;
-            return (
-              <button
-                key={model.internalModelId}
-                type="button"
-                onClick={() => handleSelect(activeProvider, model.internalModelId)}
-                className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer ${
-                  isSelected
-                    ? `bg-[#0E1530] border-2 ${theme.activeBorder} ${theme.glow}`
-                    : 'bg-black/40 border-white/10 hover:border-white/20 hover:bg-black/60'
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-1 mb-1">
-                    <span className="font-bold text-xs text-white">{model.displayName}</span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-500/30 text-amber-300 shrink-0">
-                      {model.costCredits} CR
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-300 leading-snug line-clamp-2">
-                    {model.description}
-                  </p>
-                </div>
-                <div className="mt-2 pt-1.5 border-t border-white/5 flex items-center justify-between text-[9px] font-mono text-slate-400">
-                  <span>{model.internalModelId}</span>
-                  {isSelected && (
-                    <span className="flex items-center gap-0.5 text-emerald-400 font-bold">
-                      <Check className="w-3 h-3" />
-                      <span>Terpilih</span>
-                    </span>
-                  )}
-                </div>
-              </button>
-            );
-          })}
+
+        {/* 3. EXECUTION SELECTOR */}
+        <div className="space-y-1">
+          <label htmlFor={`${idPrefix}-execution`} className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+            <Settings2 className="w-3 h-3 text-slate-400" />
+            <span>Execution</span>
+          </label>
+          <div className="relative">
+            <select
+              id={`${idPrefix}-execution`}
+              value={execution}
+              onChange={handleExecutionChange}
+              className="w-full bg-[#080d1e] border border-slate-700/80 hover:border-slate-600 focus:border-indigo-500 rounded-xl px-3 py-2 text-xs text-white appearance-none cursor-pointer focus:outline-none transition pr-8 font-medium shadow-sm"
+            >
+              <option value="auto">Automatic</option>
+              <option value="fast">Fast Execution</option>
+              <option value="director">Director Precision</option>
+            </select>
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+              <ChevronDown className="w-3.5 h-3.5" />
+            </div>
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* Model & Routing Details Meta Bar */}
+      <div className="p-2.5 rounded-xl border border-slate-800 bg-[#060a17]/90 flex items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-semibold text-white text-xs">{resolvedModelInfo.displayName}</span>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 uppercase">
+            {provider === 'auto' ? 'Auto Router' : provider.toUpperCase()}
+          </span>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-950/60 border border-amber-500/30 text-amber-300 font-bold">
+            {resolvedModelInfo.costCredits} Credits
+          </span>
+        </div>
+        <div className="text-[11px] text-slate-400 text-right truncate max-w-[200px] sm:max-w-xs">
+          {provider === 'higgsfield' && 'API / MCP internal dispatch'}
+          {provider === 'openart' && 'Seedance & Kling rendering'}
+          {provider === 'auto' && 'Orchestrator managed'}
+        </div>
+      </div>
     </div>
   );
 };

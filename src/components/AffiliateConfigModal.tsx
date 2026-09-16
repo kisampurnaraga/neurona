@@ -538,6 +538,25 @@ export default function AffiliateConfigModal({
               />
             </div>
           </div>
+
+          {/* 6. AI Video Engine & Provider Selector */}
+          <div className="p-3.5 bg-[#0e1017] border border-slate-800 rounded-xl">
+            <UnifiedVideoModelSelector
+              selectedProvider={videoProvider}
+              selectedModelId={videoModel}
+              capability="VIDEO"
+              studioType="affiliate"
+              themeColor="indigo"
+              idPrefix="affiliate-video-engine"
+              compact={true}
+              onChange={(selection: SelectedModelData) => {
+                setVideoProvider(selection.provider);
+                setVideoModel(selection.internalModelId);
+                setVideoModelDisplayName(selection.displayName);
+                setVideoEngine(selection.internalModelId);
+              }}
+            />
+          </div>
         </div>
 
         {/* Footer */}

@@ -76,21 +76,44 @@ export class MediaProviderRouter {
       'higgsfield-video-pro', 'higgsfield-anim'
     ];
 
+    const isAutoModel = !preferredModel || preferredModelLower === 'auto' || preferredModelLower.startsWith('auto');
+
     const isModelHiggsfield = knownHiggsfieldModels.includes(preferredModelLower) ||
       preferredModelLower.startsWith('higgsfield-') ||
       preferredModelLower.startsWith('higgsfield_') ||
       preferredModelLower.includes('higgsfield');
 
     if (preferredProvider === 'higgsfield' || isModelHiggsfield) {
-      const canonicalModel = normalizeHiggsfieldModelId(preferredModel) || 'veo3_1_lite';
+      let canonicalModel: string;
+      if (isAutoModel) {
+        canonicalModel = operation === 'IMAGE' ? 'soul_2' : 'veo3_1_lite';
+      } else {
+        canonicalModel = normalizeHiggsfieldModelId(preferredModel) || (operation === 'IMAGE' ? 'soul_2' : 'veo3_1_lite');
+      }
+
+      // Check against dynamic catalog for enabled status & pricing
+      try {
+        const catalog = FounderService.getModelCatalog();
+        const modelEntry = catalog.find(m => m.provider === 'higgsfield' && (m.internalModelId === canonicalModel || m.modelKey === `higgsfield:${canonicalModel}`));
+        if (modelEntry && !modelEntry.enabled) {
+          // If explicitly disabled by founder, fall back to first enabled higgsfield model
+          const fallbackEnabled = catalog.find(m => m.provider === 'higgsfield' && m.enabled);
+          if (fallbackEnabled) {
+            canonicalModel = fallbackEnabled.internalModelId;
+          }
+        }
+      } catch (err) {
+        // Fallback to static catalog definition
+      }
+
       const modelDef = HIGGSFIELD_CATALOG_MODELS.find(m => m.internalModelId === canonicalModel) || HIGGSFIELD_CATALOG_MODELS[0];
       return {
         providerId: 'higgsfield',
-        providerName: 'Higgsfield MCP Media Provider',
+        providerName: 'Higgsfield Media Provider',
         model: canonicalModel,
         tier: modelDef.tier,
         estimatedCostUsd: modelDef.costUsd,
-        reason: isModelHiggsfield ? `Identified Higgsfield MCP model [${canonicalModel}]` : 'Explicitly configured Higgsfield MCP Provider',
+        reason: isModelHiggsfield ? `Identified Higgsfield model [${canonicalModel}]` : 'Explicitly configured Higgsfield Provider',
         fallbackChain: [],
         allowFallback: false
       };
@@ -110,16 +133,36 @@ export class MediaProviderRouter {
 
     if (preferredProvider === 'openart' || isModelOpenArt) {
       const isImg = operation === 'IMAGE';
-      const canonicalModel = normalizeOpenArtModelId(preferredModel) || (isImg ? 'kling-3-omni' : 'byte-plus-seedance-2-fast');
+      let canonicalModel: string;
+      if (isAutoModel) {
+        canonicalModel = isImg ? 'kling-3-omni' : 'byte-plus-seedance-2-fast';
+      } else {
+        canonicalModel = normalizeOpenArtModelId(preferredModel) || (isImg ? 'kling-3-omni' : 'byte-plus-seedance-2-fast');
+      }
+
+      // Check against dynamic catalog for enabled status
+      try {
+        const catalog = FounderService.getModelCatalog();
+        const modelEntry = catalog.find(m => m.provider === 'openart' && (m.internalModelId === canonicalModel || m.modelKey === `openart:${canonicalModel}`));
+        if (modelEntry && !modelEntry.enabled) {
+          const fallbackEnabled = catalog.find(m => m.provider === 'openart' && m.enabled);
+          if (fallbackEnabled) {
+            canonicalModel = fallbackEnabled.internalModelId;
+          }
+        }
+      } catch (err) {
+        // Fallback to static
+      }
+
       const modelDef = OPENART_CATALOG_MODELS.find(m => m.internalModelId === canonicalModel) || 
         (isImg ? OPENART_CATALOG_MODELS.find(m => m.internalModelId === 'kling-3-omni')! : OPENART_CATALOG_MODELS[0]);
       return {
         providerId: 'openart',
-        providerName: 'OpenArt MCP Media Provider',
+        providerName: 'OpenArt Media Provider',
         model: canonicalModel,
         tier: modelDef.tier,
         estimatedCostUsd: modelDef.costUsd,
-        reason: isModelOpenArt ? `Identified OpenArt MCP model [${canonicalModel}]` : 'Explicitly configured OpenArt MCP Provider',
+        reason: isModelOpenArt ? `Identified OpenArt model [${canonicalModel}]` : 'Explicitly configured OpenArt Provider',
         fallbackChain: [],
         allowFallback: false
       };

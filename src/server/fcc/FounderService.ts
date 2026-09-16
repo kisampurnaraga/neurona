@@ -14,6 +14,13 @@ import { eq, and } from 'drizzle-orm';
 import { encryptSecret, decryptSecret } from '../../../server/utils/crypto';
 import { CostTrackingService } from '../../../server/services/costTrackingService';
 import { DomainConfigService, DomainConfig, DerivedOAuthUrls, DomainValidationResult } from '../../../server/services/domainConfigService';
+import {
+  CatalogModelEntry,
+  buildDefaultCatalogEntries,
+  calculateModelPricing,
+  filterModelsByCapability,
+  ExecutionPolicy
+} from '../../shared/modelCatalog';
 
 interface ProviderConfig {
   id: string;
@@ -287,20 +294,26 @@ export class FounderService {
     sessionToken?: string;
     model?: string;
     endpoint?: string;
+    apiEndpoint?: string;
+    preferredExecution?: 'auto' | 'api' | 'mcp';
     lastTested?: string;
     status?: 'READY' | 'NOT_CONFIGURED' | 'ERROR';
     protocolVersion?: string;
     toolsDiscovered?: number;
   } = {
     oauthAccessToken: process.env.HIGGSFIELD_OAUTH_TOKEN || '',
-    apiKey: process.env.HIGGSFIELD_OAUTH_TOKEN || '',
+    apiKey: process.env.HIGGSFIELD_OAUTH_TOKEN || process.env.HIGGSFIELD_API_KEY || '',
     sessionToken: process.env.HIGGSFIELD_OAUTH_TOKEN || '',
-    model: 'higgsfield-video-pro',
+    model: 'veo3_1_lite',
     endpoint: process.env.HIGGSFIELD_MCP_ENDPOINT || 'https://mcp.higgsfield.ai/mcp',
-    status: process.env.HIGGSFIELD_OAUTH_TOKEN ? 'READY' : 'NOT_CONFIGURED',
+    apiEndpoint: process.env.HIGGSFIELD_API_ENDPOINT || 'https://api.higgsfield.ai/v1',
+    preferredExecution: 'auto',
+    status: (process.env.HIGGSFIELD_OAUTH_TOKEN || process.env.HIGGSFIELD_API_KEY) ? 'READY' : 'NOT_CONFIGURED',
     protocolVersion: '2024-11-05',
     toolsDiscovered: 2
   };
+
+  private static modelCatalog: CatalogModelEntry[] | null = null;
 
   private static customFalConfig: {
     apiKey?: string;
@@ -523,7 +536,9 @@ export class FounderService {
   static getHiggsfieldConfig() {
     const isEnabled = process.env.HIGGSFIELD_ENABLED !== 'false';
     const endpoint = this.customHiggsfieldConfig.endpoint || process.env.HIGGSFIELD_MCP_ENDPOINT || 'https://mcp.higgsfield.ai/mcp';
-    const model = this.customHiggsfieldConfig.model || 'higgsfield-video-pro';
+    const apiEndpoint = this.customHiggsfieldConfig.apiEndpoint || process.env.HIGGSFIELD_API_ENDPOINT || 'https://api.higgsfield.ai/v1';
+    const preferredExecution = this.customHiggsfieldConfig.preferredExecution || 'auto';
+    const model = this.customHiggsfieldConfig.model || 'veo3_1_lite';
     const oauthAccessToken = this.customHiggsfieldConfig.oauthAccessToken || this.customHiggsfieldConfig.sessionToken || this.customHiggsfieldConfig.apiKey || process.env.HIGGSFIELD_OAUTH_TOKEN || '';
     const status = !isEnabled ? 'NOT_CONFIGURED' : (!oauthAccessToken ? 'NOT_CONFIGURED' : (this.customHiggsfieldConfig.status || 'READY'));
 
@@ -532,6 +547,8 @@ export class FounderService {
       apiKey: oauthAccessToken,
       sessionToken: oauthAccessToken,
       endpoint,
+      apiEndpoint,
+      preferredExecution,
       status,
       model,
       lastTested: this.customHiggsfieldConfig.lastTested,
@@ -913,7 +930,7 @@ export class FounderService {
     };
   }
 
-  static saveProviderConfig(providerId: string, data: { apiKey?: string; oauthAccessToken?: string; sessionToken?: string; model?: string; endpoint?: string }) {
+  static saveProviderConfig(providerId: string, data: { apiKey?: string; oauthAccessToken?: string; sessionToken?: string; model?: string; endpoint?: string; apiEndpoint?: string; preferredExecution?: string }) {
     if (providerId === 'chatgpt_image_2') {
       if (data.apiKey !== undefined && data.apiKey !== '') {
         this.customGptImage2Config.apiKey = data.apiKey.trim();
@@ -1319,6 +1336,12 @@ export class FounderService {
       }
       if (data.endpoint) {
         this.customHiggsfieldConfig.endpoint = data.endpoint.trim();
+      }
+      if (data.apiEndpoint) {
+        this.customHiggsfieldConfig.apiEndpoint = data.apiEndpoint.trim();
+      }
+      if (data.preferredExecution && ['auto', 'api', 'mcp'].includes(data.preferredExecution)) {
+        this.customHiggsfieldConfig.preferredExecution = data.preferredExecution as 'auto' | 'api' | 'mcp';
       }
 
       const hasToken = !!(this.customHiggsfieldConfig.oauthAccessToken || this.customHiggsfieldConfig.sessionToken || this.customHiggsfieldConfig.apiKey);
@@ -1914,6 +1937,148 @@ export class FounderService {
   static getDerivedOAuthUrls(baseOrigin?: string): DerivedOAuthUrls {
     const origin = baseOrigin || DomainConfigService.getActiveConfig().canonicalUrl;
     return DomainConfigService.deriveOAuthUrls(origin);
+  }
+
+  // ---------------------------------------------------------------------------
+  // CENTRALIZED MODEL CATALOG & PRICING MANAGEMENT (PERSISTENT IN SQLITE)
+  // ---------------------------------------------------------------------------
+
+  private static loadModelCatalog(): CatalogModelEntry[] {
+    if (this.modelCatalog && this.modelCatalog.length > 0) {
+      return this.modelCatalog;
+    }
+    try {
+      const row = db.select().from(systemSettings).where(eq(systemSettings.key, 'fcc_provider_model_catalog')).get();
+      if (row && row.value) {
+        const parsed = JSON.parse(row.value);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this.modelCatalog = parsed;
+          return this.modelCatalog;
+        }
+      }
+    } catch (err) {
+      console.warn('[FounderService] Failed to load model catalog from DB:', err);
+    }
+
+    // Initialize with defaults from buildDefaultCatalogEntries
+    const defaults = buildDefaultCatalogEntries();
+    this.modelCatalog = defaults;
+    this.saveModelCatalog();
+    return this.modelCatalog;
+  }
+
+  private static saveModelCatalog(): void {
+    if (!this.modelCatalog) return;
+    try {
+      const now = new Date().toISOString();
+      const serialized = JSON.stringify(this.modelCatalog);
+      const existing = db.select().from(systemSettings).where(eq(systemSettings.key, 'fcc_provider_model_catalog')).get();
+      if (existing) {
+        db.update(systemSettings).set({ value: serialized, updatedAt: now }).where(eq(systemSettings.key, 'fcc_provider_model_catalog')).run();
+      } else {
+        db.insert(systemSettings).values({ key: 'fcc_provider_model_catalog', value: serialized, updatedAt: now }).run();
+      }
+    } catch (err) {
+      console.error('[FounderService] Failed to save model catalog to DB:', err);
+    }
+  }
+
+  static getModelCatalog(): CatalogModelEntry[] {
+    return this.loadModelCatalog();
+  }
+
+  static updateModelCatalogItem(modelKey: string, updates: Partial<CatalogModelEntry>): CatalogModelEntry | null {
+    const catalog = this.loadModelCatalog();
+    const idx = catalog.findIndex(m => m.modelKey === modelKey);
+    if (idx === -1) return null;
+
+    const current = catalog[idx];
+    const newMarkup = updates.markupPercent !== undefined ? Number(updates.markupPercent) : current.markupPercent;
+    const newOverride = updates.sellingPriceOverride !== undefined ? (updates.sellingPriceOverride !== null ? Number(updates.sellingPriceOverride) : undefined) : current.sellingPriceOverride;
+    
+    // Recalculate selling price and estimated margin if pricing fields change
+    const { sellingPrice, estimatedMargin } = calculateModelPricing(current.officialCost, newMarkup, newOverride);
+
+    const updatedEntry: CatalogModelEntry = {
+      ...current,
+      ...updates,
+      markupPercent: newMarkup,
+      sellingPrice,
+      sellingPriceOverride: newOverride,
+      estimatedMargin,
+      lastSync: new Date().toISOString()
+    };
+
+    catalog[idx] = updatedEntry;
+    this.saveModelCatalog();
+
+    this.auditLogs.push({
+      id: `log-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      action: 'UPDATE_MODEL_CATALOG',
+      target: `MODEL_${modelKey}`,
+      details: `Updated model ${modelKey}: enabled=${updatedEntry.enabled}, markup=${newMarkup}%, price=${sellingPrice}, exec=${updatedEntry.preferredExecution}`,
+      status: 'SUCCESS'
+    });
+
+    return updatedEntry;
+  }
+
+  static syncModelCatalog(): { total: number; added: number; updated: number } {
+    const current = this.loadModelCatalog();
+    const freshDefaults = buildDefaultCatalogEntries();
+    let added = 0;
+    let updated = 0;
+
+    const currentMap = new Map<string, CatalogModelEntry>(current.map(m => [m.modelKey, m]));
+
+    for (const fresh of freshDefaults) {
+      if (currentMap.has(fresh.modelKey)) {
+        // Preserve founder overrides: enabled, markupPercent, sellingPriceOverride, preferredExecution
+        const existing = currentMap.get(fresh.modelKey)!;
+        const { sellingPrice, estimatedMargin } = calculateModelPricing(fresh.officialCost, existing.markupPercent, existing.sellingPriceOverride);
+        currentMap.set(fresh.modelKey, {
+          ...fresh,
+          enabled: existing.enabled,
+          markupPercent: existing.markupPercent,
+          sellingPrice,
+          sellingPriceOverride: existing.sellingPriceOverride,
+          estimatedMargin,
+          preferredExecution: existing.preferredExecution || fresh.preferredExecution,
+          lastSync: new Date().toISOString()
+        });
+        updated++;
+      } else {
+        currentMap.set(fresh.modelKey, fresh);
+        added++;
+      }
+    }
+
+    this.modelCatalog = Array.from(currentMap.values());
+    this.saveModelCatalog();
+
+    this.auditLogs.push({
+      id: `log-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      action: 'SYNC_MODEL_CATALOG',
+      target: 'CENTRAL_MODEL_CATALOG',
+      details: `Model catalog synchronized: total=${this.modelCatalog.length}, added=${added}, updated=${updated}`,
+      status: 'SUCCESS'
+    });
+
+    return { total: this.modelCatalog.length, added, updated };
+  }
+
+  static getEnabledModelsForStudio(
+    operation: 'VIDEO' | 'IMAGE' | 'TEXT_TO_VIDEO' | 'IMAGE_TO_VIDEO' | 'TEXT_TO_IMAGE' = 'VIDEO',
+    provider?: string
+  ): CatalogModelEntry[] {
+    const catalog = this.loadModelCatalog();
+    return filterModelsByCapability(catalog, {
+      provider,
+      operation,
+      onlyEnabled: true
+    });
   }
 }
 

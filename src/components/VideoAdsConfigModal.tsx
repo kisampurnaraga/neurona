@@ -179,6 +179,24 @@ export const VideoAdsConfigModal: React.FC<VideoAdsConfigModalProps> = ({ isOpen
               </div>
             </div>
 
+            {/* AI Video Engine & Provider Selector */}
+            <div className="p-3.5 bg-[#0b1022] border border-slate-800/80 rounded-2xl">
+              <UnifiedVideoModelSelector
+                selectedProvider={videoProvider}
+                selectedModelId={videoModel}
+                capability="VIDEO"
+                studioType="video-ads"
+                themeColor="emerald"
+                idPrefix="ads-video-engine"
+                compact={true}
+                onChange={(selection: SelectedModelData) => {
+                  setVideoProvider(selection.provider);
+                  setVideoModel(selection.internalModelId);
+                  setVideoModelDisplayName(selection.displayName);
+                }}
+              />
+            </div>
+
             {/* Bottom Actions */}
             <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between">
               <span className="text-[11px] text-slate-400 flex items-center gap-1">

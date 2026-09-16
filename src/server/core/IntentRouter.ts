@@ -9,7 +9,7 @@ export interface IntentRouteResult {
 }
 
 export class ConversationalIntentRouter {
-  static async route(prompt: string, project?: ProductionProject | null, hasAssets: boolean = false): Promise<IntentRouteResult> {
+  static async route(prompt: string, project?: ProductionProject | null, hasAssets: boolean = false, explicitVideoType?: VideoType): Promise<IntentRouteResult> {
     const p = prompt.toLowerCase().trim();
     
     // WAKE
@@ -19,7 +19,7 @@ export class ConversationalIntentRouter {
     
     // GREETING
     if (/^(hello|hi|halo|selamat pagi|selamat siang|selamat sore|selamat malam)( neurona)?[.!?]*$/.test(p)) {
-      return { intent: 'GREETING', response: 'Hello Bos. Studio produksi siap. Anda bisa pilih membuat Video Animasi (3D/Anime), Video Pembelajaran Edukasi, atau Video Affiliate Produk.' };
+      return { intent: 'GREETING', response: 'Hello Bos. Studio produksi siap. Anda bisa pilih membuat Video Animasi (3D/Anime), Video Pembelajaran Edukasi, Video Affiliate Produk, Film, Video Ads, atau Quick Create.' };
     }
 
     // FALLBACK QUOTA APPROVAL
@@ -74,6 +74,24 @@ export class ConversationalIntentRouter {
 
     if (/^(buka hud|mode hud|avengers protocol|hud mode|tampilkan hud|radar node)[.!?]*$/.test(p)) {
       return { intent: 'HUD_ACCESS', response: 'Mengaktifkan mode Holographic HUD Node Command Center...', action: 'TOGGLE_HUD' };
+    }
+
+    // Explicit UI selection routing
+    if (explicitVideoType) {
+      if (explicitVideoType === 'QUICK_CREATE') {
+        return {
+          intent: 'QUICK_CREATE_REQUEST',
+          response: 'Siap Bos! Mode Quick Create diaktifkan. Mengeksekusi video secara instan.',
+          action: 'START_PRODUCTION',
+          videoType: 'QUICK_CREATE'
+        };
+      }
+      return {
+        intent: `${explicitVideoType}_PRODUCTION_REQUEST`,
+        response: `Siap Bos! Mode produksi ${explicitVideoType} diaktifkan.`,
+        action: 'START_PRODUCTION',
+        videoType: explicitVideoType
+      };
     }
 
     // 1. ANIMATION VIDEO REQUEST
@@ -156,7 +174,54 @@ export class ConversationalIntentRouter {
       };
     }
 
-    // 3. AFFILIATE VIDEO SPECIFIC
+    // 3. VIDEO ADS REQUEST
+    if (
+      p.includes('iklan') ||
+      p.includes('video ads') ||
+      p.includes('komersial') ||
+      p.includes('commercial') ||
+      p.includes('promo')
+    ) {
+      return {
+        intent: 'VIDEO_ADS_PRODUCTION_REQUEST',
+        response: 'Siap Bos! Mode Video Ads diaktifkan. Creative Strategist akan merumuskan hook komersial dan storyboard luxury/cinematic.',
+        action: 'START_PRODUCTION',
+        videoType: 'VIDEO_ADS'
+      };
+    }
+
+    // 4. FILM REQUEST
+    if (
+      p.includes('film') ||
+      p.includes('movie') ||
+      p.includes('sinematik') ||
+      p.includes('cinematic') ||
+      p.includes('short film')
+    ) {
+      return {
+        intent: 'FILM_PRODUCTION_REQUEST',
+        response: 'Siap Bos! Mode Film diaktifkan. Merancang naskah sinematik, sudut kamera, dan alur cerita dramatis.',
+        action: 'START_PRODUCTION',
+        videoType: 'FILM'
+      };
+    }
+
+    // 5. QUICK CREATE REQUEST
+    if (
+      p.includes('video cepat') ||
+      p.includes('instan') ||
+      p.includes('cepat') ||
+      p.includes('quick create')
+    ) {
+      return {
+        intent: 'QUICK_CREATE_REQUEST',
+        response: 'Siap Bos! Mode Quick Create diaktifkan. Eksekusi video secara instan tanpa approval storyboard.',
+        action: 'START_PRODUCTION',
+        videoType: 'QUICK_CREATE'
+      };
+    }
+
+    // 6. AFFILIATE VIDEO SPECIFIC
     if (p.includes('affiliate') || p.includes('afiliasi') || p.includes('keranjang kuning') || p.includes('shopee video') || p.includes('tiktok shop') || p.includes('produk sepatu') || (hasAssets && (p.includes('sepatu') || p.includes('jual') || p.includes('promosi') || p.includes('review')))) {
       return { 
         intent: 'AFFILIATE_PRODUCTION_REQUEST', 
@@ -166,10 +231,10 @@ export class ConversationalIntentRouter {
       };
     }
 
-    // 4. GENERAL MISSION REQUEST
+    // 7. GENERAL MISSION REQUEST
     if (p.includes('buat video') || p.includes('buatkan video') || p.includes('bikin video') || p.includes('generate video') || p.includes('mulai produksi') || hasAssets) {
       if (p === 'saya ingin membuat video') {
-        return { intent: 'AMBIGUOUS', response: 'Siap, Bos. Mau buat Video Animasi (3D/Anime), Video Pembelajaran Edukasi, atau Video Affiliate Produk?' };
+        return { intent: 'AMBIGUOUS', response: 'Siap, Bos. Mau buat Video Animasi (3D/Anime), Video Pembelajaran Edukasi, Film, Iklan, atau Video Affiliate Produk?' };
       }
       return { 
         intent: 'MISSION_REQUEST', 
@@ -180,6 +245,6 @@ export class ConversationalIntentRouter {
     }
     
     // DEFAULT UNKNOWN
-    return { intent: 'UNKNOWN', response: 'Maaf Bos, bisa diperjelas instruksinya? Anda dapat meminta "buatkan video animasi 3D tentang robot", "video edukasi fisika kuantum", atau melampirkan foto produk untuk video affiliate.' };
+    return { intent: 'UNKNOWN', response: 'Maaf Bos, bisa diperjelas instruksinya? Anda dapat meminta "buatkan animasi 20 detik", "video pembelajaran Python", "iklan parfum", atau melampirkan foto.' };
   }
 }

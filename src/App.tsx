@@ -157,6 +157,8 @@ export default function App() {
   const [currentRoute, setCurrentRoute] = useState(window.location.pathname || '/');
   const [currentView, setCurrentView] = useState<'STUDIO' | 'HUD_NODE' | 'TIMELINE'>('HUD_NODE');
   const [prompt, setPrompt] = useState("");
+  const [providerPreference, setProviderPreference] = useState<'AUTO' | 'HIGGSFIELD' | 'OPENART'>('AUTO');
+  const [executionMode, setExecutionMode] = useState<'FAST' | 'DIRECTOR'>('DIRECTOR');
   const [projectId, setProjectId] = useState<string | null>(() => localStorage.getItem('neurona_current_project_id') || null);
 
   useEffect(() => {
@@ -686,7 +688,10 @@ export default function App() {
           videoAdsConfig,
           quickCreateConfig,
           videoType: videoType || (animationConfig ? 'ANIMATION' : educationalConfig ? 'EDUCATIONAL' : affiliateConfig ? 'AFFILIATE' : filmConfig ? 'FILM' : videoAdsConfig ? 'VIDEO_ADS' : quickCreateConfig ? 'QUICK_CREATE' : undefined),
-          userRole: currentUser?.role || 'user'
+          userRole: currentUser?.role || 'user',
+          providerPreference,
+          executionMode,
+          videoProvider: providerPreference === 'AUTO' ? undefined : providerPreference.toLowerCase()
         })
       });
       const data = await res.json().catch(() => ({}));
@@ -2036,22 +2041,46 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="flex items-center justify-between text-[11px] text-gray-500 px-1">
-                {isListening ? (
-                  <span className="text-rose-400 font-bold flex items-center gap-1.5 animate-pulse">
-                    <span className="w-2 h-2 rounded-full bg-rose-500 inline-block animate-ping" />
-                    Merekam suara Anda... Bicaralah sekarang
-                  </span>
-                ) : (
-                  <span>Tekan <kbd className="font-mono text-[10px] bg-white/5 px-1 py-0.5 rounded">Enter</kbd> untuk mengeksekusi</span>
-                )}
-                <button 
-                  onClick={() => setCurrentView('HUD_NODE')} 
-                  className="text-cyan-400 hover:underline flex items-center gap-1"
-                >
-                  <Radio size={10} />
-                  Buka Tampilan Holographic HUD Node
-                </button>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 px-1 text-[11px] text-gray-400">
+                  <span>Provider:</span>
+                  <select 
+                    value={providerPreference} 
+                    onChange={e => setProviderPreference(e.target.value as any)}
+                    className="bg-[#1a1a24] border border-white/10 rounded px-1.5 py-0.5 outline-none focus:border-indigo-500"
+                  >
+                    <option value="AUTO">Auto (Smart Routing)</option>
+                    <option value="HIGGSFIELD">Higgsfield MCP</option>
+                    <option value="OPENART">OpenArt MCP</option>
+                  </select>
+                  <span className="ml-2">Mode:</span>
+                  <select 
+                    value={executionMode} 
+                    onChange={e => setExecutionMode(e.target.value as any)}
+                    className="bg-[#1a1a24] border border-white/10 rounded px-1.5 py-0.5 outline-none focus:border-indigo-500"
+                  >
+                    <option value="DIRECTOR">Director (Review Storyboard)</option>
+                    <option value="FAST">Fast (Auto Execute)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-gray-500 px-1">
+                  {isListening ? (
+                    <span className="text-rose-400 font-bold flex items-center gap-1.5 animate-pulse">
+                      <span className="w-2 h-2 rounded-full bg-rose-500 inline-block animate-ping" />
+                      Merekam suara Anda... Bicaralah sekarang
+                    </span>
+                  ) : (
+                    <span>Tekan <kbd className="font-mono text-[10px] bg-white/5 px-1 py-0.5 rounded">Enter</kbd> untuk mengeksekusi</span>
+                  )}
+                  <button 
+                    onClick={() => setCurrentView('HUD_NODE')} 
+                    className="text-cyan-400 hover:underline flex items-center gap-1"
+                  >
+                    <Radio size={10} />
+                    Buka Tampilan Holographic HUD Node
+                  </button>
+                </div>
               </div>
             </div>
 

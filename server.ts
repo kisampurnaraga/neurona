@@ -690,36 +690,21 @@ async function startServer() {
       const project = projectId ? projects.get(projectId) : null;
       const hasAssets = Boolean(attachedAssets && attachedAssets.length > 0);
       
-      const result = await ConversationalIntentRouter.route(prompt || "", project, hasAssets);
+      const result = await ConversationalIntentRouter.route(prompt || "", project, hasAssets, videoType);
       console.log(`[Interaction] videoType: ${videoType}, Intent result.videoType: ${result.videoType}, action: ${result.action}`);
       
       let newProjectId = projectId;
       let directResult = null;
+      let assetReferences: Record<string, string> = {};
 
-      if (videoType === 'QUICK_CREATE') {
-        console.log(`[Interaction] Direct execution path for QUICK_CREATE started`);
-        try {
-          const { HiggsfieldMCPAdapter } = await import('./src/server/providers/HiggsfieldMCPAdapter');
-          console.log(`[Interaction] Adapter imported`);
-          const adapter = new HiggsfieldMCPAdapter();
-          console.log(`[Interaction] Adapter instantiated`);
-          await adapter.initializeMCP();
-          console.log(`[Interaction] MCP initialized`);
-          directResult = await adapter.generateVideo({
-             model: quickCreateConfig?.model || quickCreateConfig?.videoModel || 'veo3_1_lite',
-             prompt: prompt,
-             aspectRatio: quickCreateConfig?.aspectRatio || '9:16',
-             characterReferenceUrl: quickCreateConfig?.characterReferenceUrl,
-             sketchReferenceUrl: quickCreateConfig?.sketchReferenceUrl,
-             allowFallback: false
-          });
-          console.log(`[Interaction] Direct generation successful:`, directResult);
-        } catch (err: any) {
-          console.error(`[Interaction] Direct generation failed:`, err);
-          directResult = { success: false, error: err.message };
-        }
-        console.log(`[Interaction] Direct execution path for QUICK_CREATE finished`);
-      } else if (result.action === 'START_PRODUCTION') {
+      if (hasAssets && attachedAssets) {
+        // Use LLM to classify attachments intelligently
+        const { LLMService } = await import('./server/llmService');
+        assetReferences = await LLMService.classifyAttachments(prompt || "", attachedAssets);
+        console.log(`[Interaction] Classified Attachments:`, assetReferences);
+      }
+
+      if (result.action === 'START_PRODUCTION') {
          const finalType = videoType || result.videoType || 'BRAND_COMMERCIAL';
          console.log(`[Interaction] finalType: ${finalType}`);
          const configVideoProvider = affiliateConfig?.videoProvider || animationConfig?.videoProvider || educationalConfig?.videoProvider || filmConfig?.videoProvider || videoAdsConfig?.videoProvider || quickCreateConfig?.videoProvider || req.body.videoProvider;
@@ -740,7 +725,9 @@ async function startServer() {
            filmConfig,
            videoAdsConfig,
            quickCreateConfig,
-           userRole
+           userRole,
+           executionMode: req.body.executionMode || (finalType === 'QUICK_CREATE' ? 'FAST' : 'DIRECTOR'),
+           ...assetReferences
          });
       } else if (result.action === 'APPROVE' && projectId) {
          await ProductionOrchestrator.approveStoryboard(projectId);
@@ -1754,6 +1741,86 @@ async function startServer() {
      } catch (e: any) {
        res.status(400).json({ error: e.message });
      }
+  });
+
+  // ---------------------------------------------------------------------------
+  // CENTRALIZED MODEL CATALOG & PRICING API ENDPOINTS
+  // ---------------------------------------------------------------------------
+
+  // Public/Studio endpoint to fetch active catalog models filtered by capability & provider
+  app.get('/api/models/catalog', (req, res) => {
+    try {
+      const operation = (req.query.operation as any) || 'VIDEO';
+      const provider = (req.query.provider as string) || undefined;
+      const models = FounderService.getEnabledModelsForStudio(operation, provider);
+      res.json({
+        success: true,
+        operation,
+        provider: provider || 'all',
+        count: models.length,
+        models
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // Founder Control Center - Get full catalog with margins, officialCost, markup & enabled flags
+  app.get('/api/fcc/catalog', (req, res) => {
+    if (req.headers['x-role'] !== 'founder' && (req as any).user?.role !== 'founder') {
+      return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    }
+    try {
+      const catalog = FounderService.getModelCatalog();
+      res.json({
+        success: true,
+        total: catalog.length,
+        catalog
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // Founder Control Center - Update a model's settings (enabled, markup, sellingPriceOverride, preferredExecution)
+  app.post('/api/fcc/catalog/update', (req, res) => {
+    if (req.headers['x-role'] !== 'founder' && (req as any).user?.role !== 'founder') {
+      return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    }
+    try {
+      const { modelKey, updates } = req.body;
+      if (!modelKey || !updates) {
+        return res.status(400).json({ success: false, error: 'modelKey and updates object are required.' });
+      }
+      const updated = FounderService.updateModelCatalogItem(modelKey, updates);
+      if (!updated) {
+        return res.status(404).json({ success: false, error: `Model '${modelKey}' not found in catalog.` });
+      }
+      res.json({
+        success: true,
+        model: updated
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // Founder Control Center - Sync & refresh model catalog against latest tools and registries
+  app.post('/api/fcc/catalog/sync', (req, res) => {
+    if (req.headers['x-role'] !== 'founder' && (req as any).user?.role !== 'founder') {
+      return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+    }
+    try {
+      const result = FounderService.syncModelCatalog();
+      const catalog = FounderService.getModelCatalog();
+      res.json({
+        success: true,
+        ...result,
+        catalog
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
   });
 
   // Founder Control Center - Domain & URL Management Endpoints
