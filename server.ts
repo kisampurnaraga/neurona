@@ -726,7 +726,7 @@ async function startServer() {
            videoAdsConfig,
            quickCreateConfig,
            userRole,
-           executionMode: req.body.executionMode || (finalType === 'QUICK_CREATE' ? 'FAST' : 'DIRECTOR'),
+           executionMode: req.body.executionMode || (finalType === 'QUICK_CREATE' ? 'FAST' : 'AUTO'),
            ...assetReferences
          });
       } else if (result.action === 'APPROVE' && projectId) {

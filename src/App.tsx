@@ -149,6 +149,7 @@ function useClapDetector(onClap: () => void) {
 
 import { SystemHealthDashboard } from "./components/SystemHealthDashboard";
 import { FinalContentDashboard } from './components/FinalContentDashboard';
+import { UnifiedVideoModelSelector, SelectedModelData } from './components/UnifiedVideoModelSelector';
 
 export default function App() {
   const [showGallery, setShowGallery] = useState(false);
@@ -158,7 +159,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<'STUDIO' | 'HUD_NODE' | 'TIMELINE'>('HUD_NODE');
   const [prompt, setPrompt] = useState("");
   const [providerPreference, setProviderPreference] = useState<'AUTO' | 'HIGGSFIELD' | 'OPENART'>('AUTO');
-  const [executionMode, setExecutionMode] = useState<'FAST' | 'DIRECTOR'>('DIRECTOR');
+  const [executionMode, setExecutionMode] = useState<'AUTO' | 'FAST' | 'DIRECTOR'>('AUTO');
   const [projectId, setProjectId] = useState<string | null>(() => localStorage.getItem('neurona_current_project_id') || null);
 
   useEffect(() => {
@@ -2042,27 +2043,22 @@ export default function App() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2 px-1 text-[11px] text-gray-400">
-                  <span>Provider:</span>
-                  <select 
-                    value={providerPreference} 
-                    onChange={e => setProviderPreference(e.target.value as any)}
-                    className="bg-[#1a1a24] border border-white/10 rounded px-1.5 py-0.5 outline-none focus:border-indigo-500"
-                  >
-                    <option value="AUTO">Auto (Smart Routing)</option>
-                    <option value="HIGGSFIELD">Higgsfield MCP</option>
-                    <option value="OPENART">OpenArt MCP</option>
-                  </select>
-                  <span className="ml-2">Mode:</span>
-                  <select 
-                    value={executionMode} 
-                    onChange={e => setExecutionMode(e.target.value as any)}
-                    className="bg-[#1a1a24] border border-white/10 rounded px-1.5 py-0.5 outline-none focus:border-indigo-500"
-                  >
-                    <option value="DIRECTOR">Director (Review Storyboard)</option>
-                    <option value="FAST">Fast (Auto Execute)</option>
-                  </select>
-                </div>
+                <UnifiedVideoModelSelector
+                  compact
+                  themeColor="indigo"
+                  capability="VIDEO"
+                  selectedProvider={providerPreference === 'AUTO' ? 'auto' : providerPreference.toLowerCase()}
+                  selectedModelId={selectedVideoEngine}
+                  selectedExecution={executionMode.toLowerCase()}
+                  onChange={(sel) => {
+                    setProviderPreference(sel.provider === 'auto' ? 'AUTO' : sel.provider.toUpperCase() as any);
+                    setSelectedVideoEngine(sel.internalModelId);
+                    localStorage.setItem('neurona_video_model', sel.internalModelId);
+                    if (sel.execution === 'director') setExecutionMode('DIRECTOR');
+                    else if (sel.execution === 'fast') setExecutionMode('FAST');
+                    else setExecutionMode('AUTO');
+                  }}
+                />
 
                 <div className="flex items-center justify-between text-[11px] text-gray-500 px-1">
                   {isListening ? (

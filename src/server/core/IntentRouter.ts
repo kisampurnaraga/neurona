@@ -222,7 +222,7 @@ export class ConversationalIntentRouter {
     }
 
     // 6. AFFILIATE VIDEO SPECIFIC
-    if (p.includes('affiliate') || p.includes('afiliasi') || p.includes('keranjang kuning') || p.includes('shopee video') || p.includes('tiktok shop') || p.includes('produk sepatu') || (hasAssets && (p.includes('sepatu') || p.includes('jual') || p.includes('promosi') || p.includes('review')))) {
+    if (p.includes('affiliate') || p.includes('afiliasi') || p.includes('keranjang kuning') || p.includes('shopee video') || p.includes('tiktok') || p.includes('produk sepatu') || (hasAssets && (p.includes('sepatu') || p.includes('jual') || p.includes('promosi') || p.includes('review') || p.includes('tas') || p.includes('baju') || p.includes('produk')))) {
       return { 
         intent: 'AFFILIATE_PRODUCTION_REQUEST', 
         response: 'Siap Bos! Mode Video Affiliate diaktifkan. Creative Strategist akan merumuskan formula viral (Hook 3 detik pertama, showcase detail produk, solusi benefit, dan CTA Keranjang Kuning).', 

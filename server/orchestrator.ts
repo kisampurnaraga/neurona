@@ -1656,8 +1656,8 @@ export class ProductionOrchestrator {
 
       projectEvents.emit(`update:${id}`, project);
 
-      if ((project as any).executionMode === 'FAST') {
-         appendLog(project, 'PROTOCOL', `FAST EXECUTION MODE AKTIF: Melewati Human Approval Gate, memanggil Rendering Engine otomatis.`, 'INFO');
+      if ((project as any).executionMode === 'FAST' || (project as any).executionMode === 'AUTO') {
+         appendLog(project, 'PROTOCOL', `FAST/AUTO EXECUTION MODE AKTIF: Melewati Human Approval Gate, memanggil Rendering Engine otomatis.`, 'INFO');
          setTimeout(() => { ProductionOrchestrator.approveStoryboard(id).catch(console.error); }, 1000);
       }
 
