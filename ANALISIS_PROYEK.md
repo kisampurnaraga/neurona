@@ -424,3 +424,43 @@ Masalahnya ada di **dua tempat**:
 ---
 
 *Semua temuan keamanan di dokumen ini telah diverifikasi langsung terhadap instance yang berjalan di sandbox (`http://localhost:3000`). Kunci uji yang saya suntikkan saat pengujian sudah dibersihkan kembali. Perubahan kode yang saya lakukan selama analisis: satu penambahan `allowedHosts: true` pada `vite.config.ts` (diperlukan agar dev server Vite 6 menerima Host dari domain preview/proxy — tanpa ini aplikasi menolak diakses lewat URL apa pun selain localhost).*
+
+---
+
+## 10. LAMPIRAN — Temuan Susulan (setelah laporan awal)
+
+Temuan di bawah ini tidak ada di laporan awal karena baru muncul saat perbaikan P1 dikerjakan dan diverifikasi lewat uji end-to-end. Semuanya sudah diperbaiki di cabang `arena/01a0b774-neurona`.
+
+### 10.1 Rute produksi terbuka untuk umum (setara KRITIS)
+
+| Rute | Akibat sebelum diperbaiki |
+|---|---|
+| `POST /api/chat`, `POST /api/interact` | Siapa pun di internet bisa memulai produksi video — kuota LLM dan kredit provider terbakar tanpa akun |
+| `POST /api/neurona-chat` | Endpoint LLM, terbuka |
+| `GET /api/v1/client/projects/:projectId` | Membaca detail proyek siapa pun tanpa login |
+| `GET /api/providers/status`, `GET /api/test-db`, `POST /api/test-fal-model` | Info provider & endpoint diagnostik terbuka |
+
+Ketiga rute terakhir kini khusus founder; sisanya butuh `verifyToken`.
+
+### 10.2 Peran pelaku diambil dari body request
+
+`handleInteraction` membaca `userRole` dari `req.body`, sehingga siapa pun bisa mengirim `userRole: 'founder'` untuk membuka jalur *quota fallback* khusus founder. Peran kini diambil dari JWT terverifikasi.
+
+### 10.3 Proyek baru tersimpan TANPA PEMILIK (KRITIS — keamanan *dan* pendapatan)
+
+`POST /api/projects` sudah mengirim `userId` dari sesi terverifikasi, tetapi `startProduction()` **tidak pernah menyalinnya** ke objek project. Dua akibatnya:
+
+1. **Kepemilikan hilang.** Proyek baru tersimpan tanpa `userId`, sehingga `requireProjectAccess` menganggapnya data legacy dan mengizinkan **semua user yang login** membuka, mengubah, bahkan menghapusnya. Dibuktikan: user B dapat membuka proyek user A (HTTP 200). Setelah perbaikan: **403**.
+2. **Kredit tidak pernah dipotong.** Seluruh blok `if (project.userId && creditCalc.credits > 0)` — hold, commit, dan refund — bergantung pada `project.userId`. Karena nilainya selalu kosong, tidak ada satu pun produksi yang benar-benar dibebani biaya. Model bisnis kredit praktis tidak berjalan untuk proyek baru.
+
+### 10.4 Batas ukuran body 200 MB di semua rute
+
+200 MB untuk seluruh rute berarti satu pemanggil **tanpa autentikasi** bisa menghabiskan memori server. Kini bawaan 10 MB; hanya rute pembawa media pengguna (`/api/projects`, `/api/gallery/images/upload`, `/api/generate-character-sheet`) yang mendapat 100 MB. Body 12 MB ke `/api/auth/login` kini dijawab **413**.
+
+### 10.5 Tidak ada `Cache-Control` pada respons API
+
+Respons berisi data akun/proyek berpotensi tersimpan di cache bersama. Kini `no-store` secara bawaan, sementara rute media publik tetap `public, max-age=86400`.
+
+### 10.6 Catatan status P2
+
+Item P2 di §8 sebagian sudah selesai bersamaan dengan pekerjaan di atas: **#13 (README)** dan **#16 (CI)** selesai. Sisa P2 yang belum dikerjakan: pemecahan `server.ts` (#11), pemecahan `StoryboardMatrixModal.tsx` (#12), migrasi DB formal (#14), sentralisasi pemilihan provider (#15), dan penyimpanan audit log yang persisten (#17).
