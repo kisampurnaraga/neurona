@@ -4,7 +4,11 @@ import * as schema from './schema.ts';
 import path from 'path';
 import fs from 'fs';
 
-const dbPath = path.join(process.cwd(), 'outputs', 'sqlite.db');
+// Database location. Overridable so tests can run against a throwaway file
+// instead of the developer's working database.
+const dbPath = process.env.NEURONA_DB_PATH
+  ? path.resolve(process.env.NEURONA_DB_PATH)
+  : path.join(process.cwd(), 'outputs', 'sqlite.db');
 const dbDir = path.dirname(dbPath);
 
 if (!fs.existsSync(dbDir)) {

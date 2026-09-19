@@ -23,6 +23,13 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
+  "include": [
+    "src",
+    "server",
+    "tests",
+    "server.ts",
+    "vite.config.ts"
+  ],
   "exclude": [
     "node_modules",
     "dist",

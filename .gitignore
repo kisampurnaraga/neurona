@@ -13,8 +13,11 @@ coverage/
 *.wav
 sqlite.db*
 app_database.db*
-outputs/tmp_*
-outputs/*.tmp
-outputs/*.reencode.mp4
-outputs/sqlite.db-wal
-outputs/sqlite.db-shm
+# outputs/ adalah direktori kerja runtime (database + hasil render).
+# Isinya dibuat ulang otomatis saat boot, jadi tidak ada yang perlu di-commit.
+# Sebelumnya hanya sebagian pola yang di-ignore, sehingga frame hasil uji ikut
+# ter-commit ke repo.
+outputs/
+
+# Per-installation AES master key (generated at runtime, never commit)
+.neurona_master_key

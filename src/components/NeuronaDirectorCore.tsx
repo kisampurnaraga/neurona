@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
 import { 
   Zap, 
   Home, 
@@ -63,6 +62,10 @@ interface NeuronaDirectorCoreProps {
   userCredits?: number;
   onResetProject?: () => void;
 }
+
+// recharts (~470 kB mentah) hanya dibutuhkan oleh satu grafik di bawah.
+// Dimuat terpisah supaya tidak ikut di payload awal.
+const SceneDurationsChart = React.lazy(() => import('./SceneDurationsChart'));
 
 export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
   project,
@@ -1209,28 +1212,11 @@ export const NeuronaDirectorCore: React.FC<NeuronaDirectorCoreProps> = ({
               {project?.storyboard?.scenes && project.storyboard.scenes.length > 0 && (
                 <div className="p-4 rounded-2xl bg-[#090D1A] border border-slate-800/90 shadow-xl space-y-3">
                   <h3 className="text-xs font-bold text-white tracking-wider uppercase">SCENE DURATIONS</h3>
-                  <div className="h-40 w-full mt-2">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={project.storyboard.scenes.map((s: any, i: number) => ({ name: `S${i+1}`, duration: s.duration }))}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                        <XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} />
-                        <YAxis stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} width={20} />
-                        <Tooltip
-                          cursor={{ fill: '#1e293b', opacity: 0.4 }}
-                          contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', fontSize: '11px', color: '#f8fafc' }}
-                          itemStyle={{ color: '#818cf8' }}
-                          formatter={(val: number) => [`${val}s`, 'Durasi']}
-                        />
-                        <Bar dataKey="duration" radius={[4, 4, 0, 0]}>
-                          {
-                            project.storyboard.scenes.map((entry: any, index: number) => (
-                              <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#6366f1' : '#a855f7'} />
-                            ))
-                          }
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <React.Suspense
+                    fallback={<div className="h-40 w-full mt-2 animate-pulse rounded-lg bg-slate-800/30" />}
+                  >
+                    <SceneDurationsChart scenes={project.storyboard.scenes} />
+                  </React.Suspense>
                 </div>
               )}
 

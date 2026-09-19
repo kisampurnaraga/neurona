@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction, RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
@@ -66,6 +66,11 @@ export async function verifyToken(req: AuthenticatedRequest, res: Response, next
     token = authHeader.split(' ')[1]?.trim();
   } else if (req.headers['x-auth-token']) {
     token = (req.headers['x-auth-token'] as string)?.trim();
+  } else if (req.method === 'GET' && typeof req.query.token === 'string') {
+    // SSE / EventSource fallback: the browser EventSource API cannot send custom
+    // headers, so streaming endpoints authenticate via ?token=<jwt>.
+    // Restricted to GET so it never widens the surface of mutating routes.
+    token = req.query.token.trim();
   }
 
   // Reject unauthenticated requests immediately (No hardcoded fallback bypass)
@@ -188,6 +193,20 @@ export function requireRole(allowedRoles: string | string[]) {
     next();
   };
 }
+
+/**
+ * Centralized Founder-only guard.
+ *
+ * SECURITY: This is the ONLY correct way to protect a privileged route.
+ * It verifies the signed JWT and enforces the `founder` role from the database.
+ *
+ * Never gate a privileged route on a client-supplied header (e.g. `x-role`),
+ * because any caller can forge it.
+ */
+export const requireFounder: RequestHandler[] = [
+  verifyToken as RequestHandler,
+  requireRole(['founder']) as RequestHandler,
+];
 
 export function requireCredits(costPerAction: number = 15) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
@@ -350,3 +369,47 @@ export const userDatabase = {
     return res[0] || null;
   }
 };
+
+/**
+ * Ownership guard for project-scoped routes.
+ *
+ * Allows access when the caller is a founder, when the project belongs to the
+ * caller, or when the project carries no owner (legacy rows created before
+ * per-user ownership existed). Everything else is rejected with 403.
+ */
+export function requireProjectAccess(getProject: (id: string) => any) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ error: 'UNAUTHORIZED', message: 'Pengguna belum terotentikasi.' });
+      return;
+    }
+    if (user.role === 'founder' || user.role === 'admin') {
+      next();
+      return;
+    }
+
+    const projectId = req.params.id || req.params.projectId || '';
+    const project = getProject(projectId);
+
+    if (!project) {
+      res.status(404).json({ error: 'PROJECT_NOT_FOUND', message: `Proyek '${projectId}' tidak ditemukan.` });
+      return;
+    }
+
+    const owner = project.userId;
+    const isLegacyUnowned = !owner || owner === 'default-user' || owner === 'founder';
+    const isOwner = owner === user.user_id || owner === user.email;
+
+    if (!isLegacyUnowned && !isOwner) {
+      console.warn(`[RBAC DENIED] User '${user.user_id}' attempted to access project '${projectId}' owned by '${owner}'.`);
+      res.status(403).json({
+        error: 'FORBIDDEN_PROJECT_ACCESS',
+        message: 'Akses ditolak. Proyek ini bukan milik akun Anda.'
+      });
+      return;
+    }
+
+    next();
+  };
+}

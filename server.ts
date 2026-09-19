@@ -4,7 +4,7 @@ import { validateProxyUrl } from './server/utils/ssrf.ts';
 import "dotenv/config";
 import { NeuronaChatService } from './server/neuronaChatService';
 import http from "http";
-import express from "express";
+import express, { RequestHandler } from "express";
 import fs from "fs";
 import { db } from './src/db/index';
 import { projects as dbProjects } from './src/db/schema';
@@ -22,7 +22,7 @@ import { cleanApiKeyString } from "./server/utils/credentialValidator";
 import { TTSService, SUPPORTED_VOICE_PRESETS } from "./server/services/ttsService";
 import { isPlaceholderSubtitle } from "./server/utils/subtitleUtils";
 import { GCSStreamService } from "./server/services/gcsStreamService";
-import { verifyToken, requireRole, generateToken, userDatabase, AuthenticatedRequest, UserSession } from "./server/middleware/auth";
+import { verifyToken, requireRole, requireFounder, requireProjectAccess, generateToken, userDatabase, AuthenticatedRequest, UserSession } from "./server/middleware/auth";
 import { AuditLogger } from "./server/utils/auditLogger";
 import videoStudioRouter from "./server/routes/videoStudio";
 import workerRouter from "./server/routes/workerRoute";
@@ -55,6 +55,35 @@ process.on('unhandledRejection', (reason) => {
   console.error('[UNHANDLED REJECTION]', reason);
 });
 
+// ---------------------------------------------------------------------------
+// Project lookup helper (in-memory map first, SQLite fallback)
+// Mirrors the resolution already used by GET /api/projects/:id so that the
+// ownership guard sees exactly the same project the route will serve.
+// ---------------------------------------------------------------------------
+const getProjectById = (id: string): any => {
+  let project: any = projects.get(id);
+  if (!project) {
+    try {
+      const row = db.select().from(dbProjects).where(eq(dbProjects.id, id)).get();
+      if (row && row.data) {
+        project = JSON.parse(row.data);
+        if (project) projects.set(id, project);
+      }
+    } catch (e) {
+      console.warn('[ProjectLookup] SQLite fallback error:', e);
+    }
+  }
+  return project;
+};
+
+// Verify the JWT first, then enforce that the project belongs to the caller.
+// Both steps are required: requireProjectAccess inspects req.user, which is only
+// populated by verifyToken.
+const requireProjectOwnership: RequestHandler[] = [
+  verifyToken as RequestHandler,
+  requireProjectAccess(getProjectById) as RequestHandler,
+];
+
 async function startServer() {
   // Load existing projects from local db
   loadProjects();
@@ -71,7 +100,7 @@ async function startServer() {
   });
 
   // CORS & Preflight headers for all /api requests
-  app.get("/api/test-db", async (req, res) => {
+  app.get("/api/test-db", requireFounder, async (req, res) => {
     try {
       res.json({ success: true, dbType: typeof db });
     } catch (e: any) {
@@ -114,16 +143,37 @@ async function startServer() {
       res.header('Access-Control-Allow-Origin', '*');
     }
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-role, x-custom-api-key, x-user-email, x-user-id');
+    // SECURITY: identity headers (x-role / x-user-id / x-user-email) are no longer
+    // accepted as authorization proof, so they are not advertised for CORS either.
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-auth-token, x-custom-api-key');
     if (req.method === 'OPTIONS') {
       return res.sendStatus(200);
     }
     next();
   });
   
-  // Increase payload limit to support base64 product images / attachments
-  app.use(express.json({ limit: '200mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '200mb' }));
+  // SECURITY — batas ukuran body.
+  // Sebelumnya SEMUA rute menerima body hingga 200 MB, sehingga pemanggil tanpa
+  // autentikasi bisa menghabiskan memori server hanya dengan beberapa request.
+  // Kini batas bawaan kecil, dan hanya rute yang memang membawa media pengguna
+  // (payload base64) yang diberi jatah besar. Parser besar HARUS didaftarkan
+  // lebih dulu: body-parser mengonsumsi stream pada kecocokan pertama.
+  app.use(
+    ['/api/projects', '/api/gallery/images/upload', '/api/generate-character-sheet'],
+    express.json({ limit: '100mb' })
+  );
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+  // SECURITY — respons API bersifat privat secara bawaan.
+  // Tanpa ini, respons berisi data akun/proyek bisa tersimpan di cache bersama
+  // (proxy, CDN, atau disk browser di komputer bersama). Rute media yang memang
+  // publik (/api/proxy-*, /api/videos/:name) menimpanya sendiri di bawah dengan
+  // `public, max-age=86400`.
+  app.use('/api', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
 
   // API routes FIRST
   
@@ -143,6 +193,7 @@ async function startServer() {
   });
 
   app.post('/api/neurona-chat',
+ verifyToken,
  async (req, res) => {
     try {
       const { userId, message, history } = req.body;
@@ -155,7 +206,7 @@ async function startServer() {
   });
 
   // YouTube Channel Intelligence Endpoint (Strictly authentic, non-simulated analytics audit)
-  app.post('/api/youtube/intelligence', (req, res) => {
+  app.post('/api/youtube/intelligence', verifyToken, (req, res) => {
     try {
       const { channelData, analyticsData, nicheHint } = req.body || {};
       const report = YouTubeChannelIntelligence.analyze({
@@ -171,7 +222,7 @@ async function startServer() {
   });
 
   // AI Content Strategy & ProductionContext Generator
-  app.post('/api/youtube/strategy', async (req, res) => {
+  app.post('/api/youtube/strategy', verifyToken, async (req, res) => {
     try {
       const { intelligence, channelTitle, niche, preferredStudio, planLengthDays } = req.body || {};
       const ideas = await AIContentStrategist.generatePlan({
@@ -658,7 +709,7 @@ async function startServer() {
     res.json({ token, user: sample });
   });
 
-  app.get("/api/providers/status", async (req, res) => {
+  app.get("/api/providers/status", verifyToken, async (req, res) => {
     try {
       const model = req.query.model as string | undefined;
       const provider = getVideoProvider(model);
@@ -684,9 +735,12 @@ async function startServer() {
         filmConfig,
         videoAdsConfig,
         quickCreateConfig,
-        videoType,
-        userRole
+        videoType
       } = req.body;
+      // SECURITY: peran pelaku diambil dari JWT terverifikasi, bukan dari body
+      // request. Sebelumnya siapa pun bisa mengirim `userRole: 'founder'` untuk
+      // membuka jalur fallback kuota khusus founder.
+      const userRole = (req as AuthenticatedRequest).user?.role;
       const project = projectId ? projects.get(projectId) : null;
       const hasAssets = Boolean(attachedAssets && attachedAssets.length > 0);
       
@@ -749,8 +803,10 @@ async function startServer() {
     }
   };
 
-  app.post('/api/chat', handleInteraction);
-  app.post('/api/interact', handleInteraction);
+  // SECURITY: jalur ini memulai produksi (membakar kuota & kredit provider),
+  // jadi wajib terotentikasi. Sebelumnya siapa pun di internet bisa memanggilnya.
+  app.post('/api/chat', verifyToken, handleInteraction);
+  app.post('/api/interact', verifyToken, handleInteraction);
 
   
   app.get('/api/tts/voices', (req, res) => {
@@ -770,7 +826,7 @@ async function startServer() {
     });
   });
 
-  app.post('/api/tts', async (req, res) => {
+  app.post('/api/tts', verifyToken, async (req, res) => {
     try {
       const customKey = req.headers['x-custom-api-key'] as string;
       if (customKey) process.env.GEMINI_MANUAL_API_KEY = customKey;
@@ -787,7 +843,7 @@ async function startServer() {
   });
 
   // --- [ENDPOINT UTAMA: GATEKEEPER & VIDEO RENDER PIPELINE] ---
-  app.post('/api/render', async (req: express.Request, res: express.Response) => {
+  app.post('/api/render', verifyToken, async (req: express.Request, res: express.Response) => {
     try {
       // 1. Ekstrak data dari request Frontend (React)
       const { projectId, userId, storyboardScenes, social_media_kit, project_meta, videoType } = req.body;
@@ -853,11 +909,11 @@ async function startServer() {
   });
 
   // Founder Control Center API - Key Rotator Management
-  app.get('/api/fcc/key-rotator', (req, res) => {
+  app.get('/api/fcc/key-rotator', requireFounder, (req, res) => {
      res.json(keyRotator.getHealthReport());
   });
 
-  app.post('/api/fcc/key-rotator/add', (req, res) => {
+  app.post('/api/fcc/key-rotator/add', requireFounder, (req, res) => {
     try {
       const { provider, key, keys } = req.body;
       const targetProvider: 'gemini' | 'veo' | 'openai' | 'fal' = provider || 'gemini';
@@ -902,28 +958,27 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/key-rotator/delete', (req, res) => {
+  app.post('/api/fcc/key-rotator/delete', requireFounder, (req, res) => {
      const { provider, key } = req.body;
      if (!key || !provider) return res.status(400).json({ error: 'provider and key are required' });
      const removed = keyRotator.removeKey(provider, key);
      res.json({ success: removed, report: keyRotator.getHealthReport() });
   });
 
-  app.post('/api/fcc/key-rotator/clear-all', (req, res) => {
+  app.post('/api/fcc/key-rotator/clear-all', requireFounder, (req, res) => {
      const { provider } = req.body;
      keyRotator.clearAllKeys(provider || 'all');
      res.json({ success: true, report: keyRotator.getHealthReport() });
   });
 
-  app.post('/api/fcc/key-rotator/reactivate', (req, res) => {
+  app.post('/api/fcc/key-rotator/reactivate', requireFounder, (req, res) => {
      const { provider, key } = req.body;
      if (!key || !provider) return res.status(400).json({ error: 'provider and key are required' });
      const reactivated = keyRotator.reactivateKey(provider, key);
      res.json({ success: reactivated, report: keyRotator.getHealthReport() });
   });
 
-  app.get('/api/fcc/config', async (req, res) => {
-     if (req.headers['x-role'] !== 'founder') return res.status(403).json({error: 'Forbidden. Founder access required.'});
+  app.get('/api/fcc/config', requireFounder, async (req, res) => {
      try {
        const config = await FounderService.getPlatformConfig();
        res.json(config);
@@ -932,8 +987,7 @@ async function startServer() {
      }
   });
 
-  app.post('/api/fcc/providers/:id/config', (req, res) => {
-     if (req.headers['x-role'] !== 'founder') return res.status(403).json({error: 'Forbidden. Founder access required.'});
+  app.post('/api/fcc/providers/:id/config', requireFounder, (req, res) => {
      try {
        const result = FounderService.saveProviderConfig(req.params.id, req.body);
        res.json(result);
@@ -942,8 +996,7 @@ async function startServer() {
      }
   });
 
-  app.post('/api/fcc/providers/:id/test', async (req, res) => {
-     if (req.headers['x-role'] !== 'founder') return res.status(403).json({error: 'Forbidden. Founder access required.'});
+  app.post('/api/fcc/providers/:id/test', requireFounder, async (req, res) => {
      try {
        const result = await FounderService.testProvider(req.params.id);
        res.json(result);
@@ -953,8 +1006,7 @@ async function startServer() {
   });
 
   // OpenArt MCP Dedicated Endpoints for Founder Control Center
-  app.get('/api/fcc/openart/status', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.get('/api/fcc/openart/status', requireFounder, async (req, res) => {
     try {
       const { OpenArtMCPAdapter } = await import('./src/server/providers/OpenArtMCPAdapter');
       const adapter = new OpenArtMCPAdapter();
@@ -1011,8 +1063,7 @@ async function startServer() {
   });
 
   // OpenArt OAuth Authorization Flow Initialization (RFC 7591 Dynamic Client + RFC 7636 PKCE)
-  app.get('/api/fcc/openart/auth/init', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.get('/api/fcc/openart/auth/init', requireFounder, async (req, res) => {
     try {
       const trustedOrigin = OpenArtOAuthService.getCanonicalTrustedOrigin(req.headers as any, req.get('host'));
       const session = await OpenArtOAuthService.createAuthorizationSession(trustedOrigin);
@@ -1176,8 +1227,7 @@ async function startServer() {
   });
 
   // OpenArt OAuth Token / Session Validation Endpoint
-  app.post('/api/fcc/openart/auth/verify', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/openart/auth/verify', requireFounder, async (req, res) => {
     try {
       const { token, sessionToken, code, endpoint, model } = req.body;
       const targetToken = (token || sessionToken || code || '').trim();
@@ -1224,8 +1274,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/openart/connect', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/openart/connect', requireFounder, async (req, res) => {
     try {
       const { apiKey, sessionToken, endpoint, model } = req.body;
       const token = (sessionToken || apiKey || '').trim();
@@ -1261,8 +1310,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/openart/test', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/openart/test', requireFounder, async (req, res) => {
     try {
       const result = await FounderService.testProvider('openart');
       res.json(result);
@@ -1271,8 +1319,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/openart/discover-tools', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/openart/discover-tools', requireFounder, async (req, res) => {
     try {
       const { OpenArtMCPAdapter } = await import('./src/server/providers/OpenArtMCPAdapter');
       const adapter = new OpenArtMCPAdapter();
@@ -1283,8 +1330,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/openart/disconnect', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/openart/disconnect', requireFounder, async (req, res) => {
     try {
       await OpenArtOAuthService.revokeToken();
       FounderService.saveProviderConfig('openart', { apiKey: '', model: 'openart-video-pro', endpoint: 'https://mcp.openart.ai/mcp' });
@@ -1296,8 +1342,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/openart/test-generation', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/openart/test-generation', requireFounder, async (req, res) => {
     try {
       const { prompt } = req.body;
       const { OpenArtMCPAdapter } = await import('./src/server/providers/OpenArtMCPAdapter');
@@ -1310,8 +1355,7 @@ async function startServer() {
   });
 
   // HIGGSFIELD MCP MANAGEMENT & OAUTH ENDPOINTS
-  app.get('/api/fcc/higgsfield/status', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.get('/api/fcc/higgsfield/status', requireFounder, async (req, res) => {
     try {
       const { HiggsfieldMCPAdapter, HIGGSFIELD_DEFAULT_MODELS } = await import('./src/server/providers/HiggsfieldMCPAdapter');
       const adapter = new HiggsfieldMCPAdapter();
@@ -1361,8 +1405,7 @@ async function startServer() {
 
   // Higgsfield OAuth Authorization Flow Initialization (RFC 7591 Dynamic Client + RFC 7636 PKCE)
   // Higgsfield OAuth Authorization Flow Initialization (RFC 7591 Dynamic Client + RFC 7636 PKCE)
-  app.get('/api/fcc/higgsfield/auth/init', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.get('/api/fcc/higgsfield/auth/init', requireFounder, async (req, res) => {
     try {
       const { HiggsfieldOAuthService } = await import('./server/services/higgsfieldOAuthService');
       const trustedOrigin = HiggsfieldOAuthService.getCanonicalTrustedOrigin(req.headers as any, req.get('host'));
@@ -1572,8 +1615,7 @@ async function startServer() {
     });
   });
 
-  app.post('/api/fcc/higgsfield/test', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/higgsfield/test', requireFounder, async (req, res) => {
     try {
       const result = await FounderService.testProvider('higgsfield');
       res.json(result);
@@ -1582,8 +1624,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/higgsfield/discover-tools', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/higgsfield/discover-tools', requireFounder, async (req, res) => {
     try {
       const { HiggsfieldMCPAdapter } = await import('./src/server/providers/HiggsfieldMCPAdapter');
       const adapter = new HiggsfieldMCPAdapter();
@@ -1594,8 +1635,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/higgsfield/disconnect', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/higgsfield/disconnect', requireFounder, async (req, res) => {
     try {
       const { HiggsfieldOAuthService } = await import('./server/services/higgsfieldOAuthService');
       await HiggsfieldOAuthService.revokeToken();
@@ -1608,8 +1648,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/higgsfield/test-generation', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/higgsfield/test-generation', requireFounder, async (req, res) => {
     try {
       const { prompt, imageUrl, model } = req.body;
       const { HiggsfieldMCPAdapter } = await import('./src/server/providers/HiggsfieldMCPAdapter');
@@ -1687,8 +1726,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/flags', (req, res) => {
-     if (req.headers['x-role'] !== 'founder') return res.status(403).json({error: 'Forbidden. Founder access required.'});
+  app.post('/api/fcc/flags', requireFounder, (req, res) => {
      try {
        const { key, value } = req.body;
        const result = FounderService.updateFlag(key, value);
@@ -1699,8 +1737,7 @@ async function startServer() {
   });
 
   
-  app.post('/api/fcc/qa-thresholds', (req, res) => {
-     if (req.headers['x-role'] !== 'founder') return res.status(403).json({error: 'Forbidden'});
+  app.post('/api/fcc/qa-thresholds', requireFounder, (req, res) => {
      try {
        const { minScore, autoFix } = req.body;
        const result = FounderService.setQaThresholds(minScore, autoFix);
@@ -1710,8 +1747,7 @@ async function startServer() {
      }
   });
 
-  app.post('/api/fcc/llm-engine', (req, res) => {
-     if (req.headers['x-role'] !== 'founder') return res.status(403).json({error: 'Forbidden. Founder access required.'});
+  app.post('/api/fcc/llm-engine', requireFounder, (req, res) => {
      try {
        const { engine } = req.body;
        const result = FounderService.setLlmEngine(engine);
@@ -1721,8 +1757,7 @@ async function startServer() {
      }
   });
 
-  app.post('/api/fcc/image-engine', (req, res) => {
-     if (req.headers['x-role'] !== 'founder') return res.status(403).json({error: 'Forbidden. Founder access required.'});
+  app.post('/api/fcc/image-engine', requireFounder, (req, res) => {
      try {
        const { engine } = req.body;
        const result = FounderService.setImageEngine(engine);
@@ -1732,8 +1767,7 @@ async function startServer() {
      }
   });
 
-  app.post('/api/fcc/video-engine', (req, res) => {
-     if (req.headers['x-role'] !== 'founder') return res.status(403).json({error: 'Forbidden. Founder access required.'});
+  app.post('/api/fcc/video-engine', requireFounder, (req, res) => {
      try {
        const { engine } = req.body;
        const result = FounderService.setPrimaryVideoEngine(engine);
@@ -1766,10 +1800,7 @@ async function startServer() {
   });
 
   // Founder Control Center - Get full catalog with margins, officialCost, markup & enabled flags
-  app.get('/api/fcc/catalog', (req, res) => {
-    if (req.headers['x-role'] !== 'founder' && (req as any).user?.role !== 'founder') {
-      return res.status(403).json({ error: 'Forbidden. Founder access required.' });
-    }
+  app.get('/api/fcc/catalog', requireFounder, (req, res) => {
     try {
       const catalog = FounderService.getModelCatalog();
       res.json({
@@ -1783,10 +1814,7 @@ async function startServer() {
   });
 
   // Founder Control Center - Update a model's settings (enabled, markup, sellingPriceOverride, preferredExecution)
-  app.post('/api/fcc/catalog/update', (req, res) => {
-    if (req.headers['x-role'] !== 'founder' && (req as any).user?.role !== 'founder') {
-      return res.status(403).json({ error: 'Forbidden. Founder access required.' });
-    }
+  app.post('/api/fcc/catalog/update', requireFounder, (req, res) => {
     try {
       const { modelKey, updates } = req.body;
       if (!modelKey || !updates) {
@@ -1806,10 +1834,7 @@ async function startServer() {
   });
 
   // Founder Control Center - Sync & refresh model catalog against latest tools and registries
-  app.post('/api/fcc/catalog/sync', (req, res) => {
-    if (req.headers['x-role'] !== 'founder' && (req as any).user?.role !== 'founder') {
-      return res.status(403).json({ error: 'Forbidden. Founder access required.' });
-    }
+  app.post('/api/fcc/catalog/sync', requireFounder, (req, res) => {
     try {
       const result = FounderService.syncModelCatalog();
       const catalog = FounderService.getModelCatalog();
@@ -1824,7 +1849,7 @@ async function startServer() {
   });
 
   // Founder Control Center - Domain & URL Management Endpoints
-  app.get('/api/fcc/domain-config', verifyToken, requireRole(['founder']), async (req: AuthenticatedRequest, res) => {
+  app.get('/api/fcc/domain-config', requireFounder, async (req: AuthenticatedRequest, res) => {
     try {
       const config = FounderService.getDomainConfig();
       const derivedUrls = FounderService.getDerivedOAuthUrls(config.canonicalUrl);
@@ -1847,7 +1872,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/domain-config/validate', verifyToken, requireRole(['founder']), async (req: AuthenticatedRequest, res) => {
+  app.post('/api/fcc/domain-config/validate', requireFounder, async (req: AuthenticatedRequest, res) => {
     try {
       const result = FounderService.validateDomainConfig(req.body);
       res.json({
@@ -1864,7 +1889,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/domain-config/save', verifyToken, requireRole(['founder']), async (req: AuthenticatedRequest, res) => {
+  app.post('/api/fcc/domain-config/save', requireFounder, async (req: AuthenticatedRequest, res) => {
     try {
       const actor = req.user?.email || req.user?.user_id || 'Founder';
       const result = await FounderService.saveDomainConfig(req.body, actor);
@@ -1955,7 +1980,7 @@ async function startServer() {
   });
 
   // FCC Pricing Configuration
-  app.get('/api/fcc/pricing', (req, res) => {
+  app.get('/api/fcc/pricing', requireFounder, (req, res) => {
     try {
       res.json({ success: true, pricing: CreditService.getPricingConfig() });
     } catch (e: any) {
@@ -1963,8 +1988,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/pricing', (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/pricing', requireFounder, (req, res) => {
     try {
       const updated = CreditService.updatePricingConfig(req.body);
       res.json({ success: true, pricing: updated });
@@ -1974,10 +1998,7 @@ async function startServer() {
   });
 
   // Fal.ai Live Test Runner Endpoint (Real Render Verification with Custom or Stored Key)
-  app.post('/api/fcc/fal-live-test', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') {
-      return res.status(403).json({ error: 'Forbidden. Founder access required.' });
-    }
+  app.post('/api/fcc/fal-live-test', requireFounder, async (req, res) => {
     try {
       const { executeFalLiveTest } = await import('./server/falLiveTester');
       const { apiKey, target, customPrompt } = req.body || {};
@@ -1989,8 +2010,7 @@ async function startServer() {
   });
 
   // FCC Fal All-Models Test & Validation Endpoint
-  app.post('/api/fcc/fal-test-models', async (req, res) => {
-    if (req.headers['x-role'] !== 'founder') return res.status(403).json({ error: 'Forbidden. Founder access required.' });
+  app.post('/api/fcc/fal-test-models', requireFounder, async (req, res) => {
     try {
       const { FAL_MODELS } = await import('./server/falModelConfig');
       const { keyRotator } = await import('./server/keyRotator');
@@ -2023,16 +2043,21 @@ async function startServer() {
     }
   });
 
-  app.post('/api/projects', async (req, res) => {
+  app.post('/api/projects', verifyToken, async (req: AuthenticatedRequest, res) => {
     try {
-      const id = await ProductionOrchestrator.startProduction(req.body);
+      const user = req.user!;
+      const payload = { ...(req.body || {}) };
+      // Never trust a client-supplied owner id: stamp it from the verified session.
+      payload.userId = user.user_id;
+      payload.isFounderBypass = user.role === 'founder';
+      const id = await ProductionOrchestrator.startProduction(payload);
       res.json({ id });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.post('/api/projects/:id/approve', async (req, res) => {
+  app.post('/api/projects/:id/approve', requireProjectOwnership, async (req: any, res) => {
     try {
       const { subtitleStyle, videoModel, videoProvider, videoModelDisplayName } = req.body;
       const project = projects.get(req.params.id);
@@ -2061,7 +2086,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/projects/:id/choose-storyboard-only', async (req, res) => {
+  app.post('/api/projects/:id/choose-storyboard-only', requireProjectOwnership, async (req: any, res) => {
     try {
       await ProductionOrchestrator.chooseStoryboardOnly(req.params.id);
       res.json({ success: true });
@@ -2070,7 +2095,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/projects/:id/generate-scene-image', async (req, res) => {
+  app.post('/api/projects/:id/generate-scene-image', requireProjectOwnership, async (req: any, res) => {
     try {
       const { sceneId, imageEngine, resolution, allowFallbackToFlux, imageProvider } = req.body;
       await ProductionOrchestrator.generateSceneImage(req.params.id, sceneId, imageEngine, resolution || '1K', allowFallbackToFlux, imageProvider);
@@ -2081,7 +2106,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/projects/:id/generate-all-images', async (req, res) => {
+  app.post('/api/projects/:id/generate-all-images', requireProjectOwnership, async (req: any, res) => {
     try {
       const { imageEngine, resolution, allowFallbackToFlux, imageProvider } = req.body;
       await ProductionOrchestrator.generateAllSceneImages(req.params.id, imageEngine, resolution || '1K', allowFallbackToFlux, imageProvider);
@@ -2092,7 +2117,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/projects/:id/generate-scene-video', async (req, res) => {
+  app.post('/api/projects/:id/generate-scene-video', requireProjectOwnership, async (req: any, res) => {
     try {
       const { sceneId, videoModel, videoProvider, videoModelDisplayName } = req.body;
       const project = projects.get(req.params.id);
@@ -2125,7 +2150,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/projects/:id/retry', async (req, res) => {
+  app.post('/api/projects/:id/retry', requireProjectOwnership, async (req: any, res) => {
     try {
       await ProductionOrchestrator.retryStage(req.params.id);
       res.json({ success: true });
@@ -2134,7 +2159,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/projects/:id/override-scene', async (req, res) => {
+  app.post('/api/projects/:id/override-scene', requireProjectOwnership, async (req: any, res) => {
     try {
       const { sceneId, ...updates } = req.body;
       const project = await ProductionOrchestrator.overrideSceneAsset(req.params.id, sceneId, updates);
@@ -2144,7 +2169,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/projects/:id/reorder-scenes', async (req, res) => {
+  app.post('/api/projects/:id/reorder-scenes', requireProjectOwnership, async (req: any, res) => {
     try {
       const { scenes } = req.body;
       const project = await ProductionOrchestrator.reorderScenes(req.params.id, scenes);
@@ -2154,7 +2179,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/projects/:id/resync-scenes', async (req, res) => {
+  app.post('/api/projects/:id/resync-scenes', requireProjectOwnership, async (req: any, res) => {
     try {
       const { action, targetIndex } = req.body;
       const project = await ProductionOrchestrator.resyncScenes(req.params.id, action, targetIndex);
@@ -2164,7 +2189,7 @@ async function startServer() {
     }
   });
 
-  app.post(['/api/projects/:id/stitch-action', '/api/projects/:id/stitch', '/api/stitch-action'], async (req, res) => {
+  app.post(['/api/projects/:id/stitch-action', '/api/projects/:id/stitch', '/api/stitch-action'], verifyToken, async (req, res) => {
     try {
       const body = req.body || {};
       let projectId = req.params?.id;
@@ -2240,7 +2265,7 @@ async function startServer() {
   });
 
   // Generate Character Turnaround Sheet for Animation Character Lock
-  app.post('/api/generate-character-sheet', async (req, res) => {
+  app.post('/api/generate-character-sheet', verifyToken, async (req, res) => {
     try {
       const { characterDescription, artStyle, genre, imageEngine } = req.body;
       const { ImageGenerationService } = await import('./server/imageService');
@@ -2258,7 +2283,7 @@ async function startServer() {
   });
 
   // Audit & Optimize T2I Prompt for Raw API Execution
-  app.post('/api/audit-prompt', async (req, res) => {
+  app.post('/api/audit-prompt', verifyToken, async (req, res) => {
     try {
       const { rawPrompt, videoType } = req.body;
       const { ImageGenerationService } = await import('./server/imageService');
@@ -2323,7 +2348,7 @@ async function startServer() {
   });
 
   // Gallery API
-  app.get('/api/v1/projects', (req, res) => {
+  app.get('/api/v1/projects', verifyToken, (req, res) => {
     res.json({ success: true, projects: Array.from(projects.values()) });
   });
 
@@ -2758,7 +2783,7 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/gallery/:id', (req, res) => {
+  app.delete('/api/gallery/:id', verifyToken, (req, res) => {
     try {
       projects.delete(req.params.id);
       saveProjects();
@@ -2776,7 +2801,7 @@ async function startServer() {
 
   
   // Soft Delete Project
-  app.delete('/api/projects/:id', (req, res) => {
+  app.delete('/api/projects/:id', requireProjectOwnership, (req: any, res) => {
     const project = projects.get(req.params.id);
     if (!project) return res.status(404).json({ success: false, error: "Project not found" });
     
@@ -2798,7 +2823,7 @@ async function startServer() {
   });
 
   // Restore Project
-  app.post('/api/projects/:id/restore', (req, res) => {
+  app.post('/api/projects/:id/restore', requireProjectOwnership, (req: any, res) => {
     const project = projects.get(req.params.id);
     if (!project) return res.status(404).json({ success: false, error: "Project not found" });
     
@@ -2815,7 +2840,7 @@ async function startServer() {
   });
 
   // Hard Delete Project
-  app.delete('/api/projects/:id/hard', (req, res) => {
+  app.delete('/api/projects/:id/hard', requireProjectOwnership, (req: any, res) => {
     const project = projects.get(req.params.id);
     if (!project) return res.status(404).json({ success: false, error: "Project not found" });
     
@@ -2861,13 +2886,13 @@ async function startServer() {
   });
 
   
-  app.get('/api/projects/deleted', (req, res) => {
+  app.get('/api/projects/deleted', verifyToken, (req, res) => {
     const deletedProjects = Array.from(projects.values()).filter((p: any) => p.status === 'deleted');
     res.json(deletedProjects);
   });
 
   
-  app.post('/api/test-fal-model', async (req, res) => {
+  app.post('/api/test-fal-model', requireFounder, async (req, res) => {
     try {
       const { endpoint } = req.body;
       const keyRotator = (await import('./server/keyRotator.ts')).keyRotator;
@@ -2897,8 +2922,18 @@ async function startServer() {
     }
   });
 
-  app.get('/api/projects', (req, res) => {
-    const allProjects = Array.from(projects.values()).filter((p: any) => p.status !== 'deleted');
+  app.get('/api/projects', verifyToken, (req: AuthenticatedRequest, res) => {
+    const user = req.user!;
+    const isPrivileged = user.role === 'founder' || user.role === 'admin';
+    const allProjects = Array.from(projects.values()).filter((p: any) => {
+      if (p.status === 'deleted') return false;
+      if (isPrivileged) return true;
+      // Legacy rows created before per-user ownership existed stay visible
+      // to any authenticated user; everything else is scoped to its owner.
+      const owner = p.userId;
+      const isLegacyUnowned = !owner || owner === 'default-user' || owner === 'default';
+      return isLegacyUnowned || owner === user.user_id || owner === user.email;
+    });
     allProjects.forEach(checkAndValidateProjectVideo);
     res.json(allProjects);
   });
@@ -2950,7 +2985,7 @@ async function startServer() {
   });
 
   // Toggle Showcase status for Founder Dashboard
-  app.post('/api/projects/:id/toggle-showcase', (req, res) => {
+  app.post('/api/projects/:id/toggle-showcase', requireProjectOwnership, (req: any, res) => {
     const project = projects.get(req.params.id);
     if (!project) return res.status(404).json({ success: false, error: "Project not found" });
 
@@ -2974,7 +3009,7 @@ async function startServer() {
     });
   });
 
-  app.get('/api/projects/:id', async (req, res) => {
+  app.get('/api/projects/:id', requireProjectOwnership, async (req: any, res) => {
      let project = projects.get(req.params.id);
      if (!project) {
         // Fallback to SQLite
@@ -3002,7 +3037,7 @@ async function startServer() {
   });
 
   // Client API v1 endpoint for projects
-  app.get('/api/v1/client/projects/:projectId', (req, res) => {
+  app.get('/api/v1/client/projects/:projectId', requireProjectOwnership, (req, res) => {
     const project = projects.get(req.params.projectId);
     if (!project) return res.status(404).json({ success: false, error: "Project not found" });
     checkAndValidateProjectVideo(project);
@@ -3046,8 +3081,8 @@ async function startServer() {
     });
   };
 
-  app.get('/api/projects/:id/stream', handleSse);
-  app.get('/api/projects/:id/events', handleSse);
+  app.get('/api/projects/:id/stream', verifyToken, handleSse);
+  app.get('/api/projects/:id/events', verifyToken, handleSse);
 
   // Global API error fallback middleware
   app.use('/api', (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

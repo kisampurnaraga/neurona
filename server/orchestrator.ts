@@ -762,6 +762,9 @@ export function saveProjects() {
         }).onConflictDoUpdate({
           target: dbProjects.id,
           set: {
+            // userId ikut diperbarui: kolom ini diduplikasi dari JSON proyek, dan
+            // kalau dibiarkan basi ia jadi sumber kebenaran yang salah.
+            userId: userId,
             title: project.title || 'Untitled',
             status: project.status || 'PENDING',
             videoType: project.videoType || 'AFFILIATE',
@@ -1120,6 +1123,10 @@ export interface ProductionStartOptions {
   videoAdsConfig?: any;
   quickCreateConfig?: any;
   userRole?: string;
+  /** Pemilik proyek. Diset dari sesi terverifikasi oleh route, bukan oleh klien. */
+  userId?: string;
+  /** Founder tidak dikenai kredit. Diset dari sesi terverifikasi. */
+  isFounderBypass?: boolean;
   executionMode?: 'FAST' | 'DIRECTOR';
   characterReferenceUrl?: string;
   productReferenceUrl?: string;
@@ -1135,7 +1142,7 @@ export class ProductionOrchestrator {
 
   static async startProduction(input: string | ProductionStartOptions) {
     const options: ProductionStartOptions = typeof input === 'string' ? { prompt: input } : input;
-    const { prompt, videoType, videoModel, videoProvider, videoModelDisplayName, ttsVoiceConfig, attachedAssets, affiliateConfig, animationConfig, educationalConfig, filmConfig, videoAdsConfig, quickCreateConfig, userRole, executionMode, characterReferenceUrl, productReferenceUrl, styleReferenceUrl, videoReferenceUrl, generalReferenceUrl } = options;
+    const { prompt, videoType, videoModel, videoProvider, videoModelDisplayName, ttsVoiceConfig, attachedAssets, affiliateConfig, animationConfig, educationalConfig, filmConfig, videoAdsConfig, quickCreateConfig, userRole, userId, isFounderBypass, executionMode, characterReferenceUrl, productReferenceUrl, styleReferenceUrl, videoReferenceUrl, generalReferenceUrl } = options;
 
     const id = crypto.randomUUID();
     
@@ -1284,6 +1291,16 @@ export class ProductionOrchestrator {
 
     (project as any).userRole = userRole;
     (project as any).executionMode = executionMode;
+    // KEPEMILIKAN & KREDIT — sebelumnya nilai ini TIDAK PERNAH disalin ke objek
+    // project, padahal route sudah mengirimkannya dari sesi terverifikasi.
+    // Akibatnya proyek baru tersimpan tanpa pemilik (guard requireProjectAccess
+    // menganggapnya "legacy" sehingga siapa pun boleh membukanya) dan seluruh
+    // blok `if (project.userId && ...)` untuk menahan/memotong kredit tidak
+    // pernah berjalan — tidak ada yang benar-benar dibebani biaya.
+    (project as any).userId = userId || 'default-user';
+    if (isFounderBypass !== undefined) {
+      (project as any).isFounderBypass = isFounderBypass;
+    }
 
     appendLog(project, 'PROTOCOL', `DISPATCHING MISSION [${resolvedType}] -> ID: ${id.substring(0, 8)}`, 'INFO');
     appendLog(project, 'BATARA', `TASKING CREATIVE STRATEGIST -> Merumuskan konsep & arsitektur video: "${prompt.substring(0, 60)}..."`, 'INFO');

@@ -60,7 +60,6 @@ export const FounderHiggsfieldPanel: React.FC = () => {
     setIsLoading(true);
     try {
       const res = await fetch('/api/fcc/higgsfield/status', {
-        headers: { 'x-role': 'founder' }
       });
       if (res.ok) {
         const data: HiggsfieldStatusResponse = await res.json();
@@ -109,7 +108,6 @@ export const FounderHiggsfieldPanel: React.FC = () => {
     try {
       const origin = window.location.origin;
       const res = await fetch(`/api/fcc/higgsfield/auth/init?origin=${encodeURIComponent(origin)}`, {
-        headers: { 'x-role': 'founder' }
       });
       const data = await res.json();
 
@@ -144,7 +142,6 @@ export const FounderHiggsfieldPanel: React.FC = () => {
     try {
       const res = await fetch('/api/fcc/higgsfield/test', {
         method: 'POST',
-        headers: { 'x-role': 'founder' }
       });
       const data = await res.json();
       if (data.success) {
@@ -165,7 +162,6 @@ export const FounderHiggsfieldPanel: React.FC = () => {
     try {
       const res = await fetch('/api/fcc/higgsfield/discover-tools', {
         method: 'POST',
-        headers: { 'x-role': 'founder' }
       });
       const data = await res.json();
       if (data.success) {
@@ -187,7 +183,6 @@ export const FounderHiggsfieldPanel: React.FC = () => {
     try {
       const res = await fetch('/api/fcc/higgsfield/disconnect', {
         method: 'POST',
-        headers: { 'x-role': 'founder' }
       });
       if (res.ok) {
         showFeedback('info', 'Higgsfield MCP disconnected dan otorisasi dicabut secara aman.');
@@ -207,7 +202,7 @@ export const FounderHiggsfieldPanel: React.FC = () => {
     try {
       const res = await fetch('/api/fcc/higgsfield/test-generation', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-role': 'founder' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: testPrompt, model: selectedModel })
       });
       const data = await res.json();

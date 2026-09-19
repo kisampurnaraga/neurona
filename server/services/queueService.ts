@@ -96,13 +96,22 @@ export class QueueService {
         const hostUrl = process.env.APP_URL || process.env.SERVICE_URL || 'http://localhost:3000';
         const workerUrl = `${hostUrl}/api/v1/tasks/process-render`;
 
+        // SECURITY: no hardcoded fallback. If the secret is missing we must not
+        // enqueue a task that the worker would reject anyway (or worse, accept).
+        const workerSecret = (process.env.WORKER_SECRET || '').trim();
+        if (!workerSecret) {
+          throw new Error(
+            'WORKER_SECRET belum dikonfigurasi. Set environment variable WORKER_SECRET sebelum mengirim task render.'
+          );
+        }
+
         const task: protos.google.cloud.tasks.v2.ITask = {
           httpRequest: {
             httpMethod: 'POST',
             url: workerUrl,
             headers: {
               'Content-Type': 'application/json',
-              'x-worker-auth': process.env.WORKER_SECRET || 'neuronna-internal-worker-secret-2025'
+              'x-worker-auth': workerSecret
             },
             body: Buffer.from(JSON.stringify(payload)).toString('base64'),
           },
