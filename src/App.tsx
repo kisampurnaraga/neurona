@@ -588,6 +588,9 @@ export default function App() {
   });
 
   useEffect(() => {
+    // Endpoint ini butuh autentikasi, jadi dijalankan ulang setelah user login —
+    // kalau tidak, status provider tidak pernah terisi pada sesi pertama.
+    if (!currentUser) return;
     fetch('/api/providers/status')
       .then(r => {
         if (!r.ok) return null;
@@ -599,7 +602,7 @@ export default function App() {
       .catch(err => {
         console.warn('Providers status fetch issue:', err);
       });
-  }, []);
+  }, [currentUser]);
 
   const handleDownloadAsset = (url: string, filename: string) => {
     const a = document.createElement('a');

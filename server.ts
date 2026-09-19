@@ -100,7 +100,7 @@ async function startServer() {
   });
 
   // CORS & Preflight headers for all /api requests
-  app.get("/api/test-db", async (req, res) => {
+  app.get("/api/test-db", requireFounder, async (req, res) => {
     try {
       res.json({ success: true, dbType: typeof db });
     } catch (e: any) {
@@ -152,9 +152,28 @@ async function startServer() {
     next();
   });
   
-  // Increase payload limit to support base64 product images / attachments
-  app.use(express.json({ limit: '200mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '200mb' }));
+  // SECURITY — batas ukuran body.
+  // Sebelumnya SEMUA rute menerima body hingga 200 MB, sehingga pemanggil tanpa
+  // autentikasi bisa menghabiskan memori server hanya dengan beberapa request.
+  // Kini batas bawaan kecil, dan hanya rute yang memang membawa media pengguna
+  // (payload base64) yang diberi jatah besar. Parser besar HARUS didaftarkan
+  // lebih dulu: body-parser mengonsumsi stream pada kecocokan pertama.
+  app.use(
+    ['/api/projects', '/api/gallery/images/upload', '/api/generate-character-sheet'],
+    express.json({ limit: '100mb' })
+  );
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+  // SECURITY — respons API bersifat privat secara bawaan.
+  // Tanpa ini, respons berisi data akun/proyek bisa tersimpan di cache bersama
+  // (proxy, CDN, atau disk browser di komputer bersama). Rute media yang memang
+  // publik (/api/proxy-*, /api/videos/:name) menimpanya sendiri di bawah dengan
+  // `public, max-age=86400`.
+  app.use('/api', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
 
   // API routes FIRST
   
@@ -174,6 +193,7 @@ async function startServer() {
   });
 
   app.post('/api/neurona-chat',
+ verifyToken,
  async (req, res) => {
     try {
       const { userId, message, history } = req.body;
@@ -186,7 +206,7 @@ async function startServer() {
   });
 
   // YouTube Channel Intelligence Endpoint (Strictly authentic, non-simulated analytics audit)
-  app.post('/api/youtube/intelligence', (req, res) => {
+  app.post('/api/youtube/intelligence', verifyToken, (req, res) => {
     try {
       const { channelData, analyticsData, nicheHint } = req.body || {};
       const report = YouTubeChannelIntelligence.analyze({
@@ -202,7 +222,7 @@ async function startServer() {
   });
 
   // AI Content Strategy & ProductionContext Generator
-  app.post('/api/youtube/strategy', async (req, res) => {
+  app.post('/api/youtube/strategy', verifyToken, async (req, res) => {
     try {
       const { intelligence, channelTitle, niche, preferredStudio, planLengthDays } = req.body || {};
       const ideas = await AIContentStrategist.generatePlan({
@@ -689,7 +709,7 @@ async function startServer() {
     res.json({ token, user: sample });
   });
 
-  app.get("/api/providers/status", async (req, res) => {
+  app.get("/api/providers/status", verifyToken, async (req, res) => {
     try {
       const model = req.query.model as string | undefined;
       const provider = getVideoProvider(model);
@@ -715,9 +735,12 @@ async function startServer() {
         filmConfig,
         videoAdsConfig,
         quickCreateConfig,
-        videoType,
-        userRole
+        videoType
       } = req.body;
+      // SECURITY: peran pelaku diambil dari JWT terverifikasi, bukan dari body
+      // request. Sebelumnya siapa pun bisa mengirim `userRole: 'founder'` untuk
+      // membuka jalur fallback kuota khusus founder.
+      const userRole = (req as AuthenticatedRequest).user?.role;
       const project = projectId ? projects.get(projectId) : null;
       const hasAssets = Boolean(attachedAssets && attachedAssets.length > 0);
       
@@ -780,8 +803,10 @@ async function startServer() {
     }
   };
 
-  app.post('/api/chat', handleInteraction);
-  app.post('/api/interact', handleInteraction);
+  // SECURITY: jalur ini memulai produksi (membakar kuota & kredit provider),
+  // jadi wajib terotentikasi. Sebelumnya siapa pun di internet bisa memanggilnya.
+  app.post('/api/chat', verifyToken, handleInteraction);
+  app.post('/api/interact', verifyToken, handleInteraction);
 
   
   app.get('/api/tts/voices', (req, res) => {
@@ -2867,7 +2892,7 @@ async function startServer() {
   });
 
   
-  app.post('/api/test-fal-model', async (req, res) => {
+  app.post('/api/test-fal-model', requireFounder, async (req, res) => {
     try {
       const { endpoint } = req.body;
       const keyRotator = (await import('./server/keyRotator.ts')).keyRotator;
@@ -3012,7 +3037,7 @@ async function startServer() {
   });
 
   // Client API v1 endpoint for projects
-  app.get('/api/v1/client/projects/:projectId', (req, res) => {
+  app.get('/api/v1/client/projects/:projectId', requireProjectOwnership, (req, res) => {
     const project = projects.get(req.params.projectId);
     if (!project) return res.status(404).json({ success: false, error: "Project not found" });
     checkAndValidateProjectVideo(project);
