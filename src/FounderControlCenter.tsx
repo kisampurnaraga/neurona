@@ -113,7 +113,6 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
     try {
       const res = await fetch('/api/fcc/config', {
         headers: { 
-          'x-role': 'founder',
           'Cache-Control': 'no-cache'
         },
         cache: 'no-store'
@@ -159,8 +158,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
       const res = await fetch(`/api/fcc/providers/${editingProvider.id}/config`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-role': 'founder'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           apiKey: inputApiKey || undefined,
@@ -192,14 +190,13 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
       if (editingProvider && inputApiKey) {
         await fetch(`/api/fcc/providers/${editingProvider.id}/config`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-role': 'founder' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ apiKey: inputApiKey, model: inputModel, endpoint: inputEndpoint })
         });
       }
 
       const res = await fetch(`/api/fcc/providers/${providerId}/test`, {
         method: 'POST',
-        headers: { 'x-role': 'founder' }
       });
       const data = await res.json();
 
@@ -219,8 +216,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
       const res = await fetch('/api/fcc/flags', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-role': 'founder'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ key, value: !currentValue })
       });
@@ -241,8 +237,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
       const res = await fetch('/api/fcc/qa-thresholds', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-role': 'founder'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ minScore, autoFix })
       });
@@ -261,7 +256,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
     try {
       const res = await fetch('/api/fcc/llm-engine', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-role': 'founder' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ engine })
       });
       if (res.ok) {
@@ -278,8 +273,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
       const res = await fetch('/api/fcc/image-engine', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-role': 'founder'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ engine })
       });
@@ -297,8 +291,7 @@ export default function FounderControlCenter({ onExit }: { onExit?: () => void }
       const res = await fetch('/api/fcc/video-engine', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-role': 'founder'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ engine })
       });

@@ -63,7 +63,6 @@ export const FounderOpenArtPanel: React.FC = () => {
     setIsLoading(true);
     try {
       const res = await fetch('/api/fcc/openart/status', {
-        headers: { 'x-role': 'founder' }
       });
       if (res.ok) {
         const data: OpenArtStatusResponse = await res.json();
@@ -114,7 +113,6 @@ export const FounderOpenArtPanel: React.FC = () => {
     try {
       const origin = window.location.origin;
       const res = await fetch(`/api/fcc/openart/auth/init?origin=${encodeURIComponent(origin)}`, {
-        headers: { 'x-role': 'founder' }
       });
       const data = await res.json();
 
@@ -154,8 +152,7 @@ export const FounderOpenArtPanel: React.FC = () => {
       const res = await fetch('/api/fcc/openart/auth/verify', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-role': 'founder'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           token: token.trim(),
@@ -196,8 +193,7 @@ export const FounderOpenArtPanel: React.FC = () => {
       const res = await fetch('/api/fcc/openart/test', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-role': 'founder'
+          'Content-Type': 'application/json'
         }
       });
 
@@ -221,8 +217,7 @@ export const FounderOpenArtPanel: React.FC = () => {
       const res = await fetch('/api/fcc/openart/discover-tools', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-role': 'founder'
+          'Content-Type': 'application/json'
         }
       });
 
@@ -249,7 +244,6 @@ export const FounderOpenArtPanel: React.FC = () => {
     try {
       const res = await fetch('/api/fcc/openart/disconnect', {
         method: 'POST',
-        headers: { 'x-role': 'founder' }
       });
       if (res.ok) {
         showFeedback('info', 'OpenArt MCP telah diputuskan.');
@@ -270,8 +264,7 @@ export const FounderOpenArtPanel: React.FC = () => {
       const res = await fetch('/api/fcc/openart/test-generation', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-role': 'founder'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ prompt: testPrompt })
       });

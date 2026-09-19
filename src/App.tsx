@@ -76,6 +76,7 @@ import { AuthModal, UserSessionData } from './components/AuthModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import { CaptionStyleSelectorModal } from './components/CaptionStyleSelectorModal';
 import { neuronaVoice } from './utils/speechSynthesis';
+import { withSseToken } from './utils/authFetch';
 
 type CoreState = 'IDLE' | 'AWAKENING' | 'LISTENING' | 'THINKING' | 'EXECUTING' | 'WAITING_FOR_USER' | 'SUCCESS' | 'ERROR';
 
@@ -946,7 +947,9 @@ export default function App() {
     let pollInterval: any = null;
 
     const connectSSE = () => {
-      es = new EventSource(`/api/projects/${projectId}/events`);
+      // EventSource cannot set an Authorization header, so the JWT is passed
+      // as a query parameter (accepted by verifyToken for GET requests only).
+      es = new EventSource(withSseToken(`/api/projects/${projectId}/events`));
       
       es.onmessage = (e) => {
         try {

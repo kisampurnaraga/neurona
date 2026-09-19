@@ -67,7 +67,6 @@ export const FounderDomainConfigPanel: React.FC = () => {
   const getAuthHeader = () => {
     const token = localStorage.getItem('neuronna_auth_token') || localStorage.getItem('neuronna_token') || '';
     return {
-      'x-role': 'founder',
       'Authorization': token ? `Bearer ${token}` : ''
     };
   };
