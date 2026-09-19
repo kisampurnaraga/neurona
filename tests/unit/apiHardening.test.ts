@@ -115,3 +115,40 @@ describe('klien ikut menyesuaikan', () => {
     expect(appSource).toMatch(/if \(!currentUser\) return;/);
   });
 });
+
+describe('kepemilikan proyek disimpan saat produksi dimulai', () => {
+  const orchestrator = readFileSync(join(root, 'server/orchestrator.ts'), 'utf8');
+
+  it('startProduction menyalin userId ke objek project', () => {
+    // Tanpa ini, proyek baru tersimpan tanpa pemilik: requireProjectAccess
+    // menganggapnya "legacy" (siapa pun boleh membuka) dan seluruh blok
+    // `if (project.userId && ...)` untuk menahan/memotong kredit tidak jalan.
+    expect(orchestrator).toMatch(/\(project as any\)\.userId = userId \|\| 'default-user';/);
+  });
+
+  it('startProduction menyalin isFounderBypass', () => {
+    expect(orchestrator).toMatch(/\(project as any\)\.isFounderBypass = isFounderBypass;/);
+  });
+
+  it('userId dan isFounderBypass tersedia di tipe opsi produksi', () => {
+    const optionsType = orchestrator.slice(
+      orchestrator.indexOf('interface ProductionStartOptions'),
+      orchestrator.indexOf('export class ProductionOrchestrator'),
+    );
+    expect(optionsType).toContain('userId?: string;');
+    expect(optionsType).toContain('isFounderBypass?: boolean;');
+  });
+
+  it('nilai tersebut diambil dari destructuring options, bukan dari body klien', () => {
+    expect(orchestrator).toMatch(/userRole, userId, isFounderBypass, executionMode,/);
+  });
+
+  it('POST /api/projects mencap userId dari sesi terverifikasi', () => {
+    const route = serverSource.slice(
+      serverSource.indexOf("app.post('/api/projects', verifyToken"),
+      serverSource.indexOf("app.post('/api/projects', verifyToken") + 400,
+    );
+    expect(route).toContain('payload.userId = user.user_id;');
+    expect(route).toContain('payload.isFounderBypass = user.role === \'founder\';');
+  });
+});
