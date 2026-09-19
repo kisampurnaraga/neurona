@@ -1,12 +1,9 @@
-import { GalleryModal } from './components/GalleryModal';
-import { ContentCreatorDashboard } from './components/ContentCreatorDashboard';
-import { RenderGalleryModal } from './components/RenderGalleryModal';
 import { Wallet, Key, Coins, Activity } from 'lucide-react';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { VideoPreviewPlayer } from './components/VideoPreviewPlayer';
 import { NeuronaDirectorCore } from './components/NeuronaDirectorCore';
-import { StoryboardMatrixModal, IMAGE_MODEL_OPTIONS, VIDEO_MODEL_OPTIONS } from './components/StoryboardMatrixModal';
+import { IMAGE_MODEL_OPTIONS, VIDEO_MODEL_OPTIONS } from './shared/modelOptions';
 import { resolveProviderSafeModel } from './shared/modelCatalog';
 import { StudioSelectorModal } from './components/StudioSelectorModal';
 import { FilmConfigModal } from './components/FilmConfigModal';
@@ -65,12 +62,9 @@ import type {
   EducationalConfig,
   VideoType 
 } from './shared/types';
-import FounderControlCenter from './FounderControlCenter';
-import VideoTimeline from './components/VideoTimeline';
 import AffiliateConfigModal from './components/AffiliateConfigModal';
 import { AnimationConfigModal } from './components/AnimationConfigModal';
 import { EducationalConfigModal } from './components/EducationalConfigModal';
-import { HolographicHudNode } from './components/HolographicHudNode';
 import { LandingPage } from './components/LandingPage';
 import { AuthModal, UserSessionData } from './components/AuthModal';
 import { UserProfileModal } from './components/UserProfileModal';
@@ -149,8 +143,74 @@ function useClapDetector(onClap: () => void) {
 }
 
 import { SystemHealthDashboard } from "./components/SystemHealthDashboard";
-import { FinalContentDashboard } from './components/FinalContentDashboard';
 import { UnifiedVideoModelSelector, SelectedModelData } from './components/UnifiedVideoModelSelector';
+
+// ---------------------------------------------------------------------------
+// CODE SPLITTING
+// Komponen berat dimuat saat dibutuhkan (lazy) supaya bundle awal tetap ringan.
+// `lazyWithSuspense` menjaga call-site di bawah tetap apa adanya: props-nya
+// bertipe sama dengan komponen asli, jadi tidak ada perubahan API.
+// LandingPage sengaja TETAP eager karena ia adalah layar pertama user.
+// ---------------------------------------------------------------------------
+
+const StudioFallback = () => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#05070d]">
+    <div className="flex flex-col items-center gap-3">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-cyan-400/25 border-t-cyan-400" />
+      <span className="font-mono text-[11px] tracking-[0.2em] text-cyan-300/70">
+        MEMUAT MODUL...
+      </span>
+    </div>
+  </div>
+);
+
+const lazyWithSuspense = <P,>(
+  Component: React.ComponentType<P>,
+  fallback: React.ReactNode = null,
+) => {
+  const LazyBoundary = (props: P) => (
+    <React.Suspense fallback={fallback}>
+      <Component {...props} />
+    </React.Suspense>
+  );
+  LazyBoundary.displayName = `Lazy(${Component.displayName || Component.name || 'Component'})`;
+  return LazyBoundary;
+};
+
+// Layar penuh -> tampilkan indikator; modal -> tanpa fallback (overlay-nya sendiri sudah jadi indikator).
+const FounderControlCenter = lazyWithSuspense(
+  React.lazy(() => import('./FounderControlCenter')),
+  <StudioFallback />,
+);
+const VideoTimeline = lazyWithSuspense(
+  React.lazy(() => import('./components/VideoTimeline')),
+  <StudioFallback />,
+);
+const ContentCreatorDashboard = lazyWithSuspense(
+  React.lazy(() =>
+    import('./components/ContentCreatorDashboard').then((m) => ({ default: m.ContentCreatorDashboard })),
+  ),
+  <StudioFallback />,
+);
+const FinalContentDashboard = lazyWithSuspense(
+  React.lazy(() =>
+    import('./components/FinalContentDashboard').then((m) => ({ default: m.FinalContentDashboard })),
+  ),
+  <StudioFallback />,
+);
+const StoryboardMatrixModal = lazyWithSuspense(
+  React.lazy(() =>
+    import('./components/StoryboardMatrixModal').then((m) => ({ default: m.StoryboardMatrixModal })),
+  ),
+);
+const RenderGalleryModal = lazyWithSuspense(
+  React.lazy(() =>
+    import('./components/RenderGalleryModal').then((m) => ({ default: m.RenderGalleryModal })),
+  ),
+);
+const GalleryModal = lazyWithSuspense(
+  React.lazy(() => import('./components/GalleryModal').then((m) => ({ default: m.GalleryModal }))),
+);
 
 export default function App() {
   const [showGallery, setShowGallery] = useState(false);
