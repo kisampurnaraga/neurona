@@ -1824,7 +1824,7 @@ async function startServer() {
   });
 
   // Founder Control Center - Domain & URL Management Endpoints
-  app.get('/api/fcc/domain-config', verifyToken, requireRole(['founder']), async (req: AuthenticatedRequest, res) => {
+  app.get('/api/fcc/domain-config', requireFounder, async (req: AuthenticatedRequest, res) => {
     try {
       const config = FounderService.getDomainConfig();
       const derivedUrls = FounderService.getDerivedOAuthUrls(config.canonicalUrl);
@@ -1847,7 +1847,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/domain-config/validate', verifyToken, requireRole(['founder']), async (req: AuthenticatedRequest, res) => {
+  app.post('/api/fcc/domain-config/validate', requireFounder, async (req: AuthenticatedRequest, res) => {
     try {
       const result = FounderService.validateDomainConfig(req.body);
       res.json({
@@ -1864,7 +1864,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/fcc/domain-config/save', verifyToken, requireRole(['founder']), async (req: AuthenticatedRequest, res) => {
+  app.post('/api/fcc/domain-config/save', requireFounder, async (req: AuthenticatedRequest, res) => {
     try {
       const actor = req.user?.email || req.user?.user_id || 'Founder';
       const result = await FounderService.saveDomainConfig(req.body, actor);
